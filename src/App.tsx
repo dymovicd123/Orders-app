@@ -44,6 +44,8 @@ import { createTeamTimesheetActions } from './features/team/teamTimesheetActions
 import { createTeamReportActions } from './features/team/teamReportActions'
 import { createPlanActions } from './features/plans/planActions'
 import { createReportExportActions } from './features/export/reportExportActions'
+import { createReferenceActions } from './features/references/referenceActions'
+import { loadManagedAuthUsers, saveManagedAuthUser, disableManagedAuthUser } from './features/auth/managedAccountActions'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
@@ -413,69 +415,15 @@ function App() {
   }, [apiFetch, authUser, passwordChangeDraft])
 
   const loadAuthUsers = useCallback(async () => {
-    if (!isAdmin) return
-    setAuthUsersBusy(true)
-    try {
-      const response = await apiFetch('/api/auth/users')
-      const data = await readJsonResponse<{ ok: boolean; items?: ManagedAuthUser[] }>(response, 'Пользователи')
-      setAuthUsers(data.items || [])
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось загрузить пользователей.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
+    return loadManagedAuthUsers({ isAdmin, apiFetch, setAuthUsersBusy, setAuthUsers, setError, setMessage })
   }, [apiFetch, isAdmin])
 
   const saveAuthUser = useCallback(async () => {
-    if (!isAdmin) return
-    setAuthUsersBusy(true)
-    setError(null)
-    try {
-      const isEdit = Boolean(authUserDraft.id)
-      const duplicateManagerAccount = authUserDraft.managerId
-        ? authUsers.find((user) => user.managerId === authUserDraft.managerId && user.id !== authUserDraft.id)
-        : null
-      if (duplicateManagerAccount) {
-        throw new Error(`У этого сотрудника уже есть аккаунт @${duplicateManagerAccount.login}. Измените его в разделе «Команда».`)
-      }
-      const payload = {
-        login: authUserDraft.login,
-        password: authUserDraft.password || undefined,
-        role: authUserDraft.role,
-        managerId: authUserDraft.managerId || null,
-        displayName: authUserDraft.displayName,
-        isActive: authUserDraft.isActive,
-        mustChangePassword: authUserDraft.mustChangePassword,
-      }
-      const response = await apiFetch(isEdit ? `/api/auth/users/${authUserDraft.id}` : '/api/auth/users', {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      await readJsonResponse(response, 'Пользователь')
-      setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
-      setMessage(isEdit ? 'Аккаунт обновлён.' : 'Аккаунт создан.')
-      await loadAuthUsers()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось сохранить аккаунт.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
+    return saveManagedAuthUser({ isAdmin, apiFetch, authUserDraft, authUsers, setAuthUserDraft, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
   }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
   const disableAuthUser = useCallback(async (id: number) => {
-    if (!isAdmin || !window.confirm('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
-    setAuthUsersBusy(true)
-    try {
-      const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
-      await readJsonResponse(response, 'Отключение аккаунта')
-      setMessage('Аккаунт отключён.')
-      await loadAuthUsers()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось отключить аккаунт.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
+    return disableManagedAuthUser(id, { isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
   }, [apiFetch, isAdmin, loadAuthUsers])
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
@@ -1845,14 +1793,43 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [activeSector, authReady, financeMode, financeReportFilters.dateFrom, financeReportFilters.dateTo, moneyHistoryQuery, moneyHistoryType.flow, moneyHistoryType.operation, moneyHistoryType.trace])
 
-  async function loadReferencesData(force = false) {
-    if (references && !force) return references
-    const response = await apiFetch('/api/reference-data')
-    if (!response.ok) return null
-    const referenceData = await readJsonResponse<ReferenceData>(response, 'Справочники')
-    setReferences(referenceData)
-    return referenceData
-  }
+  const {
+    loadReferencesData: loadReferencesDataAction,
+    loadReferenceKindCounts: loadReferenceKindCountsAction,
+    loadReferenceItems: loadReferenceItemsAction,
+    saveReferenceEntry,
+    removeReferenceEntry,
+    resetReferenceDraft,
+    selectReferenceKind,
+  } = createReferenceActions({
+    isAdmin,
+    canManageWarehouse,
+    references,
+    referenceKind,
+    referenceDraft,
+    referenceItems,
+    referenceItemsCache,
+    referenceKindCounts,
+    referenceBusy,
+    referenceRequestIdRef,
+    setReferences,
+    setReferenceItems,
+    setReferenceItemsCache,
+    setReferenceKindCounts,
+    setReferenceBusy,
+    setReferenceDraft,
+    setReferenceKind,
+    setReferenceSearch,
+    setReferenceStatusFilter,
+    setError,
+    setMessage,
+    apiFetch,
+  })
+
+  // Effects above retain their original hoisted loader names.
+  function loadReferencesData(force = false) { return loadReferencesDataAction(force) }
+  function loadReferenceKindCounts(kinds: ReferenceKind[], force = false) { return loadReferenceKindCountsAction(kinds, force) }
+  function loadReferenceItems(kind = referenceKind, force = false) { return loadReferenceItemsAction(kind, force) }
 
   async function loadClients(append = false, offsetOverride?: number) {
     const requestId = ++clientRequestIdRef.current
@@ -1944,51 +1921,7 @@ function App() {
     }
   }
 
-  async function loadReferenceKindCounts(kinds: ReferenceKind[], force = false) {
-    const requested = Array.from(new Set(kinds)).filter(Boolean)
-    if (!requested.length) return {}
-    if (!force && requested.every((kind) => referenceKindCounts[kind])) {
-      return referenceKindCounts
-    }
-    const response = await apiFetch(`/api/reference-values/counts?kinds=${encodeURIComponent(requested.join(','))}`)
-    if (!response.ok) return null
-    const data = await readJsonResponse<{ ok: boolean; counts?: Partial<Record<ReferenceKind, { total: number; active: number; inactive: number }>> }>(response, 'Счётчики справочников')
-    const counts = data.counts || {}
-    setReferenceKindCounts((current) => ({ ...current, ...counts }))
-    return counts
-  }
 
-  async function loadReferenceItems(kind = referenceKind, force = false) {
-    const cached = referenceItemsCache[kind]
-    if (cached && !force) {
-      setReferenceItems(cached)
-      return cached
-    }
-    if (referenceBusy && !force) return referenceItems
-    const requestId = ++referenceRequestIdRef.current
-    setReferenceBusy(true)
-    try {
-      const response = await apiFetch(`/api/reference-values?kind=${encodeURIComponent(kind)}`)
-      if (!response.ok) return null
-      const data = await readJsonResponse<{ ok: boolean; items?: ReferenceListItem[] }>(response, 'Справочник')
-      const items = Array.isArray(data.items) ? data.items : []
-      if (requestId !== referenceRequestIdRef.current) {
-        return items
-      }
-      setReferenceItems(items)
-      setReferenceItemsCache((current) => ({ ...current, [kind]: items }))
-      const activeCount = items.filter((item) => item.isActive).length
-      setReferenceKindCounts((current) => ({
-        ...current,
-        [kind]: { total: items.length, active: activeCount, inactive: Math.max(0, items.length - activeCount) },
-      }))
-      return items
-    } finally {
-      if (requestId === referenceRequestIdRef.current) {
-        setReferenceBusy(false)
-      }
-    }
-  }
 
   async function loadCatalogData(force = false) {
     if (catalogData && !force) return catalogData
@@ -2412,95 +2345,7 @@ function App() {
     setMessage,
   })
 
-  async function saveReferenceEntry() {
-    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
-      setError('Изменение этого справочника доступно только администратору.')
-      return
-    }
 
-    const value = normalizeSuggestion(referenceDraft.value)
-    if (!value) {
-      setError('Введите значение для справочника.')
-      return null
-    }
-
-    setError(null)
-    const payload = {
-      kind: referenceKind,
-      value,
-      sortOrder: Number(referenceDraft.sortOrder || 0),
-      isActive: Boolean(referenceDraft.isActive),
-    }
-
-    const isEdit = referenceDraft.id > 0
-    const response = await apiFetch(
-      isEdit ? `/api/reference-values/${referenceDraft.id}` : '/api/reference-values',
-      {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
-    )
-
-    if (!response.ok) {
-      const result = await readJsonResponse<{ message?: string }>(response, 'Справочник')
-      throw new Error(result.message || 'Не удалось сохранить справочник.')
-    }
-
-    const outcome = await readJsonResponse<{ ok?: boolean; value?: string; reused?: boolean; restored?: boolean }>(response, 'Справочник')
-    setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    await Promise.all([
-      loadReferencesData(true),
-      loadReferenceItems(referenceKind, true),
-      loadReferenceKindCounts([referenceKind], true),
-    ])
-    setMessage(outcome.reused
-      ? `Значение «${outcome.value || value}» уже существует — используем его, дубль не создавали.`
-      : outcome.restored
-        ? `Значение «${outcome.value || value}» восстановлено в справочнике.`
-        : 'Справочник обновлён.')
-    return outcome
-  }
-
-  async function removeReferenceEntry(id: number) {
-    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
-      setError('Удаление значений этого справочника доступно только администратору.')
-      return
-    }
-
-    if (!id) return
-    const response = await apiFetch(`/api/reference-values/${id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: referenceKind }),
-    })
-    if (!response.ok) {
-      const problem = await readJsonResponse<{ message?: string }>(response, 'Справочник')
-      throw new Error(problem.message || 'Не удалось отключить значение.')
-    }
-    if (referenceDraft.id === id) {
-      setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    }
-    await Promise.all([
-      loadReferencesData(true),
-      loadReferenceItems(referenceKind, true),
-      loadReferenceKindCounts([referenceKind], true),
-    ])
-    setMessage('Значение отключено.')
-  }
-
-  function resetReferenceDraft() {
-    setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-  }
-
-  function selectReferenceKind(kind: ReferenceKind) {
-    setReferenceKind(kind)
-    setReferenceItems(referenceItemsCache[kind] || [])
-    setReferenceSearch('')
-    setReferenceStatusFilter('all')
-    resetReferenceDraft()
-    void loadReferenceItems(kind, !referenceItemsCache[kind])
-  }
 
   async function loadAllOpenDebtOrders(append = false) {
     setDebtLoadBusy(true)
