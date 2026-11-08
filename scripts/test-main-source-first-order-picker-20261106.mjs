@@ -133,10 +133,11 @@ try{
 
  const source=fs.readFileSync('src/features/sections/CreateOrderSection.tsx','utf8')
  const app=fs.readFileSync('src/App.tsx','utf8')
+ const creation=fs.readFileSync('src/features/orders/orderCreationActions.ts','utf8')
  const worker=fs.readFileSync('worker/domains/orders-write.ts','utf8')
  assert(source.includes('MainClothingSourcePicker')&&source.includes('MainPickedOrderLine'))
  assert(!source.includes('type="button" onClick={startManual}'),'Manual workshop button must occur once in picker only')
- assert(app.includes('catalogVariantId: item.catalogVariantId || undefined'))
+ assert(app.includes('createOrderCreationActions({') && creation.includes('catalogVariantId: item.catalogVariantId || undefined'), 'Picked exact SKU must reach the real order-creation submit')
  assert(worker.includes('await hydratePickedOrderItems'))
  assert(worker.includes('item.catalogVariantId>0'))
 
