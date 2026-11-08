@@ -1,10 +1,17 @@
 # Постоянный контекст проекта «Система заказов»
 
-Updated: 2026-10-05
+Updated: 2026-11-08 (Branch2 environment identity and sync checkpoint; older sections below remain historical)
 
 Этот файл хранит **долгоживущие архитектурные и инженерные инварианты**. Текущий статус этапов/релизов хранится в корневом `PROJECT_CONTINUATION.md`.
 
 Старые `CLOUDFLARE_CONTINUATION_CONTEXT_STEP*.md`, старые ZIP/context-файлы и исторические Stage-документы — evidence/history. Они не заменяют актуальный GitHub.
+
+## Synchronization with Main — 2026-11-08 (Branch2-only stage 1)
+
+- Checked actual GitHub heads: Main `e72ca3296e5ff71981c2f8f5558fe1a25ba938a7`, Branch2 `7127790374d68f056ff2c172ad754fd64a023bf4` before this sync PR. Branches have diverged and **must not** be merged or overwritten wholesale.
+- First selected semantic fix: Branch2 Return creation already validated refundable money before its D1 batch, but lacked Main's atomic SQL revalidation. Copied just Main's guarded INSERT into Branch2 plus the identical race-conflict mapping. The money-event and physical item claim statements remain in the same batch. Existing Return active-reserve SQL test now executes the real guarded INSERT against disposable SQLite, including simultaneous stale preflights, zero-money, cancelled Return, and archived-order cases. This patch does not alter Main or any D1 database.
+- Still intentionally **not synchronized**: Main's selective-shipment route architecture and domain refactors, and Branch2-specific Exchange cancellation/dispatch behavior, must be reconciled case by case with real Worker HTTP/SQLite tests. Do not copy Main `returns-exchanges.ts`, `worker/index.ts`, `wrangler.jsonc`, production migrations, or DB IDs on top of Branch2.
+- Main architecture continuation: `AGENTS.md` and `docs/architecture/orders-app-audit-2026-11-08.md` in Main; use target-branch code and PR checks as the final truth. Exact PR status and Branch2 deployment must be checked separately.
 
 ## Source of truth
 
@@ -32,8 +39,8 @@ Production:
 Branch2:
 - branch: `branch2`
 - Worker: `orders-app-branch2`
-- D1: `orders_db_branch2`
-- D1 id: `40065052-854e-44b8-bcd5-251bdd488301`
+- D1: `orders_db_branch2_mirror_20261027` (actual `branch2` `wrangler.jsonc`)
+- D1 id: `0904a573-21ff-44d8-93b0-c9200f771702` (actual Branch2 binding; reverify before any action)
 
 Permanent rules:
 - never cross-bind Worker/D1;
