@@ -415,7 +415,7 @@ function App() {
   }, [apiFetch, authUser, passwordChangeDraft])
 
   const loadAuthUsers = useCallback(async () => {
-    return loadManagedAuthUsers({ isAdmin, apiFetch, setAuthUsersBusy, setAuthUsers, setError })
+    return loadManagedAuthUsers({ isAdmin, apiFetch, setAuthUsersBusy, setAuthUsers, setError, setMessage })
   }, [apiFetch, isAdmin])
 
   const saveAuthUser = useCallback(async () => {
