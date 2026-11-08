@@ -63,9 +63,9 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          # Approve only the historical status-only shipping PR #818 plus
-          # this reviewed, one-file Branch2 release gate. No generic auto-deploy.
-          test "$(git rev-parse HEAD^)" = '233c1b81be42fd0f94092427e264204c5b68d9bf'
+          # Publish only the already reviewed known-SKU shortage shipping PR #821.
+          # This is an exact-parent, single-file, opt-in Branch2 release; never Main.
+          test "$(git rev-parse HEAD^)" = 'b5894d26c171d60340af3451de86d4a60202dfa3'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
