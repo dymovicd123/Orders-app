@@ -36,7 +36,11 @@ check(saveExchange.includes('completeCriticalRequest(batchKey, critical.requestI
 check(ui.includes('Добавить ещё позицию'), 'H9C Production multi-pair control missing')
 check(!ui.includes('if (itemizedExchange || !currentPairReady) return'), 'H9C Production queue still rejects itemized orders')
 check(ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity'), 'H9C Production aggregate same-SKU stock guard missing')
-check(ui.includes('queuedObservedPhysical') && ui.includes('exchangeConfirmedPhysical'), 'H9C Production queued physical observation reuse missing')
+check(ui.includes('const exchangePhysicalShortage =') && ui.includes('exchangePhysical < exchangeBatchRequired') && ui.includes('const exchangeIssueConfirmed = Boolean(exchangeDraft.newItem.stockObservationEnabled)'), 'H9C aggregate queued physical shortage confirmation missing')
+check(ui.includes("exchangePhysicalShortage && exchangeIssueConfirmed && exchangeNewItemKey(queued.newItem) === currentExchangeNewItemKey")
+  && ui.includes('stockObservationEnabled: true, observedPhysicalQuantity: null')
+  && ui.includes("if (exchangeDraft.newItem.shipmentState === 'sent' && exchangePhysicalShortage && !exchangeIssueConfirmed) return"),
+  'H9C confirmed shortage must be applied consistently to same-SKU queued lines and stop unconfirmed outbound')
 check(ui.includes('nextRequestedByOldItem') && ui.includes('nextOldItem'), 'H9C Production queue does not advance to remaining old item')
 
 check(workerIndex.includes("url.pathname === '/api/exchanges/batch'") && workerIndex.includes('createItemizedExchangeBatchFromRequest'), 'H9C Production Worker batch route missing')
