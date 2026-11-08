@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { composeOrderExchangeCancellationPlan } from '../src/app/orderExchangeCancellationPlan.ts'
 const app=readFileSync('src/App.tsx','utf8')
+const cancellations=readFileSync('src/features/orders/orderDependentCancellationActions.ts','utf8')
 const graph=readFileSync('src/app/orderExchangeCancellationPlan.ts','utf8')
 const ui=readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 const projection=readFileSync('src/app/orderOperationalProjection.ts','utf8')
@@ -20,24 +21,23 @@ assert(ui.includes('isAdmin && projection.hasCommittedDownstreamOperation'),
   'Never expose linked-order admin correction surface to manager')
 assert(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin'),
   'Full editor safety projection must remain unchanged')
-assert(app.includes('async function loadOrderExchangeCancellationPlan(')
-  &&app.includes('async function cancelOrderExchangeChain('),
+assert(app.includes('createOrderDependentCancellationActions({') && cancellations.includes('async function loadOrderExchangeCancellationPlan(')
+  &&cancellations.includes('async function cancelOrderExchangeChain('),
   'Plan and execution must be separate')
-assert(app.includes("const selected=mode==='last' ? available.slice(-1) : [...available]"),
+assert(cancellations.includes("const selected=mode==='last' ? available.slice(-1) : [...available]"),
   'Last exchange is the newest active exchange, not the oldest')
-assert(graph.includes('preview.manualReviewRequired')&&graph.includes('ordered.length!==nodes.size') && app.includes('composeOrderExchangeCancellationPlan(mode,available,selected,previews)'),
+assert(graph.includes('preview.manualReviewRequired')&&graph.includes('ordered.length!==nodes.size') && cancellations.includes('composeOrderExchangeCancellationPlan(mode,available,selected,previews)'),
   'Legacy and ambiguous dependency graphs must fail closed')
-assert(app.includes('const current=await loadOrderExchangeCancellationPlan(order,expected.mode)')
-  &&app.includes('current.signature!==expected.signature'),
+assert(cancellations.includes('const current=await loadOrderExchangeCancellationPlan(order,expected.mode)')
+  &&cancellations.includes('current.signature!==expected.signature'),
   'Re-read the graph immediately before mutation')
-assert(app.includes("const url=step.type==='exchange'") &&
-  app.includes("'/api/exchanges/'+step.id+'/cancel'") &&
-  app.includes("'/api/returns/'+step.id+'/cancel'"),
+assert(cancellations.includes("const url=step.type==='exchange'") &&
+  cancellations.includes("'/api/exchanges/'+step.id+'/cancel'") &&
+  cancellations.includes("'/api/returns/'+step.id+'/cancel'"),
   'Only existing guarded cancellation handlers may write')
-assert(app.includes("prepareCriticalRequest(key,payload)")&&app.includes('completeCriticalRequest(key,critical.requestId)'),
+assert(cancellations.includes("prepareCriticalRequest(key,payload)")&&cancellations.includes('completeCriticalRequest(key,critical.requestId)'),
   'Each cancellation step must be idempotent')
-assert(!app.slice(app.indexOf('async function cancelOrderExchangeChain('),
-  app.indexOf('async function handleEditOrder(')).includes('UPDATE inventory_stock'),
+assert(!cancellations.includes('UPDATE inventory_stock'),
   'Never invent warehouse SQL in browser cancellation flow')
 assert(routes.includes("const returnCancelMatch") && routes.includes("const exchangeCancelMatch"),
   'Both cancellation routes must remain available')
