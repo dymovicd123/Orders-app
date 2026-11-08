@@ -10,6 +10,8 @@ const migration = fs.readFileSync('migrations/0069_v72_return_exchange_physical_
 const types = fs.readFileSync('src/app/types.ts', 'utf8')
 const utils = fs.readFileSync('src/app/utils.ts', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
+const creationActions = fs.readFileSync('src/features/orders/returnExchangeCreationActions.ts', 'utf8')
+const aftercareSource = fs.readFileSync('src/features/orders/returnExchangeAftercareActions.ts', 'utf8')
 const legacyPrep = fs.readFileSync('src/app/legacyExchangePreparation.ts', 'utf8')
 const legacyRequests = fs.readFileSync('src/app/legacyExchangeCriticalRequests.ts', 'utf8')
 const returnCreateUi = fs.readFileSync('src/app/returnCreationOperation.ts', 'utf8')
@@ -80,11 +82,11 @@ expect(types.includes('oldPhysicalReceivedAt?: string | null'), 'exchange histor
 expect(utils.includes("physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'return drafts must wait for ordinary stock items and default Workshop-origin items to no-stock')
 expect(utils.includes('issuedToClient') && utils.includes("issuedStockStatuses.has(stockStatus)"), 'return drafts must distinguish never-issued goods from real physical returns')
 expect(utils.includes("order?.shipping_status === 'sent'") && utils.includes(": 'not_issued'"), 'unsent exchange drafts must default ordinary old items to the explicit not-issued path')
-expect(app.includes('prepareReturnCreation(returnSelectedOrder, returnDraft)') && app.includes('submitReturnCreation('), 'return save must use the guarded preparation and critical POST')
+expect(app.includes('createReturnExchangeCreationActions({') && creationActions.includes('prepareReturnCreation(returnSelectedOrder, returnDraft)') && creationActions.includes('submitReturnCreation('), 'return save must use the guarded preparation and critical POST')
 expect(returnCreateUi.includes('physicalState: item.physicalState'), 'return save payload must still send item physical state')
-expect(app.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)') && legacyPrep.includes('oldPhysicalState: exchangeDraft.oldPhysicalState') && app.includes('submitLegacyExchangePair(') && legacyRequests.includes('oldPhysicalState: pair.oldPhysicalState'), 'legacy Exchange must preserve the operator-selected physical state through preparation and POST')
-expect(app.includes('async function receiveReturnedItemAction'), 'frontend receive action missing')
-expect(app.includes("apiFetch('/api/returned-items/receive'"), 'frontend receive action route missing')
+expect(creationActions.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)') && legacyPrep.includes('oldPhysicalState: exchangeDraft.oldPhysicalState') && creationActions.includes('submitLegacyExchangePair(') && legacyRequests.includes('oldPhysicalState: pair.oldPhysicalState'), 'legacy Exchange must preserve the operator-selected physical state through preparation and POST')
+expect(app.includes('createReturnExchangeAftercareActions({') && aftercareSource.includes('async function receiveReturnedItemAction'), 'frontend receive action missing')
+expect(aftercareSource.includes("apiFetch('/api/returned-items/receive'"), 'frontend receive action route missing')
 expect(app.includes('receiveReturnedItemAction'), 'receive action not passed to sections')
 expect(returnSection.includes('Где товар сейчас?'), 'return form physical-state choice missing')
 expect(returnSection.includes('Ещё едет обратно'), 'return form waiting choice missing')
@@ -111,5 +113,186 @@ expect(readController.includes("pendingOnly: '1'") && readController.includes('+
   'physical receipt inboxes must remain independent of history filters and reject stale responses')
 expect(returnSection.includes('Ожидают приёмки'), 'return summary does not show pending physical quantity')
 expect(exchangeSection.includes('Ожидают приёмки'), 'exchange summary does not show pending physical quantity')
+
+// Run the actual compiled Return/Exchange frontend controllers, not duplicated
+// request logic. Worker SQL physical and financial tests remain separate.
+const { default: assert } = await import('node:assert/strict')
+const { build } = await import('esbuild')
+const { createReturnDraft, createExchangeDraft } = await import('../src/app/utils.ts')
+async function bundledActions(path, name) {
+  const output = await build({ entryPoints: [path], bundle: true, platform: 'node',
+    format: 'esm', target: 'es2022', write: false, logLevel: 'silent' })
+  const lib = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'))
+  assert.equal(typeof lib[name], 'function')
+  return lib[name]
+}
+const createActions = await bundledActions('src/features/orders/returnExchangeCreationActions.ts', 'createReturnExchangeCreationActions')
+const aftercareActions = await bundledActions('src/features/orders/returnExchangeAftercareActions.ts', 'createReturnExchangeAftercareActions')
+assert(app.includes('createReturnExchangeCreationActions({') && app.includes('createReturnExchangeAftercareActions({'),
+  'App must invoke both real Return/Exchange owners')
+const order = { id: 501, external_id: 'QA-501', order_status: 'active',
+  shipping_status: 'sent', received_amount: 6000, return_amount: 0,
+  items: [{ id: 61, quantity: 1, availableOperationQuantity: 1, sourceType: 'warehouse',
+    productName: 'ШАПАН QA', unitPrice: 6000, lineTotal: 6000, catalogPriceSnapshot: 5200 }] }
+let draft = createReturnDraft(order)
+draft.amount = 1200
+draft.paymentMethod = 'КАРТА'
+draft.returnDate = '2026-11-08'
+let posts = [], finished = [], errors = [], messages = [], replacements = []
+let invalidations = [], refreshed = []
+const req = (key, payload) => ({ requestId: 'qa-fixed-' + key,
+  payload: { ...payload, requestId: 'qa-fixed-' + key } })
+const client = {
+  apiFetch: async (url, init = {}) => {
+    posts.push({ url: String(url), init })
+    return new Response(JSON.stringify({ ok: true, order, pendingInventoryCount: 0 }),
+      { status: 201, headers: { 'content-type': 'application/json' } })
+  },
+  prepareCriticalRequest: req,
+  completeCriticalRequest: (key, id) => finished.push({ key, id }),
+}
+const creationParams = {
+  returnSelectedOrder: order, returnDraft: draft, exchangeSelectedOrder: null,
+  exchangeDraft: createExchangeDraft(), getOrderSourceAvailability: () => null,
+  isAdmin: false,
+  setReturnBusy: () => {}, setExchangeBusy: () => {},
+  setError: value => { if (value) errors.push(value) },
+  setMessage: value => { if (value) messages.push(value) },
+  setReturnSelectedOrderId: id => replacements.push(['returnId', id]),
+  setReturnDraft: value => { draft = typeof value === 'function' ? value(draft) : value },
+  setExchangeSelectedOrderId: () => {}, setExchangeDraft: () => {},
+  setSelectedOrderId: () => {}, setOrderPanel: () => {},
+  ...client,
+  upsertOrderInState: next => replacements.push(['order', next.id]),
+  loadReturnHistory: async () => refreshed.push('returns'),
+  loadExchangeHistory: async () => refreshed.push('exchanges'),
+  refreshActivityLogIfVisible: () => refreshed.push('activity'),
+  refreshFinanceReportsIfVisible: () => refreshed.push('finance'),
+  loadDashboard: async () => refreshed.push('orders'),
+  loadInventoryData: async source => refreshed.push(source),
+  loadInventoryLifecycle: async () => refreshed.push('lifecycle'),
+  loadWorkshopData: async () => refreshed.push('workshop'),
+}
+await createActions(creationParams).saveReturn()
+assert.equal(posts.length, 1)
+assert.equal(posts[0].url, '/api/returns')
+assert.equal(posts[0].init.method, 'POST')
+const postedReturn = JSON.parse(posts[0].init.body)
+assert.equal(posts[0].init.headers['X-Idempotency-Key'], 'qa-fixed-return-create:501')
+assert.equal(postedReturn.requestId, 'qa-fixed-return-create:501')
+assert.equal(postedReturn.amount, 1200)
+assert.deepEqual(postedReturn.paymentParts, [{ method: 'КАРТА', amount: 1200 }])
+assert.deepEqual(postedReturn.items, [], 'Money-only return cannot invent an unreceived physical item')
+assert.deepEqual(finished, [{ key: 'return-create:501', id: 'qa-fixed-return-create:501' }])
+assert.deepEqual(replacements, [['order', 501], ['returnId', null]])
+assert.equal(draft.amount, 0)
+assert(refreshed.includes('warehouse') && refreshed.includes('boutique'))
+assert(messages.at(-1).includes('сохранён'))
+
+posts = []; finished = []; replacements = []; errors = []
+const savedDraft = { ...createReturnDraft(order), amount: 1200, paymentMethod: 'КАРТА', returnDate: '2026-11-08' }
+await createActions({
+  ...creationParams, returnDraft: savedDraft,
+  apiFetch: async (url, init = {}) => { posts.push({ url, init }); throw Error('uncertain return network outcome') },
+  setReturnDraft: () => { throw Error('Unknown outcome cannot clear draft') },
+}).saveReturn()
+assert.equal(posts.length, 1)
+assert.equal(JSON.parse(posts[0].init.body).requestId, 'qa-fixed-return-create:501')
+assert.equal(finished.length, 0, 'Unknown result cannot complete a return requestId')
+assert.deepEqual(replacements, [], 'Unknown result cannot fabricate a financial refund')
+assert.match(errors.at(-1), /uncertain return network outcome/)
+
+const oldOrder = { ...order, pricing_mode: 'legacy', shipping_status: 'not_sent' }
+const legacyDraft = createExchangeDraft(oldOrder)
+legacyDraft.newItem = { ...legacyDraft.newItem, productName: 'ШАПАН QA ЗАМЕНА', quantity: 1 }
+posts = []; finished = []; errors = []; messages = []
+await createActions({
+  ...creationParams,
+  exchangeSelectedOrder: oldOrder,
+  exchangeDraft: legacyDraft,
+  apiFetch: async (url, init = {}) => {
+    posts.push({ url: String(url), init })
+    return new Response(JSON.stringify({ ok: true, exchangeId: 92, order: oldOrder }),
+      { status: 201, headers: { 'content-type': 'application/json' } })
+  },
+}).saveExchange()
+assert.equal(posts.length, 1, 'One legacy replacement must be recorded exactly once')
+assert.equal(posts[0].url, '/api/exchanges')
+const exchangePayload = JSON.parse(posts[0].init.body)
+assert.equal(exchangePayload.oldItemId, 61)
+assert.equal(exchangePayload.oldPhysicalState, 'not_issued')
+assert.equal(exchangePayload.oldReturnSource, 'none',
+  'Never-issued old exchange item must not be physically returned again')
+assert.equal(exchangePayload.newItem.sourceType, 'warehouse')
+assert.equal(exchangePayload.financialAction, 'none')
+assert.equal(exchangePayload.financialAmount, 0)
+assert.equal(finished.length, 1, 'Only confirmed exchange creation may retire its requestId')
+
+let receiptDrafts = [], receivedMessages = [], prompts = [], stockUpdates = 0
+let receiptComplete = [], receiptCalls = [], latestEvent = null, receiptRefresh = []
+let busyStates = []
+const aftercareParams = {
+  apiFetch: async () => { throw Error('Provide explicit receipt response') },
+  askStockResolution: async prompt => { prompts.push(prompt); return true },
+  criticalReturnExchangeClient: client,
+  setReturnBusy: flag => busyStates.push(flag), setExchangeBusy: flag => busyStates.push(flag),
+  setError: value => { if (value) errors.push(value) },
+  setMessage: value => { if (value) receivedMessages.push(value) },
+  setReturnedItemResolutionEventId: id => { latestEvent = id },
+  isAdmin: false, cashRegister: null,
+  setReturnSelectedOrderId: () => {}, setReturnDraft: value => receiptDrafts.push(value),
+  setExchangeSelectedOrderId: () => {}, setSelectedOrderId: () => {},
+  upsertOrderInState: () => {},
+  prepareCriticalRequest: req,
+  completeCriticalRequest: (key, id) => receiptComplete.push({ key, id }),
+  invalidateInventoryStockCaches: () => { stockUpdates += 1 },
+  invalidateFinanceReadCaches: () => {},
+  loadReturnHistory: async () => receiptRefresh.push('returns'),
+  loadExchangeHistory: async () => receiptRefresh.push('exchanges'),
+  refreshActivityLogIfVisible: () => {}, refreshFinanceReportsIfVisible: () => {},
+  loadDashboard: async () => {}, loadWorkshopData: async () => {},
+  loadInventoryData: async source => receiptRefresh.push(source),
+  loadInventoryLifecycle: async () => receiptRefresh.push('lifecycle'),
+  loadCashRegister: async () => {},
+}
+const after = aftercareActions({
+  ...aftercareParams,
+  apiFetch: async (url, init = {}) => {
+    receiptCalls.push({ url: String(url), init })
+    if (receiptCalls.length === 1) return new Response(JSON.stringify({
+      ok: false, code: 'intake_freshness_confirmation_required',
+      productName: 'ШАПАН QA', quantity: 1,
+      latestCheck: { id: 98, checkedAt: '2026-11-07T10:00:00Z', countedQuantity: 1 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ ok: true, freshnessProtected: true }),
+      { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+})
+const input = {
+  operationType: 'return', operationId: 71, operationItemId: 33,
+  destination: 'warehouse', productName: 'ШАПАН QA', externalId: 'QA-501',
+}
+assert.equal(await after.receiveReturnedItemAction(input), true)
+assert.equal(receiptCalls.length, 2)
+assert.deepEqual(receiptCalls.map(x => x.url), ['/api/returned-items/receive', '/api/returned-items/receive'])
+assert.equal(prompts.length, 1, 'After a later stocktake, the operator must decide whether goods were counted')
+assert.deepEqual(receiptCalls.map(x => JSON.parse(x.init.body).freshnessDecision), [undefined, 'already_counted'])
+assert.equal(JSON.parse(receiptCalls[1].init.body).destination, 'warehouse')
+assert.equal(receiptComplete.length, 2, 'Each successful preflight and final receive must preserve a distinct request token')
+assert.equal(stockUpdates, 1, 'Confirmed receipt must invalidate cached stock once, without another physical write')
+assert(receivedMessages.at(-1).includes('Повторно'))
+assert.equal(latestEvent, null)
+assert.deepEqual(busyStates.slice(-2), [true, false])
+
+receiptCalls = []; receiptComplete = []; stockUpdates = 0; errors = []
+const failedReceive = aftercareActions({
+  ...aftercareParams,
+  apiFetch: async (url, init = {}) => { receiptCalls.push({ url, init }); throw Error('uncertain physical intake result') },
+})
+assert.equal(await failedReceive.receiveReturnedItemAction(input), false)
+assert.equal(receiptComplete.length, 0)
+assert.equal(stockUpdates, 0, 'Unknown receipt status cannot pretend stock increased')
+assert.match(errors.at(-1), /uncertain physical intake result/)
+
 
 console.log('Return/exchange physical receipt R1 regression: OK')

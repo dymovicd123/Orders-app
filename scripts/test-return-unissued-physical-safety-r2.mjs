@@ -6,6 +6,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 const types = read('src/app/types.ts')
 const utils = read('src/app/utils.ts')
 const app = read('src/App.tsx')
+const creationActions = read('src/features/orders/returnExchangeCreationActions.ts')
 const ui = read('src/features/sections/OrderReturnsSection.tsx')
 const creation = read('worker/domains/order-return-creation.ts')
 const cancellation = read('worker/domains/order-return-cancellation.ts')
@@ -16,10 +17,11 @@ check(utils.includes("const issuedStockStatuses = new Set(['fulfilled', 'written
 check(utils.includes("order?.shipping_status === 'sent' && (sourceType === 'workshop' || !stockStatus)"), 'Return draft uses broad sent status instead of Workshop/missing-status fallback')
 check(utils.includes('issuedToClient,'), 'Return draft does not expose the derived handover fact')
 
-const saveStart = app.indexOf('async function saveReturn()')
-const saveEnd = app.indexOf('\n\n  async function saveExchange', saveStart)
-const save = app.slice(saveStart, saveEnd)
-check(save.includes('prepareReturnCreation(returnSelectedOrder, returnDraft)'), 'Return client must call validated preparation before saving')
+const saveStart = creationActions.indexOf('async function saveReturn()')
+const saveEnd = creationActions.indexOf('\n\n  async function saveExchange', saveStart)
+const save = creationActions.slice(saveStart, saveEnd)
+check(app.includes('createReturnExchangeCreationActions({') && saveStart >= 0 && saveEnd > saveStart
+  && save.includes('prepareReturnCreation(returnSelectedOrder, returnDraft)'), 'Return client must call validated preparation before saving')
 check(preparation.includes('selectedUnissuedItem') && preparation.includes('!item.issuedToClient'), 'Return preparation must reject never-issued physical items')
 check(preparation.includes('Если нужно вернуть только деньги'), 'Return preparation must explain money-only refund path')
 

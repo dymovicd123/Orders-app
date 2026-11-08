@@ -7,6 +7,7 @@ function check(condition, message) {
 const lifecycle = fs.readFileSync('worker/domains/lifecycle.ts', 'utf8')
 const worker = fs.readFileSync('worker/index.ts', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
+const aftercare = fs.readFileSync('src/features/orders/returnExchangeAftercareActions.ts', 'utf8')
 const returnsSection = fs.readFileSync('src/features/sections/OrderReturnsSection.tsx', 'utf8')
 const exchangeSection = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
 
@@ -22,8 +23,8 @@ const exchangeRoute = exchangeStart >= 0 ? worker.slice(exchangeStart, exchangeS
 check(returnRoute && !returnRoute.includes('requireAdminAccess(request)'), 'return cancellation is still admin-only')
 check(exchangeRoute && !exchangeRoute.includes('requireAdminAccess(request)'), 'exchange cancellation is still admin-only')
 check(worker.includes("returnExchangeCancelAutonomy: '192b2a5'"), 'health marker missing')
-check(!app.includes('Отмена возврата доступна только администратору.'), 'frontend still blocks manager return cancellation')
-check(!app.includes('Отмена обмена доступна только администратору.'), 'frontend still blocks manager exchange cancellation')
+check(!app.includes('Отмена возврата доступна только администратору.') && !aftercare.includes('Отмена возврата доступна только администратору.'), 'frontend still blocks manager return cancellation')
+check(!app.includes('Отмена обмена доступна только администратору.') && !aftercare.includes('Отмена обмена доступна только администратору.'), 'frontend still blocks manager exchange cancellation')
 check(returnsSection.includes('>Отменить возврат</button>}'), 'return cancel action is not available in ordinary mode')
 check(exchangeSection.includes("entry.status !== 'cancelled' ? <button"), 'exchange cancel action is not available in ordinary mode')
 // Real critical-request transport, compiled from the same typed source consumed by App.
@@ -102,10 +103,10 @@ assert.equal(sent[3].key, sent[4].key, 'Stale or uncertain money correction retr
 assert.deepEqual(sent[4].body, { ...financePayload, requestId: sent[4].key },
   'Optimistic finance snapshot and money fields must remain exact')
 assert.deepEqual(completed[2], { key: 'exchange-financial-correct:81', requestId: sent[4].key })
-assert(app.includes('cancelReturnCriticalRequest(criticalReturnExchangeClient, entry.id)'))
-assert(app.includes('cancelExchangeCriticalRequest(criticalReturnExchangeClient, entry.id)'))
-assert(app.includes('correctExchangeFinancialCriticalRequest(criticalReturnExchangeClient, entry.id, payload)'))
-assert(app.includes('await Promise.allSettled([') && app.includes('refreshFinanceReportsIfVisible()'),
+assert(app.includes('createReturnExchangeAftercareActions({') && aftercare.includes('cancelReturnCriticalRequest(criticalReturnExchangeClient, entry.id)'))
+assert(aftercare.includes('cancelExchangeCriticalRequest(criticalReturnExchangeClient, entry.id)'))
+assert(aftercare.includes('correctExchangeFinancialCriticalRequest(criticalReturnExchangeClient, entry.id, payload)'))
+assert(aftercare.includes('await Promise.allSettled([') && aftercare.includes('refreshFinanceReportsIfVisible()'),
   'App must still refresh operation, finance, stock and workshop after a successful write')
 console.log('RETURN_EXCHANGE_TYPED_CRITICAL_PATCH_REPLAY_STALE_CAS_PASS')
 
