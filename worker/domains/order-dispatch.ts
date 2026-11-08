@@ -4,10 +4,11 @@ import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { priorIssueEvidenceSql, readPriorIssuedItemIds } from './order-prior-issued-origin.ts'
 import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts'
 import { CriticalOperationConflictError } from './critical.ts'
+import { boundedDispatchStock, DispatchStockConfirmationRequired, normalizeDispatchStockConfirmations, type DispatchStockConfirmation } from './order-dispatch-confirmation.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
 
 type Selection = { orderItemId: number; quantity: number }
-type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
+type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; activeQuantity: number; unresolvedQuantity: number; needsConfirmation: boolean; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
 
 const fail = (message: string): never => { throw new CriticalOperationConflictError(message) }
 
@@ -22,12 +23,13 @@ const fail = (message: string): never => { throw new CriticalOperationConflictEr
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
   orderId: number,
-  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string },
+  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; stockConfirmations?: DispatchStockConfirmation[] },
 ) {
   const requestId = cleanText(input.requestId)
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)) fail('Повторите отправку после обновления заказа.')
   if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 40) fail('Выберите товары для отправки.')
   if (input.items.some(row=>!Number.isSafeInteger(row.orderItemId)||row.orderItemId<=0||!Number.isSafeInteger(row.quantity)||row.quantity<=0)) fail('Укажите корректное количество.')
+  const confirmations=normalizeDispatchStockConfirmations(input.stockConfirmations)
   const uniqueIds = new Set(input.items.map(x=>x.orderItemId))
   if (uniqueIds.size !== input.items.length) fail('Одна позиция выбрана несколько раз.')
   const replay = await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=? LIMIT 1').bind(requestId).first<{id:number;order_id:number}>()
@@ -132,13 +134,17 @@ export async function dispatchSelectedCompleteOrderLines(
   const reservations = (reserved.results||[]).filter(row=>selectedStock.some(x=>x.orderItemId===toInt(row.order_item_id,0)))
   if (reservations.length!==selectedStock.length || reservations.some(x=>{
     const item=selectedStock.find(row=>row.orderItemId===toInt(x.order_item_id,0))
-    return !item || cleanText(x.status)!==(item.dispatchPriorIssued?'fulfilled':'active')
-  })) fail('Резерв товара изменился. Обновите заказ.')
+    const expected=item?.dispatchPriorIssued?'fulfilled':item?.reservationStatus==='unresolved'?'unresolved':'active'
+    return !item || cleanText(x.status)!==expected
+  })) fail('Связь заказа с товаром изменилась. Обновите заказ.')
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
   for (const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)
     if (!r || toInt(r.quantity,0)!==item.originalQuantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
-      fail('Резерв, склад или характеристики вещи изменились. Обновите заказ.')
+      fail('Связь со складом или характеристики вещи изменились. Обновите заказ.')
+    }
+    if(cleanText(r.status)==='unresolved' && item.quantity!==item.originalQuantity){
+      fail('При уточнении наличия отправьте всю выбранную позицию. Для частичной отправки сначала разделите заказ.')
     }
   }
 
