@@ -19,6 +19,7 @@ const tests=[
  'scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs',
  'scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs',
  'scripts/test-p0-financial-atomic-20261027.mjs',
+ 'scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs',
  'scripts/test-return-exchange-cancel-autonomy.mjs',
  'scripts/test-operational-autonomy-r3-return-exchange-capacity.mjs',
  'scripts/test-operational-autonomy-a4-handover-correction.mjs',
