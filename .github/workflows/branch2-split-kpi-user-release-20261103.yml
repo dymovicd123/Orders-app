@@ -40,9 +40,11 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          # PR #814 was fully reviewed. Only this child may be published.
-          test "$(git rev-parse HEAD^)" = '7ddb6b54403978cf793e6e9c299668bd214592e5'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
+          # PR #815 failed safely before deploy on a normal build-generated redirect.
+          # Review and publish only this two-file correction from that exact parent.
+          test "$(git rev-parse HEAD^)" = 'c6d7fce47f818d1e5a14fde1965c89ba8dc0e71c'
+          expected="$(printf '%s\n' '.github/workflows/branch2-split-kpi-user-release-20261103.yml' 'scripts/branch2-manual-release.mjs')"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$expected"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node scripts/branch2-manual-release.mjs --check
