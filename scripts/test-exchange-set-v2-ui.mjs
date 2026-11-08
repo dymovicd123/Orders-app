@@ -32,7 +32,7 @@ check(smart.includes('Нужно доплатить') && smart.includes('Доп�
 check(smart.includes('exchange-money-result') && !smart.includes('exchange-money-grid') && !smart.includes('Что произойдёт'), 'Smart Exchange still duplicates technical arithmetic/final summary blocks')
 check(!smart.includes('Без доплаты/возврата') && !smart.includes('Клиент доплачивает'), 'Smart Exchange still asks the operator to classify obvious money arithmetic')
 
-check(smart.includes('Ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
+check(smart.includes('Нет, ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
 check(smart.includes('Товар клиенту не выдавали') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
 check(smart.includes("issuedStockStatuses.has(status)") && smart.includes("sentWorkshop") && smart.includes("!status && exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not combine exact stock handover truth with the Workshop-only sent fallback')
 check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
@@ -43,11 +43,11 @@ check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was in
 check(smart.includes('destinationFor(group.entry.id, item)') && smart.includes('group.items.map'), 'Arrival destination is not independent per returned line')
 check(smart.includes("operationType: 'exchange'") && smart.includes('operationItemId: Number(item.id || 0)'), 'Arrival queue is not connected to the existing per-item receive operation')
 check(smart.includes('newItemStockIdentityKey') && smart.includes('batchRequired') && smart.includes('matchingIndexes'), 'Repeated replacement rows do not aggregate physical demand before save')
-check(smart.includes('setObservedPhysicalForGroup') && smart.includes('Фактическое количество задаётся один раз у первой одинаковой позиции'), 'Repeated replacement rows can submit conflicting physical observations')
-check(smart.includes('exchange-new-primary-fields') && smart.includes('Сначала выберите товар — после этого появятся его характеристики и цена.'), 'New-item form still exposes the full technical SKU editor before a product is selected')
+check(smart.includes('setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)') && smart.includes('Подтверждение выдачи одинаковых позиций — у первой строки.'), 'Repeated replacement rows can submit conflicting physical observations')
+check(smart.includes('exchange-new-primary-fields') && smart.includes('Нажмите «Выбрать товар» и укажите вещь, которую получит клиент.'), 'New-item form still exposes the full technical SKU editor before a product is selected')
 check(smart.includes('saveBlockReason') && smart.includes('Укажите цену продажи для каждого нового товара.') && smart.includes('disabled={exchangeBusy || Boolean(saveBlockReason)}'), 'Exchange save does not explain incomplete manager input before submit')
 check(smart.includes('useEffect(() =>') && smart.includes('draftPaymentAmount > dueBeforeSettlement') && smart.includes("paymentAmount: 0, paymentMethod: ''"), 'Exchange can keep a hidden stale payment after the composition changes')
-check(smart.includes("productName: value, unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing'"), 'Free-typing another replacement product can keep the previous product price snapshot')
+check(workspace.includes('function applyExchangeSetNewProductPick(') && workspace.includes("unitPrice: pricing.status === 'matched' ? pricing.salePrice : undefined") && workspace.includes("catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null"), 'Free-typing another replacement product can keep the previous product price snapshot')
 
 check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
