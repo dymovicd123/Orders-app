@@ -819,7 +819,7 @@ try {
   const lateReceived=await api('/api/returned-items/receive','POST',lateReceiptPayload)
   assert.equal(lateReceived.data.ok,true)
   assert.equal(lateReceived.data.stockApplied,true,
-    'Exact physically returned exchange item must be applied once')
+    'Exact physically returned exchange item must be applied once: '+JSON.stringify({result:lateReceived.data,oldStock:stock(),oldItem:sqlite.prepare('SELECT * FROM exchange_items WHERE id=?').get(oldPending.id)}))
   assert.equal(Number(stock().quantity),lateOldBefore+1)
   assert.equal(Number(stock().reserved_quantity),oldReservedBeforeReceive,
     'Receiving the old SKU must not steal a different order reservation')
