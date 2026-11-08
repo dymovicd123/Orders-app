@@ -42,7 +42,7 @@ function includesRefundEventCall(node) {
   return ts.forEachChild(node, includesRefundEventCall) === true
 }
 function hasMoneyGuardedRefund(node) {
-  if (ts.isIfStatement(node) && node.expression.getText(returnAst).replace(/\\s/g, '') === 'amount>0'
+  if (ts.isIfStatement(node) && node.expression.getText(returnAst).replace(/\s/g, '') === 'amount>0'
     && includesRefundEventCall(node.thenStatement)) return true
   return ts.forEachChild(node, hasMoneyGuardedRefund) === true
 }
