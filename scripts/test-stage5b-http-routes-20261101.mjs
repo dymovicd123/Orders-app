@@ -47,6 +47,14 @@ const snapshot=()=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory
 const movementCount=()=>Number(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE movement_type='sale'").get().n)
 try{
  await api('GET',prefix+'/plan',undefined,401,false)
+ await api('GET',prefix+'/dispatches',undefined,401,false)
+ await api('POST',prefix+'/dispatches',{
+   requestId:'stage5-http-unauthorized-01',items:[{orderItemId:9561,quantity:1}]
+ },401,false)
+ await api('POST',prefix+'/dispatch-items/1/correct',{
+   requestId:'stage5-http-unauthorized-undo-01',reason:'Not authenticated'
+ },401,false)
+ assert.equal(movementCount(),0,'Shipping route extraction must preserve authentication before business writes')
  const before=await api('GET',prefix+'/plan')
  assert.equal(before.draftOnly,true)
  assert.equal(before.selectedQuantity,3)

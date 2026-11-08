@@ -7,6 +7,7 @@ on:
       - 'worker/domains/order-reservations.ts'
       - 'worker/domains/catalog.ts'
       - 'worker/index.ts'
+      - 'worker/routes/order-selective-shipping.ts'
       - 'src/features/orders/**'
       - 'src/app/controllers/useWorkspaceViewModel.tsx'
       - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
