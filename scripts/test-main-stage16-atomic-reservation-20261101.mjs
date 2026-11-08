@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { build } from 'esbuild'
+import { createEmptyOrderDraft, createEmptyEditorPayment } from '../src/app/utils.ts'
 import { admitOrderReservationAtomically, recoverPendingOrderReservationsBeforeShipping } from '../worker/domains/reservation-admission.ts'
 
 // In-memory SQLite, not remote D1. Exercise the exact candidate SQL and triggers.
@@ -148,6 +150,115 @@ assert.equal(get('SELECT id FROM inventory_reservations WHERE order_item_id=?',a
 assert.equal(get('SELECT stock_writeoff_status AS s FROM order_items WHERE id=?',available.orderItemId).s,'reserved')
 assert.equal(get('SELECT quantity AS q FROM inventory_stock WHERE id=3').q,8)
 assert.equal((await recoverPendingOrderReservationsBeforeShipping(db,12,'2026-11-01T20:07:00Z')).attempted,0)
+
+// Check the actual bundled browser create-order boundary as well as Worker/SQLite.
+// The payload and request ID must match the physical/reservation-safe server API.
+const bundled = await build({
+  entryPoints: ['src/features/orders/orderCreationActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createOrderCreationActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64')
+)
+const initialDraft = createEmptyOrderDraft()
+let createDraft = {
+  ...initialDraft,
+  managerId: 7,
+  managerName: 'QA MANAGER',
+  orderDate: '2026-11-08',
+  items: [{
+    ...initialDraft.items[0],
+    productName: 'QA ШАПАН',
+    audienceType: 'ВЗРОСЛЫЙ', gender: 'ЖЕН',
+    color: 'БЕЛЫЙ', material: 'СТАНДАРТ', length: 'СТАНДАРТ', size: '46',
+    sourceType: 'warehouse', quantity: 1, unitPrice: 10000,
+    catalogPriceSnapshot: null, priceOrigin: 'manual',
+  }],
+  payments: [{ ...createEmptyEditorPayment('2026-11-08'), method: 'КАРТА', amount: 3000, paymentKind: 'primary' }],
+}
+let capturedRequests = []
+let completedCritical = []
+let invalidated = []
+let addedOrder = null
+let lastMessage = ''
+let lastError = ''
+let orderBusy = false
+const baseArgs = {
+  catalogData: null, orderPanel: 'create', authUser: null,
+  references: null, activeSector: 'orders',
+  getSizeOptions: () => ['44', '46'],
+  setOrderBusy: value => { orderBusy = value },
+  setError: value => { lastError = value },
+  setMessage: value => { lastMessage = value },
+  setOrderPanel: () => {}, setSelectedOrderId: () => {},
+  setEditorDraft: () => {}, setEditorOpen: () => {},
+  prepareCriticalRequest: (key, payload) => ({ requestId: 'qa-safe-create-1', payload: { ...payload, requestId: 'qa-safe-create-1' } }),
+  completeCriticalRequest: (key, id) => { completedCritical.push({ key, id }) },
+  apiFetch: async (url, options = {}) => {
+    capturedRequests.push({ url: String(url), options })
+    return new Response(JSON.stringify({
+      ok: true, orderId: 902, externalId: 'QA-902',
+      totalAmount: 10000, receivedAmount: 3000, debtAmount: 7000, stockWriteOff: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+  invalidateFinanceReadCaches: () => invalidated.push('finance'),
+  invalidateInventoryStockCaches: include => invalidated.push(include ? 'stock-catalog' : 'stock'),
+  upsertOrderInState: order => { addedOrder = order },
+  refreshOrderList: () => {}, refreshWorkshop: () => {}, refreshOrderFinance: () => {},
+  setCreateDraft: updater => { createDraft = typeof updater === 'function' ? updater(createDraft) : updater },
+}
+let creator = createOrderCreationActions({ ...baseArgs, createDraft })
+creator.updateCreateDraft('orderDate', '2026-11-05')
+assert.equal(createDraft.payments[0].paymentDate, '2026-11-05',
+  'Changing the order date must also synchronize primary payment date')
+assert.equal(createDraft.orderDate, '2026-11-05')
+creator = createOrderCreationActions({ ...baseArgs, createDraft })
+await creator.createOrderFromDraft()
+assert.equal(capturedRequests.length, 1, 'One order save must send exactly one critical POST')
+assert.equal(capturedRequests[0].url, '/api/orders')
+assert.equal(capturedRequests[0].options.method, 'POST')
+assert.equal(capturedRequests[0].options.headers['X-Idempotency-Key'], 'qa-safe-create-1')
+const payload = JSON.parse(capturedRequests[0].options.body)
+assert.equal(payload.requestId, 'qa-safe-create-1')
+assert.equal(payload.orderDate, '2026-11-05')
+assert.equal(payload.pricingMode, 'itemized_v1')
+assert.equal(payload.items[0].unitPrice, 10000)
+assert.equal(payload.items[0].catalogPriceSnapshot, null)
+assert.equal(payload.items[0].sourceType, 'warehouse')
+assert.equal(payload.payments[0].amount, 3000)
+assert.equal(payload.payments[0].paymentDate, '2026-11-05')
+assert.equal(payload.items[0].observedPhysicalQuantity, undefined,
+  'Creating an order must not invent physical counts')
+assert.deepEqual(completedCritical, [{ key: 'order-create', id: 'qa-safe-create-1' }])
+assert.deepEqual(invalidated, ['finance', 'stock-catalog'],
+  'Confirmed order creation must invalidate stock reservations and finance caches once')
+assert.equal(addedOrder?.id, 902)
+assert.equal(addedOrder?.debt_amount, 7000)
+assert.equal(orderBusy, false)
+assert.match(lastMessage, /QA-902/)
+
+capturedRequests = []
+completedCritical = []
+invalidated = []
+addedOrder = null
+lastError = ''
+const failureDraft = { ...createDraft, managerId: 7 }
+const failing = createOrderCreationActions({
+  ...baseArgs,
+  createDraft: failureDraft,
+  apiFetch: async (url, options = {}) => {
+    capturedRequests.push({ url: String(url), options })
+    throw new Error('uncertain network result')
+  },
+  setCreateDraft: () => { throw new Error('Draft must survive an unknown write outcome') },
+})
+await failing.createOrderFromDraft()
+assert.equal(capturedRequests.length, 1)
+assert.equal(JSON.parse(capturedRequests[0].options.body).requestId, 'qa-safe-create-1')
+assert.equal(completedCritical.length, 0, 'Unknown network outcome cannot retire the idempotency token')
+assert.equal(addedOrder, null, 'Unknown network outcome cannot fabricate a new order')
+assert.match(lastError, /uncertain network result/)
+assert.equal(orderBusy, false, 'Busy state must clear even after an indeterminate response')
 
 sql.close()
 console.log('MAIN_STAGE16_ATOMIC_ADMISSION_SQLITE_PASS: last-piece, stale approval, sources, wrong SKU, trigger and no phantom stock')
