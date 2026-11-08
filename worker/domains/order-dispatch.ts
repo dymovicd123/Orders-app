@@ -13,10 +13,10 @@ type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity:
 const fail = (message: string): never => { throw new CriticalOperationConflictError(message) }
 
 /**
- * Ships selected lines or a subset of a reserved STOCK line. When Q > shipped,
+ * Ships selected lines or a subset of a known-SKU STOCK line. When Q > shipped,
  * splits its business row and its unique reservation atomically: the original
  * row becomes the fully shipped Q_sent row, and a new row/reservation preserves
- * Q_remaining. Existing Return/Exchange consumers therefore still see complete
+ * Q_remaining, including the unresolved reason if no active reserve exists. Existing Return/Exchange consumers therefore still see complete
  * per-row physical truth instead of an ambiguous partially-fulfilled flag.
  * Workshop rows remain whole-quantity until workshop task splitting is safe.
  */
@@ -142,9 +142,6 @@ export async function dispatchSelectedCompleteOrderLines(
     const r=perItemReservation.get(item.orderItemId)
     if (!r || toInt(r.quantity,0)!==item.originalQuantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
       fail('Связь со складом или характеристики вещи изменились. Обновите заказ.')
-    }
-    if(r && cleanText(r.status)==='unresolved' && item.quantity!==item.originalQuantity){
-      fail('При уточнении наличия отправьте всю выбранную позицию. Для частичной отправки сначала разделите заказ.')
     }
   }
 
@@ -329,6 +326,9 @@ export async function dispatchSelectedCompleteOrderLines(
     const splitKey = `dispatch-rem:${requestId}:${item.orderItemId}`
     const splitItemSql = `(SELECT id FROM order_items
        WHERE order_id=? AND inventory_obligation_key=? ORDER BY id DESC LIMIT 1)`
+    const pending = item.reservationStatus === 'unresolved'
+    const itemState = pending ? 'pending_reservation' : 'reserved'
+    const reservationState = pending ? 'unresolved' : 'active'
     statements.push(
       db.prepare(`INSERT INTO order_items (
         order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,
@@ -340,21 +340,21 @@ export async function dispatchSelectedCompleteOrderLines(
         color_snapshot,material_snapshot,length_snapshot,size_snapshot,?,unit_price,
         line_total - CAST(line_total * ? / quantity AS INTEGER),
         catalog_price_snapshot,0,source_type,workshop_comment,workshop_urgent,
-        workshop_due_date,workshop_due_time,'reserved',?,
+        workshop_due_date,workshop_due_time,?, ?,
         ?,inventory_obligation_origin_at
-        FROM order_items WHERE id=? AND order_id=? AND quantity=? AND stock_writeoff_status='reserved'`
-      ).bind(remaining,item.quantity,stamp,splitKey,item.orderItemId,orderId,item.originalQuantity),
+        FROM order_items WHERE id=? AND order_id=? AND quantity=? AND stock_writeoff_status=?`
+      ).bind(remaining,item.quantity,itemState,stamp,splitKey,item.orderItemId,orderId,item.originalQuantity,itemState),
       db.prepare(`INSERT INTO inventory_reservations(
         order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,
         reference_type,reference_id,unresolved_reason,created_at,updated_at)
         SELECT r.order_id,${splitItemSql},r.inventory_source,r.product_id,r.variant_id,?,
-               'active',r.reference_type,r.reference_id,NULL,?,?
-        FROM inventory_reservations r WHERE r.id=? AND r.status='active' AND r.quantity=?`
-      ).bind(orderId,splitKey,remaining,stamp,stamp,toInt(r.id,0),item.originalQuantity),
+               r.status,r.reference_type,r.reference_id,r.unresolved_reason,?,?
+        FROM inventory_reservations r WHERE r.id=? AND r.status=? AND r.quantity=?`
+      ).bind(orderId,splitKey,remaining,stamp,stamp,toInt(r.id,0),reservationState,item.originalQuantity),
       db.prepare(`UPDATE order_items
         SET quantity=?,line_total=CAST(line_total * ? / quantity AS INTEGER)
-        WHERE id=? AND quantity=? AND stock_writeoff_status='reserved'`
-      ).bind(item.quantity,item.quantity,item.orderItemId,item.originalQuantity),
+        WHERE id=? AND quantity=? AND stock_writeoff_status=?`
+      ).bind(item.quantity,item.quantity,item.orderItemId,item.originalQuantity,itemState),
     )
   }
   for(const g of groups.values()){
