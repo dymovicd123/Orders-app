@@ -491,6 +491,52 @@ try {
   assert.equal(Number(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount),21000)
   assert.equal(Number(stock().quantity),beforeMultiOld)
   assert.equal(Number(newStock().quantity),beforeMultiNew)
+  // Real existing Exchange payment correction: change an already committed
+  // legacy extra payment using the exact HTTP endpoint and a fresh CAS
+  // snapshot. This must alter finance only, never the two real SKU counts.
+  const financialExchangeId=Number(secondSwap.data.exchangeId)
+  const financeBefore=sql('SELECT exchange_date,financial_amount,payment_method,comment,payment_id FROM exchanges WHERE id=?',financialExchangeId)
+  assert.equal(Number(financeBefore.financial_amount),1000)
+  const financeEdit={
+    exchangeDate:'2026-10-21',financialAmount:1500,paymentMethod:'ТЕРМИНАЛ',
+    comment:'Исправлена сумма единственной доплаты',
+    expectedExchangeDate:financeBefore.exchange_date,
+    expectedFinancialAmount:Number(financeBefore.financial_amount),
+    expectedPaymentMethod:financeBefore.payment_method,
+    expectedComment:financeBefore.comment||'',
+  }
+  const cashCountBefore=Number(sql("SELECT COUNT(*) AS n FROM cash_register_entries WHERE source_type='exchange_financial_correction' AND source_id=?",String(financialExchangeId)).n)
+  const correctedFinance=await api('/api/exchanges/'+financialExchangeId+'/financials','PATCH',financeEdit,{
+    requestId:'stability-exchange-finance-correct-once',
+  })
+  assert.equal(correctedFinance.data.ok,true)
+  assert.equal(Number(sql('SELECT total_amount FROM orders WHERE id=?',multiId).total_amount),31500)
+  assert.equal(Number(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount),21500)
+  assert.equal(Number(sql('SELECT debt_amount FROM orders WHERE id=?',multiId).debt_amount),10000)
+  assert.equal(Number(sql('SELECT amount FROM payments WHERE id=?',financeBefore.payment_id).amount),1500)
+  assert.equal(sql('SELECT method FROM payments WHERE id=?',financeBefore.payment_id).method,'ТЕРМИНАЛ')
+  assert.equal(Number(stock().quantity),beforeMultiOld)
+  assert.equal(Number(newStock().quantity),beforeMultiNew)
+  const adjustmentEvents=()=>Number(sql("SELECT COUNT(*) AS n FROM financial_events WHERE source_type='exchange' AND source_id=? AND reason='exchange_financial_correction'",financialExchangeId).n)
+  assert.equal(adjustmentEvents(),2,'Correction must append exactly the old reversal and new money fact')
+  const cashCountAfter=Number(sql("SELECT COUNT(*) AS n FROM cash_register_entries WHERE source_type='exchange_financial_correction' AND source_id=?",String(financialExchangeId)).n)
+  assert(cashCountAfter>=cashCountBefore,'Correction must never erase existing cash audit events')
+  const replayFinance=await api('/api/exchanges/'+financialExchangeId+'/financials','PATCH',financeEdit,{
+    requestId:'stability-exchange-finance-correct-once',
+  })
+  assert.equal(replayFinance.data.ok,true)
+  assert.equal(adjustmentEvents(),2,'Same requestId must not create another financial correction')
+  assert.equal(Number(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount),21500)
+  assert.equal(Number(sql("SELECT COUNT(*) AS n FROM cash_register_entries WHERE source_type='exchange_financial_correction' AND source_id=?",String(financialExchangeId)).n),cashCountAfter)
+  const staleFinance=await api('/api/exchanges/'+financialExchangeId+'/financials','PATCH',{
+    ...financeEdit,financialAmount:2000,
+  },{requestId:'stability-exchange-finance-stale-reject',expectedStatus:409})
+  assert.equal(staleFinance.data.ok,false,'Stale financial CAS must reject another correction')
+  assert.equal(adjustmentEvents(),2)
+  assert.equal(Number(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount),21500)
+  assert.equal(Number(stock().quantity),beforeMultiOld,'Stale correction cannot write physical stock')
+  assert.equal(Number(newStock().quantity),beforeMultiNew)
+  console.log('MAIN_EXCHANGE_FINANCIAL_CORRECTION_REAL_HTTP_SQLITE_PASS: payment, debt, reversal, same-ID replay, stale reject, Physical unchanged')
   // Undo in reverse chronological order; original historical total and
   // both exact SKU physical counts must be restored without guesswork.
   for(const [id,key] of [
