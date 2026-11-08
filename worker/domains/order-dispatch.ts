@@ -323,17 +323,30 @@ export async function dispatchSelectedCompleteOrderLines(
     )
   }
   for(const g of groups.values()){
+    const bounded=boundedDispatchStock(g.before,g.quantity,g.reservedBefore,g.activeQuantity)
     statements.push(
       db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
           SELECT 'human_inventory_v2','__dispatch_stock_changed__',?
           WHERE NOT EXISTS(
             SELECT 1 FROM inventory_stock WHERE id=? AND inventory_source=? AND variant_id=? AND quantity=? AND reserved_quantity=?
           )`).bind(stamp,g.stockId,g.source,g.variantId,g.before,g.reservedBefore),
-      db.prepare(`UPDATE inventory_stock SET quantity=quantity-?,reserved_quantity=reserved_quantity-?,
+      db.prepare(`UPDATE inventory_stock SET quantity=?,reserved_quantity=?,
         last_action='Отправка товаров',last_source_ref=?,updated_at=?
         WHERE id=? AND quantity=? AND reserved_quantity=?`
-      ).bind(g.quantity,g.quantity,`dispatch:${requestId}`,stamp,g.stockId,g.before,g.reservedBefore),
+      ).bind(bounded.after,bounded.reservedAfter,`dispatch:${requestId}`,stamp,g.stockId,g.before,g.reservedBefore),
     )
+    if(g.needsConfirmation){
+      statements.push(db.prepare(
+        `INSERT OR IGNORE INTO inventory_operation_evidence(
+          evidence_key,inventory_source,variant_id,operation_type,operation_reference,
+          tracked_physical_before,confirmed_operation_quantity,explained_quantity,unexplained_quantity,
+          confirmed_by,occurred_at,created_at
+        ) VALUES(?,?,?,'shipping',?,?,?,?,?,?,?,?)`
+      ).bind(`dispatch:${requestId}:${g.source}:${g.variantId}`,
+        g.source,g.variantId,`${order.external_id}:dispatch:${requestId}`,
+        g.before,g.quantity,bounded.deducted,bounded.unaccounted,
+        cleanText(input.actor)||'Сотрудник',stamp,stamp))
+    }
   }
   const running=new Map(Array.from(groups.entries()).map(([k,g])=>[k,g.before]))
   for(const item of selected){
@@ -348,7 +361,9 @@ export async function dispatchSelectedCompleteOrderLines(
     const r=perItemReservation.get(item.orderItemId)!
     const group=groups.get(`${item.sourceType}:${toInt(item.variantId,0)}`)!
     const key=`${item.sourceType}:${item.variantId}`
-    const next=(running.get(key)||0)-item.quantity
+    const beforeLine=running.get(key)||0
+    const next=Math.max(0,beforeLine-item.quantity)
+    const accountedDeduction=beforeLine-next
     running.set(key,next)
     const ref=`dispatch:${requestId}:item:${item.orderItemId}`
     statements.push(
@@ -359,13 +374,17 @@ export async function dispatchSelectedCompleteOrderLines(
           reference_type,reference_id,comment,created_at
         ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,'order_dispatch',?,?,?)`
       ).bind(group.source,group.productId,group.variantId,group.productName,group.gender,group.color,
-        group.material,group.length,group.size,-item.quantity,next,ref,`Отправлен заказ ${order.external_id}`,stamp),
-      db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',fulfilled_at=?,updated_at=?
-         WHERE id=? AND status='active' AND quantity=?`
-      ).bind(item.quantity,stamp,stamp,toInt(r.id,0),item.originalQuantity),
+        group.material,group.length,group.size,-accountedDeduction,next,ref,
+        `Отправлен заказ ${order.external_id}${group.needsConfirmation?' · наличие подтверждено при отправке':''}`,stamp),
+      db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',
+         unresolved_reason=NULL,fulfilled_at=?,updated_at=?
+         WHERE id=? AND status=? AND quantity=?`
+      ).bind(item.quantity,stamp,stamp,toInt(r.id,0),
+        item.reservationStatus==='unresolved'?'unresolved':'active',item.originalQuantity),
       db.prepare(`UPDATE order_items SET stock_writeoff_status='fulfilled',stock_quantity_before=?,stock_quantity_after=?
-         WHERE id=? AND stock_writeoff_status='reserved'`
-      ).bind(next+item.quantity,next,item.orderItemId),
+         WHERE id=? AND stock_writeoff_status=?`
+      ).bind(beforeLine,next,item.orderItemId,
+        item.reservationStatus==='unresolved'?'pending_reservation':'reserved'),
       db.prepare(
         `INSERT INTO order_dispatch_items(
           dispatch_id,order_item_id,source_type,variant_id,reservation_id,movement_id,quantity,created_at
