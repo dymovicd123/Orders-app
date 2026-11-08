@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 
-const domain = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const exchangeCreation = fs.readFileSync('worker/domains/order-exchange-creation.ts', 'utf8')
 const receipt = fs.readFileSync('worker/domains/order-returned-item-receipt.ts', 'utf8')
 const exchangeList = fs.readFileSync('worker/domains/order-exchange-list.ts', 'utf8')
 const creation = fs.readFileSync('worker/domains/order-return-creation.ts', 'utf8')
@@ -24,21 +24,21 @@ expect(migration.includes('ALTER TABLE exchange_items ADD COLUMN physical_receiv
 expect(migration.includes('DEFAULT 0'), 'legacy rows must remain untracked by default')
 
 expect(creation.includes("physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return item physicalState contract missing')
-expect(domain.includes("oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange oldPhysicalState contract missing')
+expect(exchangeCreation.includes("oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange oldPhysicalState contract missing')
 expect(creation.includes('physical_tracking, physical_received_at'), 'physical receipt columns are not written by create flows')
 expect(creation.includes("physicalState !== 'pending' ? createdAt : null"), 'return received timestamp semantics missing')
-expect(domain.includes("oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null"), 'exchange received timestamp semantics missing')
+expect(exchangeCreation.includes("oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null"), 'exchange received timestamp semantics missing')
 expect(creation.includes('physicalTracking ? 1 : 0'), 'return tracking flag is not written')
-expect(domain.includes('oldPhysicalTracking ? 1 : 0'), 'exchange tracking flag is not written')
+expect(exchangeCreation.includes('oldPhysicalTracking ? 1 : 0'), 'exchange tracking flag is not written')
 expect(creation.includes("physicalState === 'warehouse' || physicalState === 'boutique'"), 'return destination is not derived from physical state')
-expect(domain.includes("oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique'"), 'exchange destination is not derived from physical state')
+expect(exchangeCreation.includes("oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique'"), 'exchange destination is not derived from physical state')
 
 // Compatibility guard: legacy payloads must still use the existing restock source semantics.
 expect(creation.includes("physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null)"), 'legacy return restock fallback missing')
-expect(domain.includes("oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource)"), 'legacy exchange restock fallback missing')
-expect(domain.includes("const oldWasNotIssued = oldPhysicalState === 'not_issued'"), 'exchange not-issued branch missing')
-expect(domain.includes("await releaseOrderReservationV2("), 'not-issued exchange does not release the old reservation without touching physical stock')
-expect(domain.includes("oldWasNotIssued ? 'not_issued'"), 'not-issued exchange marker is not persisted in the old snapshot')
+expect(exchangeCreation.includes("oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource)"), 'legacy exchange restock fallback missing')
+expect(exchangeCreation.includes("const oldWasNotIssued = oldPhysicalState === 'not_issued'"), 'exchange not-issued branch missing')
+expect(exchangeCreation.includes("await releaseOrderReservationV2("), 'not-issued exchange does not release the old reservation without touching physical stock')
+expect(exchangeCreation.includes("oldWasNotIssued ? 'not_issued'"), 'not-issued exchange marker is not persisted in the old snapshot')
 
 // Delayed physical receipt must be a dedicated idempotent operation, not a generic arrival.
 expect(receipt.includes('export async function receiveReturnedItem'), 'receiveReturnedItem domain operation missing')
