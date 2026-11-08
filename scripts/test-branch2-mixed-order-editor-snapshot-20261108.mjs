@@ -60,4 +60,119 @@ const editPersistence=fs.readFileSync('src/features/orders/orderEditPersistenceA
 const server=fs.readFileSync('worker/domains/orders-write.ts','utf8')
 assert(app.includes('createOrderEditPersistenceActions({') && editPersistence.includes('catalogPriceSnapshot: historicalCatalogSnapshotForEdit('),'Client replacement payload must apply historical snapshot in actual edit submission')
 assert(server.includes('Цена Каталога для неизменённого ценового исполнения является историческим снимком'),'Server must protect immutable snapshots')
+// Execute the exact editor-session implementation to prevent truncated/stale order
+// overview data from replacing a complete itemized order.
+const sessionBuilt = await build({
+ entryPoints:['src/features/orders/orderEditSessionActions.ts'],
+ bundle:true,platform:'node',format:'esm',target:'es2022',write:false,logLevel:'silent',
+})
+const {createOrderEditSessionActions}=await import(
+ 'data:text/javascript;base64,'+Buffer.from(sessionBuilt.outputFiles[0].text).toString('base64')
+)
+const listedOrder={
+ id:771,external_id:'QA-771',order_date:'2026-11-08',pricing_mode:'itemized_v1',
+ manager_id:1,order_status:'active',workshop_status:'ready',source_type:'warehouse',
+ total_amount:145000,received_amount:0,debt_amount:145000,return_amount:0,
+ items:original,payments:[],item_count:7,
+}
+const completeOrder={...listedOrder,items:[...original,{...original[0],id:19}],item_count:7}
+let sessionResponse={...listedOrder,items:original,item_count:6}
+let openCalls=0,fetches=0,sessionError='',lastSessionDraft=null,sessionOpened=false
+let stockRefreshes=0,sessionSelectedOrder=null
+const originalWindow=globalThis.window
+globalThis.window={location:{hash:'#orders'}}
+try {
+ const sessionArgs={
+  isAdmin:true,editorReturnSector:'orders',setEditorReturnSector:()=>{},
+  setEditorOpen:open=>{sessionOpened=open;if(open)openCalls++},
+  setEditorOrderOverride:()=>{},
+  setSelectedOrderId:id=>{sessionSelectedOrder=id},
+  setActiveSector:()=>{},setOrderPanel:()=>{},setMessage:()=>{},
+  setError:value=>{sessionError=value||''},
+  setExpandedOrderItemCounts:()=>{},setEditorDraft:next=>{lastSessionDraft=next},
+  apiFetch:async(url,options={})=>{
+   assert.equal(url,'/api/orders/771')
+   assert.equal(options.cache,'no-store','Editor read must bypass stale GET cache')
+   fetches++
+   return new Response(JSON.stringify({ok:true,order:sessionResponse}),
+    {status:200,headers:{'Content-Type':'application/json'}})
+  },
+  getOrderOperationalProjection:async()=>({canEdit:true,hasCommittedDownstreamOperation:false}),
+  upsertOrderInState:()=>{},
+  loadCatalogData:async()=>null,
+  loadInventoryData:async()=>{stockRefreshes++;return {ok:true,items:[]}},
+ }
+ await createOrderEditSessionActions({...sessionArgs,isAdmin:false}).handleEditOrder(listedOrder)
+ assert.equal(fetches,0,'Manager may not load privileged full-order editor data')
+ await createOrderEditSessionActions(sessionArgs).handleEditOrder(listedOrder)
+ assert.match(sessionError,/неполный состав/)
+ assert.equal(openCalls,0,'Truncated order overview cannot open the editor or drop a SKU')
+ sessionResponse=completeOrder
+ await createOrderEditSessionActions(sessionArgs).handleEditOrder(listedOrder)
+ assert.equal(lastSessionDraft?.items.length,7,'All seven items must be loaded before editing')
+ assert.equal(sessionOpened,true)
+ assert.equal(sessionSelectedOrder,771)
+ assert.equal(globalThis.window.location.hash,'#editor')
+ assert.equal(stockRefreshes,2,'Editor read refreshes each physical location without mutating stock')
+ createOrderEditSessionActions(sessionArgs).closeOrderEditor()
+ assert.equal(sessionSelectedOrder,null)
+ assert.equal(globalThis.window.location.hash,'#orders')
+}finally{
+ if(originalWindow===undefined)delete globalThis.window
+ else globalThis.window=originalWindow
+}
+
+const correctionBuilt=await build({
+ entryPoints:['src/features/orders/orderCorrectionsActions.ts'],
+ bundle:true,platform:'node',format:'esm',target:'es2022',write:false,logLevel:'silent',
+})
+const {createOrderCorrectionsActions}=await import(
+ 'data:text/javascript;base64,'+Buffer.from(correctionBuilt.outputFiles[0].text).toString('base64')
+)
+const correctionCalls=[],completedCorrections=[]
+const corrector=createOrderCorrectionsActions({
+ setSavingOrder:()=>{},setError:()=>{},setMessage:()=>{},
+ prepareCriticalRequest:(key,payload)=>({
+  requestId:'qa-correct-771',payload:{...payload,requestId:'qa-correct-771'},
+ }),
+ completeCriticalRequest:(key,id)=>completedCorrections.push({key,id}),
+ apiFetch:async(url,options={})=>{
+  correctionCalls.push({url:String(url),options})
+  return new Response(JSON.stringify({ok:true}),
+   {status:200,headers:{'Content-Type':'application/json'}})
+ },
+ upsertOrderInState:()=>{},refreshDashboard:()=>{},
+})
+const unchangedMeta={
+ orderDate:'2026-11-08',customerPhone:'',customerName:'',
+ city:'',deliveryType:'',comment:'',
+}
+assert.equal(await corrector.correctOrderMetadata(listedOrder,unchangedMeta),true)
+assert.equal(correctionCalls.length,0,'Unchanged metadata must not generate an extra PATCH')
+await corrector.correctRecordedOrderItemPrices(listedOrder,[
+ {item:original[0],unitPrice:22600},{item:original[1],unitPrice:27550},
+])
+assert.equal(correctionCalls.length,1)
+assert.equal(correctionCalls[0].url,'/api/orders/771')
+assert.equal(correctionCalls[0].options.method,'PATCH')
+const correctionPayload=JSON.parse(correctionCalls[0].options.body)
+assert.equal(correctionPayload.paymentCorrections,undefined,
+ 'Historical price correction must never insert/update paid money events')
+assert.equal(correctionPayload.itemPriceCorrections.length,2)
+assert.deepEqual(correctionPayload.itemPriceCorrections.map(x=>({
+ id:x.orderItemId,expectedUnitPrice:x.expectedUnitPrice,expectedSnapshot:x.expectedCatalogPriceSnapshot,
+})),[
+ {id:11,expectedUnitPrice:22500,expectedSnapshot:22500},
+ {id:14,expectedUnitPrice:27500,expectedSnapshot:27000},
+], 'Recorded price corrections must retain original line and price CAS')
+assert.deepEqual(completedCorrections,[{key:'recorded-price-correction-batch:771:11-14',id:'qa-correct-771'}])
+await corrector.correctRetiredExchangePrice(listedOrder,{
+ exchangeId:900,orderItemId:14,productName:'БАЯН СҰЛУ ШАПАН',
+ size:'44',color:'СВЕТЛО-БЕЖЕВЫЙ',originalUnitPrice:27500,currentRecordedUnitPrice:27500,
+},27550)
+assert.equal(correctionCalls[1].url,'/api/exchanges/900/old-recorded-price')
+assert.deepEqual(JSON.parse(correctionCalls[1].options.body),{
+ orderItemId:14,expectedUnitPrice:27500,newUnitPrice:27550,requestId:'qa-correct-771',
+}, 'Price before historical exchange must not rewrite the actual exchange or money ledger')
+
 console.log('BRANCH2_MIXED_EDITOR_SNAPSHOT_PASS: Work 6 to 7 items, 145000 to 195200, sale price edit, existing payments, execution snapshots')
