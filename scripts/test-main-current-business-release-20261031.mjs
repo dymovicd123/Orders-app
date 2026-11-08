@@ -5,6 +5,7 @@ const tests=[
  'scripts/test-ci-historical-workflow-archive-20261108.mjs',
  'scripts/test-main-manager-three-workspaces-20261022.mjs',
  'scripts/test-stage02-post-review-resolver-return-ux.mjs',
+ 'scripts/test-return-unissued-physical-safety-r2.mjs',
  'scripts/test-main-resolver-opposite-gender-20261022.mjs',
  'scripts/test-main-resolver-actionable-20261022.mjs',
  'scripts/test-catalog-resolver-r10-acceptance-matrix.mjs',
