@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { build } from 'esbuild'
 import { DatabaseSync } from 'node:sqlite'
 import { businessMonthRange,previewUserSelectedReferenceMerge } from '../worker/domains/reference-merge-preview.ts'
 import { applyPaymentMethodMerge } from '../worker/domains/reference-payment-merge.ts'
@@ -148,4 +149,88 @@ const code=fs.readFileSync('worker/domains/reference-payment-merge.ts','utf8')
 assert.ok(!/UPDATE cash_register_entries/i.test(code))
 assert.match(code,/reference_payment_merge_lines/)
 assert.match(code,/source_fingerprint/)
+
+// Real frontend reference controller regression: role policy, cache, and last-read wins.
+const compiledReference = await build({
+  entryPoints: ['src/features/references/referenceActions.ts'], bundle:true,
+  platform:'node', format:'esm', target:'es2022', write:false, logLevel:'silent',
+})
+const { createReferenceActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(compiledReference.outputFiles[0].text).toString('base64')
+)
+const refsCalls = []
+let listState = []
+let cacheState = {}
+let countState = {}
+let savedError = null
+let savedMessage = null
+let draftState = null
+let referenceBusyState = false
+const callsRef = async (url, init) => {
+  refsCalls.push({url,init})
+  if (url === '/api/reference-data') return Response.json({ok:true,managerOptions:[]})
+  if (url.startsWith('/api/reference-values/counts')) return Response.json({ok:true,counts:{materials:{total:1,active:1,inactive:0}}})
+  if (url === '/api/reference-values?kind=materials') return Response.json({ok:true,items:[{id:8,value:'ШЁЛК',isActive:true}]})
+  if (url === '/api/reference-values' && init?.method === 'POST') return Response.json({ok:true,value:'ШЁЛК',reused:false,restored:false})
+  if (url === '/api/reference-values/8' && init?.method === 'DELETE') return Response.json({ok:true})
+  throw new Error('Unexpected reference HTTP: ' + url)
+}
+const refArgs = {
+  isAdmin:false, canManageWarehouse:true, references:null, referenceKind:'materials',
+  referenceDraft:{id:0,value:'шёлк',sortOrder:'2',isActive:true},
+  referenceItems:[], referenceItemsCache:{}, referenceKindCounts:{}, referenceBusy:false,
+  referenceRequestIdRef:{current:0},
+  setReferences:()=>{},
+  setReferenceItems:v=> {listState=v},
+  setReferenceItemsCache:fn => {cacheState=fn(cacheState)},
+  setReferenceKindCounts:fn => {countState=fn(countState)},
+  setReferenceBusy:v => {referenceBusyState=v},
+  setReferenceDraft:v => {draftState=v},
+  setReferenceKind:()=>{},
+  setReferenceSearch:()=>{},
+  setReferenceStatusFilter:()=>{},
+  setError:v=>{savedError=v},
+  setMessage:v=>{savedMessage=v},
+  apiFetch:callsRef,
+}
+const refs = createReferenceActions(refArgs)
+await refs.loadReferenceItems('materials',true)
+assert.equal(listState[0].value,'ШЁЛК')
+assert.equal(cacheState.materials[0].value,'ШЁЛК')
+assert.deepEqual(countState.materials,{total:1,active:1,inactive:0})
+assert.equal(referenceBusyState,false)
+await refs.saveReferenceEntry()
+const posted=refsCalls.find(c=>c.url==='/api/reference-values'&&c.init?.method==='POST')
+assert.deepEqual(JSON.parse(posted.init.body),{kind:'materials',value:'ШЁЛК',sortOrder:2,isActive:true})
+assert.equal(draftState.value,'')
+assert.equal(savedError,null)
+assert.match(savedMessage,/Справочник обновлён/)
+await refs.removeReferenceEntry(8)
+assert.equal(refsCalls.find(c=>c.url==='/api/reference-values/8')?.init.method,'DELETE')
+const beforeDenied=refsCalls.length
+const managerRefs=createReferenceActions({...refArgs,canManageWarehouse:false})
+await managerRefs.saveReferenceEntry()
+await managerRefs.removeReferenceEntry(8)
+assert.equal(refsCalls.length,beforeDenied)
+assert.match(savedError,/только администратору/)
+
+// Two overlapping responses may resolve out-of-order; the older one may not overwrite the active list.
+const resolvers=[]
+let finalItems=[]
+let finalBusy=false
+const staleRefs=createReferenceActions({
+  ...refArgs, referenceRequestIdRef:{current:0},
+  setReferenceItems:v=>{ finalItems=v },
+  setReferenceBusy:v=>{ finalBusy=v },
+  apiFetch:async () => new Promise(resolve => { resolvers.push(resolve) }),
+})
+const oldRequest=staleRefs.loadReferenceItems('materials',true)
+const newRequest=staleRefs.loadReferenceItems('materials',true)
+resolvers[1](Response.json({ok:true,items:[{id:2,value:'NEW',isActive:true}]}))
+await newRequest
+resolvers[0](Response.json({ok:true,items:[{id:1,value:'OLD',isActive:true}]}))
+await oldRequest
+assert.equal(finalItems[0].value,'NEW')
+assert.equal(finalBusy,false)
+
 console.log('REFERENCE PAYMENT METHOD MERGE PASSED — Terminal -> Kaspi Pay, month/history, full financial audit, cash guard, rollback and idempotency')
