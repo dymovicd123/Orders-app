@@ -28,7 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
-import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -49,8 +49,7 @@ import { prepareReturnCreation, submitReturnCreation } from './app/returnCreatio
 import { prepareExchangeSetCreation, submitExchangeSetCreation } from './app/exchangeSetCreationOperation'
 import { prepareLegacyExchangePairs } from './app/legacyExchangePreparation'
 import { submitLegacyExchangeBatch, submitLegacyExchangePair } from './app/legacyExchangeCriticalRequests'
-import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
-import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
+import { evaluateItemizedCreatePricing } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
 import { useInventoryMatrixWorkspace } from './features/inventory/useInventoryMatrixWorkspace'
 import { useWarehouseSnapshots } from './features/inventory/useWarehouseSnapshots'
@@ -60,6 +59,8 @@ import { createInventoryMovementActions, type StockResolutionRequiredItemView } 
 import { createWarehouseRecoveryActions } from './features/inventory/warehouseRecoveryActions'
 import { createWarehouseGovernanceActions } from './features/inventory/warehouseGovernanceActions'
 import { createOrderCreationActions } from './features/orders/orderCreationActions'
+import { createOrderEditorActions } from './features/orders/orderEditorActions'
+import { createOrderEditPersistenceActions } from './features/orders/orderEditPersistenceActions'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
@@ -1483,6 +1484,63 @@ function App() {
     invalidateInventoryStockCaches,
     upsertOrderInState,
     refreshOrderList: () => { void loadDashboard(false, filters, 0) },
+    refreshWorkshop: () => { void loadWorkshopData() },
+    refreshOrderFinance: () => { void loadOrdersFinanceSummary(filters, true) },
+  })
+
+  const {
+    updateEditorDraft,
+    updateEditorItem,
+    updateEditorPayment,
+    addEditorPayment,
+    removeEditorPayment,
+    saveEditorPayment,
+    addEditorItem,
+    removeEditorItem,
+    correctRecordedPaymentMethod,
+  } = createOrderEditorActions({
+    editorDraft,
+    selectedOrder,
+    savingOrder,
+    catalogData,
+    getSizeOptions,
+    isAdmin,
+    setEditorDraft,
+    setSavingOrder,
+    setError,
+    setMessage,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    upsertOrderInState,
+    setSelectedOrderId,
+    setEditorOrderOverride,
+    invalidateFinanceReadCaches,
+    refreshDashboard: () => { void loadDashboard(false) },
+    refreshFinanceReports: refreshFinanceReportsIfVisible,
+  })
+
+  const { persistOrder } = createOrderEditPersistenceActions({
+    isAdmin,
+    selectedOrder,
+    activeSector,
+    orderPanel,
+    setSavingOrder,
+    setError,
+    setMessage,
+    getOrderOperationalProjection,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    setEditorDraft,
+    setEditorOrderOverride,
+    setSelectedOrderId,
+    setEditorOpen,
+    invalidateFinanceReadCaches,
+    invalidateInventoryStockCaches,
+    upsertOrderInState,
+    closeOrderEditor,
+    refreshDashboard: () => { void loadDashboard(false) },
     refreshWorkshop: () => { void loadWorkshopData() },
     refreshOrderFinance: () => { void loadOrdersFinanceSummary(filters, true) },
   })
@@ -3715,211 +3773,6 @@ function App() {
     setMessage(isEdit ? 'Вариант обновлён.' : 'Вариант добавлен.')
   }
 
-  function updateEditorDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
-    setEditorDraft((current) => (current ? { ...current, [key]: value } : current))
-  }
-
-  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
-    setEditorDraft((current) => {
-      if (!current) return current
-      const nextItems = current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          if (selectedOrder?.pricing_mode === 'itemized_v1') {
-            nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-            nextItem.priceNeedsConfirmation = false
-          }
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
-        if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
-          nextItem.stockObservationEnabled = false
-          nextItem.observedPhysicalQuantity = null
-          nextItem.shortageAcknowledged = false
-          nextItem.serverShortage = undefined
-        }
-        if (field === 'quantity') {
-          nextItem.shortageAcknowledged = false
-          nextItem.serverShortage = undefined
-        }
-        if (field === 'audienceType') {
-          nextItem.audienceType = normalizeAudienceTypeValue(value)
-        }
-        if (field === 'audienceType') {
-          const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
-          if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
-            nextItem.size = ''
-          }
-        }
-        if (selectedOrder?.pricing_mode === 'itemized_v1' && ['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
-          }
-        }
-        return nextItem
-      })
-      return { ...current, items: nextItems }
-    })
-  }
-
-  function updateEditorPayment(index: number, field: keyof EditorPayment, value: string | number) {
-    setEditorDraft((current) => {
-      if (!current) return current
-      const nextPayments = current.payments.map((payment, paymentIndex) => {
-        if (paymentIndex !== index) return payment
-        if (payment.id && payment.paymentKind === 'extra' && field !== 'method') return payment
-        if (!payment.id && field === 'paymentDate' && payment.paymentKind === 'primary') return payment
-        if (field === 'paymentKind') {
-          const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
-          return {
-            ...payment,
-            paymentKind: nextKind,
-            paymentDate: !payment.id && nextKind === 'primary'
-              ? (current.orderDate || payment.paymentDate)
-              : (payment.paymentDate || formatLocalDateInput()),
-          }
-        }
-        return { ...payment, [field]: value }
-      })
-      return { ...current, payments: nextPayments }
-    })
-  }
-
-  function addEditorPayment(paymentKind: 'primary' | 'debt_close') {
-    const draftKey = `editor-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    setEditorDraft((current) => {
-      if (!current) return current
-      const paymentDate = paymentKind === 'primary'
-        ? (current.orderDate || formatLocalDateInput())
-        : formatLocalDateInput()
-      return {
-        ...current,
-        payments: [...current.payments, { ...createEmptyEditorPayment(paymentDate), paymentKind, draftKey }],
-      }
-    })
-  }
-
-  function removeEditorPayment(index: number) {
-    setEditorDraft((current) => {
-      if (!current || current.payments[index]?.id) return current
-      return { ...current, payments: current.payments.filter((_, paymentIndex) => paymentIndex !== index) }
-    })
-  }
-
-  async function saveEditorPayment(index: number) {
-    if (!editorDraft || !selectedOrder || savingOrder) return
-    const payment = editorDraft.payments[index]
-    if (!payment || payment.id) return
-    const paymentKind = payment.paymentKind === 'primary' || payment.paymentKind === 'debt_close'
-      ? payment.paymentKind
-      : null
-    if (!paymentKind) {
-      setError('Для обычного заказа доступны только первичная оплата и закрытие долга. Доплата оформляется только внутри обмена.')
-      return
-    }
-
-    const amount = Number(payment.amount || 0)
-    if (!payment.paymentDate) {
-      setError('Укажите фактическую дату оплаты.')
-      return
-    }
-    if (!String(payment.method || '').trim()) {
-      setError('Выберите способ оплаты.')
-      return
-    }
-    if (!Number.isInteger(amount) || amount <= 0) {
-      setError('Сумма оплаты должна быть целым числом больше нуля.')
-      return
-    }
-
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        orderId: selectedOrder.id,
-        paymentDate: payment.paymentDate,
-        method: payment.method,
-        amount,
-        paymentKind,
-        comment: payment.comment || '',
-      }
-      const criticalKey = `order-editor-payment:${selectedOrder.id}:${payment.draftKey || index}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{
-        ok?: boolean
-        message?: string
-        paymentId?: number | null
-        order?: OrderRecord
-        refreshRequired?: boolean
-      }>(response, 'Добавление оплаты')
-      if (!response.ok || !result.ok) throw new Error(result.message || `Payment save failed: ${response.status}`)
-      const paymentId = Number(result.paymentId || 0)
-      if (!paymentId) {
-        throw new Error('Оплата могла сохраниться, но сервер не вернул её идентификатор. Повторите сохранение этой строки — повтор безопасен.')
-      }
-      completeCriticalRequest(criticalKey, critical.requestId)
-      setEditorDraft((current) => current ? ({
-        ...current,
-        payments: current.payments.map((entry, paymentIndex) => (
-          paymentIndex === index ? { ...entry, id: paymentId, draftKey: undefined } : entry
-        )),
-      }) : current)
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-        setEditorOrderOverride(result.order)
-      } else if (result.refreshRequired) {
-        void loadDashboard(false)
-      }
-      invalidateFinanceReadCaches()
-      setMessage(`Оплата по заказу ${selectedOrder.external_id} проведена отдельно и не переписывает предыдущие оплаты.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить оплату.')
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-  function addEditorItem() {
-  setEditorDraft((current) => {
-    if (!current) return current
-    const nextItem = selectedOrder?.pricing_mode === 'itemized_v1'
-      ? { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing' as const, priceNeedsConfirmation: false }
-      : createEmptyEditorItem()
-    return { ...current, items: [...current.items, nextItem] }
-  })
-}
-
-function removeEditorItem(index: number) {
-  setEditorDraft((current) => {
-    if (!current) return current
-    if (selectedOrder?.pricing_mode === 'itemized_v1' && current.items.length <= 1) return current
-    const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
-    return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
-  })
-}
-
 function updateDebtPayment(index: number, field: keyof EditorPayment, value: string | number) {
   setDebtPayments((current) => current.map((payment, paymentIndex) => (
     paymentIndex === index ? { ...payment, [field]: value, paymentKind: 'debt_close' } : payment
@@ -4424,50 +4277,6 @@ function removeDebtPayment(index: number) {
   // Admin correction of a recorded payment method, including an exchange-
   // linked extra payment. This is not a second payment and does not submit the
   // item/payment editor draft or rewrite the order after a completed exchange.
-  async function correctRecordedPaymentMethod(
-    order:OrderRecord,payment:OrderRecord['payments'][number],nextMethod:string,
-  ):Promise<{ok:boolean;message:string}>{
-    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет только администратор.'}
-    const method=String(nextMethod||'').trim()
-    if(!method)return {ok:false,message:'Выберите способ оплаты.'}
-    if(!Number.isSafeInteger(Number(payment.id))||Number(payment.id)<=0)
-      return {ok:false,message:'Не удалось определить запись оплаты. Обновите заказ.'}
-    if(method.toUpperCase()===String(payment.method||'').trim().toUpperCase())
-      return {ok:true,message:'Способ оплаты не изменился.'}
-    const payload={paymentCorrections:[{
-      paymentId:Number(payment.id),method,
-      expectedPaymentDate:String(payment.paymentDate||''),
-      expectedMethod:String(payment.method||''),
-      expectedAmount:Number(payment.amount||0),
-      expectedPaymentKind:String(payment.paymentKind||'primary'),
-      expectedComment:String(payment.comment||''),
-    }]}
-    const key='order-admin-payment-method:'+order.id+':'+payment.id
-    setSavingOrder(true);setError(null);setMessage(null)
-    try{
-      const critical=prepareCriticalRequest(key,payload)
-      const response=await apiFetch('/api/orders/'+order.id,{
-        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord;refreshRequired?:boolean}>(
-        response,'Исправление способа оплаты')
-      if(!response.ok||result.ok===false)throw new Error(result.message||'Не удалось исправить способ оплаты.')
-      completeCriticalRequest(key,critical.requestId)
-      if(result.order)upsertOrderInState(result.order)
-      else if(result.refreshRequired)void loadDashboard(false)
-      invalidateFinanceReadCaches()
-      void Promise.allSettled([refreshFinanceReportsIfVisible(),loadDashboard(false)])
-      const message='Способ оплаты #'+payment.id+' исправлен. Сумма, заказ, товары и склад не менялись.'
-      setMessage(message)
-      return {ok:true,message}
-    }catch(error){
-      const message=error instanceof Error?error.message:'Не удалось изменить способ оплаты.'
-      setError(message)
-      return {ok:false,message}
-    }finally{setSavingOrder(false)}
-  }
-
   async function fetchCompleteOrderForEditing(order: OrderRecord): Promise<OrderRecord> {
     // The list is an overview, never the source of truth for a complete itemized rewrite.
     const response = await apiFetch(`/api/orders/${order.id}`, { cache: 'no-store' })
@@ -4554,367 +4363,6 @@ function removeDebtPayment(index: number) {
       })
     })
   }
-
-  async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
-    if (!isAdmin) {
-      setError('Полный редактор доступен только администратору. Используйте отдельные исправления цены и реквизитов.')
-      return null
-    }
-    const order = targetOrder || selectedOrder
-    if (!order) return
-    const isItemizedEdit = order.pricing_mode === 'itemized_v1'
-    const normalizedEditorText = (value: unknown) => normalizeSuggestion(String(value ?? ''))
-    const originalItemsById = new Map(order.items.map((item) => [Number(item.id || 0), item]))
-    const isItemizedContentRewrite = isItemizedEdit && (
-      nextDraft.items.length !== order.items.length
-      || nextDraft.items.some((item) => {
-        const original = originalItemsById.get(Number(item.orderItemId || 0))
-        if (!original) return true
-        const originalSource = original.isWorkshop ? 'workshop' : (original.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        const nextSource = item.sourceType === 'workshop' ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        return normalizedEditorText(item.productName) !== normalizedEditorText(original.productName)
-          || normalizeAudienceTypeValue(item.audienceType) !== normalizeAudienceTypeValue(original.audienceType)
-          || normalizedEditorText(item.gender) !== normalizedEditorText(original.gender)
-          || normalizedEditorText(item.color) !== normalizedEditorText(original.color)
-          || normalizedEditorText(item.material || 'СТАНДАРТ') !== normalizedEditorText(original.material || 'СТАНДАРТ')
-          || normalizedEditorText(item.length || 'СТАНДАРТ') !== normalizedEditorText(original.length || 'СТАНДАРТ')
-          || normalizedEditorText(item.size) !== normalizedEditorText(original.size)
-          || Number(item.quantity || 0) !== Number(original.quantity || 0)
-          || nextSource !== originalSource
-          || String(item.workshopComment || '').trim() !== String(original.workshopComment || '').trim()
-          || Boolean(item.workshopUrgent) !== Boolean(original.workshopUrgent)
-          || String(item.workshopUrgent ? (item.workshopDueDate || '') : '') !== String(original.workshopUrgent ? (original.workshopDueDate || '') : '')
-          || String(item.workshopUrgent ? (item.workshopDueTime || '') : '') !== String(original.workshopUrgent ? (original.workshopDueTime || '') : '')
-      })
-    )
-    const projection = await getOrderOperationalProjection(order)
-    if (!projection.canEdit) {
-      setMessage(projection.hasCommittedDownstreamOperation
-        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
-        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
-      return
-    }
-
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-
-    try {
-      const itemPriceCorrections: Array<{
-        orderItemId: number
-        unitPrice: number
-        expectedUnitPrice: number
-        expectedQuantity: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      if (isItemizedEdit && !isItemizedContentRewrite) {
-        for (const item of nextDraft.items) {
-          const orderItemId = Number(item.orderItemId || 0)
-          if (!orderItemId) throw new Error('Не удалось определить позицию заказа для исправления цены. Обновите заказ и повторите.')
-          const original = order.items.find((entry) => Number(entry.id || 0) === orderItemId)
-          if (!original) throw new Error('Одна из позиций заказа уже изменилась. Обновите заказ и повторите исправление.')
-          const nextUnitPrice = Number(item.unitPrice)
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new Error(`Укажите целую цену от 0 для «${item.productName || 'позиции'}».`)
-          }
-          const originalUnitPrice = Number(original.unitPrice || 0)
-          if (nextUnitPrice === originalUnitPrice) continue
-          itemPriceCorrections.push({
-            orderItemId,
-            unitPrice: nextUnitPrice,
-            expectedUnitPrice: originalUnitPrice,
-            expectedQuantity: Number(original.quantity || 0),
-            expectedLineTotal: Number(original.lineTotal || 0),
-            expectedCatalogPriceSnapshot: original.catalogPriceSnapshot ?? null,
-          })
-        }
-      }
-
-      const paymentCorrections: Array<{
-        paymentId: number
-        paymentDate: string
-        method: string
-        amount: number
-        paymentKind: string
-        comment: string
-        expectedPaymentDate: string
-        expectedMethod: string
-        expectedAmount: number
-        expectedPaymentKind: string
-        expectedComment: string
-      }> = []
-      for (const payment of nextDraft.payments) {
-        const paymentId = Number(payment.id || 0)
-        if (!paymentId) continue
-        const original = order.payments.find((entry) => Number(entry.id || 0) === paymentId)
-        if (!original) throw new Error('Одна из оплат уже изменилась. Обновите заказ и повторите исправление.')
-        const nextPaymentDate = String(payment.paymentDate || '').trim()
-        const nextMethod = String(payment.method || '').trim()
-        const nextAmount = Number(payment.amount || 0)
-        const nextPaymentKind = String(payment.paymentKind || 'primary').trim()
-        const nextComment = String(payment.comment || '').trim()
-        const oldPaymentDate = String(original.paymentDate || '').trim()
-        const oldMethod = String(original.method || '').trim()
-        const oldAmount = Number(original.amount || 0)
-        const oldPaymentKind = String(original.paymentKind || 'primary').trim()
-        const oldComment = String(original.comment || '').trim()
-        const changed = nextPaymentDate !== oldPaymentDate
-          || nextMethod.toUpperCase() !== oldMethod.toUpperCase()
-          || nextAmount !== oldAmount
-          || nextPaymentKind !== oldPaymentKind
-          || nextComment !== oldComment
-        if (!changed) continue
-        paymentCorrections.push({
-          paymentId,
-          paymentDate: nextPaymentDate,
-          method: nextMethod,
-          amount: nextAmount,
-          paymentKind: nextPaymentKind,
-          comment: nextComment,
-          expectedPaymentDate: oldPaymentDate,
-          expectedMethod: oldMethod,
-          expectedAmount: oldAmount,
-          expectedPaymentKind: oldPaymentKind,
-          expectedComment: oldComment,
-        })
-      }
-
-      let itemContentReplacement: {
-        expectedItems: Array<Record<string, unknown>>
-        items: Array<Record<string, unknown>>
-      } | null = null
-      if (isItemizedContentRewrite) {
-        const pricingReadiness = evaluateItemizedCreatePricing(nextDraft.items, nextDraft.payments.filter((payment) => Boolean(payment.id)))
-        if (pricingReadiness.status !== 'ready') {
-          const blocker = pricingReadiness.blockers[0]
-          const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-          if (blocker?.code === 'empty_items') throw new Error('В заказе должна остаться хотя бы одна позиция.')
-          if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-          if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-          if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-          if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-          if (blocker?.code === 'overpayment') throw new Error(`После изменения состава итог заказа (${pricingReadiness.totalAmount ?? 0}) меньше уже проведённых оплат (${pricingReadiness.receivedAmount}). Исправьте состав или цены.`)
-          throw new Error('Проверьте состав и цены позиций перед сохранением.')
-        }
-
-        itemContentReplacement = {
-          expectedItems: order.items.map((item) => ({
-            orderItemId: Number(item.id || 0),
-            productName: item.productName,
-            audienceType: item.audienceType && normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: Number(item.unitPrice || 0),
-            lineTotal: Number(item.lineTotal || 0),
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopDueDate || null,
-            workshopDueTime: item.workshopDueTime || null,
-          })),
-          items: nextDraft.items.map((item) => ({
-            orderItemId: Number(item.orderItemId || 0) || undefined,
-            productName: item.productName,
-            audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: item.unitPrice,
-            catalogPriceSnapshot: historicalCatalogSnapshotForEdit(
-              originalItemsById.get(Number(item.orderItemId || 0)), item,
-            ),
-            sourceType: item.sourceType || 'warehouse',
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
-            workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-            shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-          })),
-        }
-      }
-
-      const payload = isItemizedContentRewrite ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemContentReplacement,
-      } : isItemizedEdit ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemPriceCorrections,
-      } : {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        sourceType: deriveOrderSourceType(nextDraft.items),
-        orderTotal: nextDraft.orderTotal ? Number(nextDraft.orderTotal) : undefined,
-        workshopStatus: nextDraft.workshopStatus,
-        orderStatus: nextDraft.orderStatus,
-        comment: nextDraft.comment,
-        items: nextDraft.items.map((item) => ({
-          productName: item.productName,
-          audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-          gender: item.gender,
-          color: item.color,
-          material: item.material,
-          length: item.length,
-          size: item.size,
-          quantity: item.quantity,
-          unitPrice: Number(item.unitPrice || 0),
-          sourceType: item.sourceType,
-          workshopComment: item.workshopComment,
-          workshopUrgent: Boolean(item.workshopUrgent),
-          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
-          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-          shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-        })),
-        paymentCorrections,
-      }
-
-      const criticalKey = `order-edit:${order.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-
-      type EditOrderShortage = {
-        inputIndexes?: number[]
-        physicalQuantity?: number
-        reservedQuantity?: number
-        requestedQuantity?: number
-        shortage?: number
-      }
-      type OrderStockWriteResult = {
-        productName?: string
-        concurrentShortage?: boolean
-        shortageAfter?: number
-      }
-      const result = await readJsonResponse<{
-        message?: string
-        order?: OrderRecord
-        refreshRequired?: boolean
-        code?: string
-        shortages?: EditOrderShortage[]
-        stockWriteOff?: OrderStockWriteResult[]
-      }>(response, 'Сохранение заказа')
-      if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
-        const shortageByInputIndex = new Map<number, EditOrderShortage>()
-        for (const shortage of result.shortages) {
-          for (const inputIndex of shortage.inputIndexes || []) {
-            if (Number.isInteger(Number(inputIndex)) && Number(inputIndex) >= 0) shortageByInputIndex.set(Number(inputIndex), shortage)
-          }
-        }
-        setEditorDraft((current) => current ? ({
-          ...current,
-          items: current.items.map((item, inputIndex) => {
-            const shortage = shortageByInputIndex.get(inputIndex)
-            if (!shortage || item.sourceType === 'workshop') return item
-            return {
-              ...item,
-              stockObservationEnabled: false,
-              observedPhysicalQuantity: null,
-              shortageAcknowledged: false,
-              serverShortage: {
-                physicalQuantity: Number(shortage.physicalQuantity || 0),
-                reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
-                requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
-                shortage: Math.max(1, Number(shortage.shortage || 1)),
-              },
-            }
-          }),
-        }) : current)
-        setError(result.message || 'Перед сохранением уточните отмеченные складские позиции.')
-        return null
-      }
-      if (!response.ok) {
-        throw new Error(result.message || `Save failed: ${response.status}`)
-      }
-      // A 2xx response means the server-side critical operation is durably complete. Clear the
-      // browser retry token before readback-driven UI work, including the common result.order path.
-      completeCriticalRequest(criticalKey, critical.requestId)
-
-      const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
-      const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
-      const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
-      invalidateFinanceReadCaches()
-      // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
-      if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
-      if (concurrentShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
-      } else if (postSaveShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
-      } else {
-        setMessage(isItemizedEdit
-          ? `Заказ ${order.external_id} обновлён.`
-          : `Заказ ${order.external_id} обновлён.`)
-      }
-      if (result?.order) {
-        const savedOrder = result.order as OrderRecord
-        upsertOrderInState(savedOrder)
-        void loadWorkshopData()
-        setSelectedOrderId(savedOrder.id)
-        setEditorOrderOverride(savedOrder)
-        const savedDraft = createEditorDraft(savedOrder)
-        setEditorDraft(pendingEditorPayments.length ? { ...savedDraft, payments: [...savedDraft.payments, ...pendingEditorPayments] } : savedDraft)
-        if (pendingEditorPayments.length) {
-          setEditorOpen(true)
-          setMessage(`Заказ ${order.external_id} обновлён. Новые оплаты ещё не проведены — сохраните каждую новой кнопкой «Провести оплату».`)
-        } else {
-          closeOrderEditor()
-        }
-        if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
-        return savedOrder
-      }
-      if (pendingEditorPayments.length) {
-        setEditorOpen(true)
-        setMessage(`Заказ ${order.external_id} сохранён. Новые оплаты ещё не проведены — сохраните каждую отдельно.`)
-      } else {
-        closeOrderEditor()
-      }
-      if (result.refreshRequired || !result.order) {
-        void loadDashboard(false)
-        void loadWorkshopData()
-      }
-      return null
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      return null
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
 
   async function loadArchivePreview() {
     if (!isAdmin) {
