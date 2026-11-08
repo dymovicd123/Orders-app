@@ -17,7 +17,7 @@ export function MainPickedOrderLine({item,index,update,formatMoney}:Props){
      item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender,
      item.color==='БЕЗ ЦВЕТА'?'Без цвета':item.color,
      item.material==='СТАНДАРТ'?'':item.material,
-     item.length==='СТАНДАРТ'?'Обычная длина':item.length,
+     String(item.length||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.length,
      ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').toUpperCase())?'Без размера':item.size,
     ].filter(Boolean).join(' · ')}</small>
     <small>Откуда товар: {source}. Выбранные характеристики сохранены в заказе.</small>
