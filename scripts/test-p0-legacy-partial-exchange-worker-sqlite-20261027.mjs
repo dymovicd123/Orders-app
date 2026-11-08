@@ -759,6 +759,101 @@ try {
   assert.equal(Number(stock().quantity),physicalOldBeforeShip-1)
   assert.equal(Number(newStock().quantity),physicalNewBeforeShip)
   console.log('MAIN_LEGACY_UNISSUED_PARTIAL_THEN_SHIP_PASSED: residual active 1 -> fulfilled 1, original Physical -1, exchanged SKU not double issued')
+  // Exchange intake is independent of replacement shipment. A customer can
+  // physically return the old, already-sent SKU later. A pending receipt must
+  // not create Physical until the clerk confirms its exact destination.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-exchange-late-receipt-old-arrival',
+    inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-exchange-late-receipt-new-arrival',
+    inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:newColor,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const lateExchangeOrderPayload={
+    ...legacyCreatePayload,requestId:'stability-late-exchange-order',
+    customerPhone:'77010000008',
+  }
+  const lateOrder=await api('/api/orders','POST',lateExchangeOrderPayload,{
+    expectedStatus:201,requestId:lateExchangeOrderPayload.requestId,
+  })
+  const lateOrderId=Number(lateOrder.data.orderId)
+  const lateOriginal=sql('SELECT id FROM order_items WHERE order_id=?',lateOrderId)
+  assert(lateOriginal?.id,'Fresh real order must have an original exact SKU')
+  await shipAfterApplicableStocktakeReview(lateOrderId,ship)
+  const lateOldBefore=Number(stock().quantity)
+  const lateNewBefore=Number(newStock().quantity)
+  const lateExchangePayload={
+    ...legacyExchangePayload,orderId:lateOrderId,oldItemId:lateOriginal.id,
+    oldPhysicalState:'pending',
+    newItem:{...legacyExchangePayload.newItem,shipmentState:'pending'},
+    comment:'Сначала обмен, затем фактическая приёмка старого товара',
+  }
+  const lateSwap=await api('/api/exchanges','POST',lateExchangePayload,{
+    expectedStatus:201,requestId:'stability-late-exchange-create',
+  })
+  const lateExchangeId=Number(lateSwap.data.exchangeId)
+  assert(lateExchangeId>0)
+  assert.equal(Number(stock().quantity),lateOldBefore,
+    'Exchange with old physical state pending must not restock absent goods')
+  assert.equal(Number(newStock().quantity),lateNewBefore,
+    'Pending replacement must not be physically sent by exchange creation')
+  const oldPending=sql(
+    "SELECT id,physical_tracking,physical_received_at FROM exchange_items WHERE exchange_id=? AND role='old' ORDER BY id LIMIT 1",
+    lateExchangeId,
+  )
+  assert(oldPending?.id,'Exchange must own an identifiable old physical item')
+  assert.equal(oldPending.physical_tracking,1)
+  assert.equal(oldPending.physical_received_at,null)
+  const oldReservedBeforeReceive=Number(stock().reserved_quantity)
+  const newReservedBeforeReceive=Number(newStock().reserved_quantity)
+  const lateReceiptPayload={
+    requestId:'stability-late-exchange-receive',
+    operationType:'exchange',operationId:lateExchangeId,
+    operationItemId:oldPending.id,destination:'warehouse',
+  }
+  let confirmedReceiptPayload=lateReceiptPayload
+  let lateReceived=await api('/api/returned-items/receive','POST',lateReceiptPayload)
+  // Earlier synthetic quick-check and this freshly created Exchange can share
+  // the same SQLite datetime second. Honor the actual newer-count preflight:
+  // it must never silently add Physical. In this fixture the item just arrived
+  // after that check, so explicitly supply the employee's factual decision.
+  if(!lateReceived.data.ok && lateReceived.data.code==='intake_freshness_confirmation_required') {
+    assert(lateReceived.data.latestCheck?.id,'Newer physical truth needs an exact checkpoint')
+    assert.equal(Number(stock().quantity),lateOldBefore,
+      'Unconfirmed post-stocktake intake must not write any Physical')
+    confirmedReceiptPayload={...lateReceiptPayload,freshnessDecision:'arrived_after_check'}
+    lateReceived=await api('/api/returned-items/receive','POST',confirmedReceiptPayload)
+  }
+  assert.equal(lateReceived.data.ok,true,'Late Exchange receipt response: '+JSON.stringify(lateReceived.data))
+  assert.equal(lateReceived.data.stockApplied,true,
+    'Exact physically returned exchange item must be applied once: '+JSON.stringify({result:lateReceived.data,oldStock:stock(),oldItem:sqlite.prepare('SELECT * FROM exchange_items WHERE id=?').get(oldPending.id)}))
+  assert.equal(Number(stock().quantity),lateOldBefore+1)
+  assert.equal(Number(stock().reserved_quantity),oldReservedBeforeReceive,
+    'Receiving the old SKU must not steal a different order reservation')
+  assert.equal(Number(newStock().quantity),lateNewBefore)
+  assert.equal(Number(newStock().reserved_quantity),newReservedBeforeReceive,
+    'Exchange receipt must not alter pending replacement reservation')
+  const receivedAt=sql('SELECT physical_received_at FROM exchange_items WHERE id=?',oldPending.id).physical_received_at
+  assert(receivedAt,'Exchange old item must durably record physical receipt timestamp')
+  const lateReplay=await api('/api/returned-items/receive','POST',confirmedReceiptPayload)
+  assert.equal(lateReplay.data.ok,true)
+  assert.equal(Number(stock().quantity),lateOldBefore+1,
+    'Same requestId after network replay cannot add exchange old SKU twice')
+  assert.equal(sql('SELECT physical_received_at FROM exchange_items WHERE id=?',oldPending.id).physical_received_at,receivedAt)
+  await api('/api/returned-items/receive','POST',{
+    ...lateReceiptPayload,requestId:'stability-late-exchange-wrong-destination',
+    destination:'boutique',
+  },{expectedStatus:409})
+  assert.equal(Number(stock().quantity),lateOldBefore+1,
+    'Conflicting destination must not produce another warehouse increment')
+  assert.equal(Number(newStock().quantity),lateNewBefore,
+    'Conflicting destination must never send/receive the replacement')
+  console.log('MAIN_EXCHANGE_LATE_RECEIPT_REAL_HTTP_SQLITE_PASS: old physical +1 once, pending new untouched, foreign reserve safe, replay and conflicting destination rejected')
   console.log('P0_LEGACY_PARTIAL_EXCHANGE_WORKER_SQLITE_PASSED')
 } finally {
   sqlite.close()
