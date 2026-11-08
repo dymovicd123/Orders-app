@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
-import { projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
+import { isOrderShipmentCompleteForActions, projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
 import { clampDispatchQuantity, dispatchSelectionError } from '../orders/shippingSelection'
 import './OrderShipmentStatus.css'
 type SectionContext = Record<string, any>
@@ -382,6 +382,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     {orders.length ? orders.map((order) => {
                       const projection = projectOrderOperationalState(order, { isAdmin })
                       const shipmentDisplay = projectOrderShipmentDisplay(order)
+                      const fullyShipped = isOrderShipmentCompleteForActions(order)
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
                       const fullItemCount = Math.max(order.items.length, Number(order.item_count || 0))
                       const itemSummary = summarizeOrderItemLines(
@@ -530,10 +531,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           ) : (
                             <div className="order-status-stack">
                               <span className={`status-pill ${projection.paymentClass}`}>{projection.paymentLabel}</span>
-                              <span className={`status-pill ${shipmentDisplay.state === 'sent' ? 'status-online' : shipmentDisplay.state === 'partial' ? 'status-warning' : 'status-neutral'}`}>{shipmentDisplay.label}</span>
+                              <span className={`status-pill ${fullyShipped || shipmentDisplay.state === 'sent' ? 'status-online' : shipmentDisplay.state === 'partial' ? 'status-warning' : 'status-neutral'}`}>{fullyShipped ? 'Отправлен' : shipmentDisplay.label}</span>
                               {projection.workshopLabel ? <small>{projection.workshopLabel}</small> : null}
-                              <small>{waitingDaysLabel(order)}</small>
-                              <small>{projection.lifecycleLabel}</small>
+                              {!fullyShipped ? <small>{waitingDaysLabel(order)}</small> : null}
+                              {!(fullyShipped && projection.lifecycleLabel === 'Активен') ? <small>{projection.lifecycleLabel}</small> : null}
                             </div>
                           )}
                         </td>
@@ -553,10 +554,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Проверить выдачу после ревизии' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.deleted ? (
+                            {!retainedOnly && !archived && !projection.deleted && !fullyShipped ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
-                                {shipmentDisplay.state==='sent' ? 'Отправки' : 'Отправить товары'}
+                                Отправить товары
                               </button>
                             ) : null}
                             {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
@@ -630,6 +631,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   onClick={(event) => { event.stopPropagation(); setExtraActionsOrderId((current) => current === order.id ? null : order.id) }}>
                                   Доп. действия
                                 </button>
+                                {extraActionsOrderId === order.id && fullyShipped ? (
+                                  <button className="secondary compact" type="button" onClick={(event)=>{
+                                    event.stopPropagation()
+                                    openDispatchDraft(order)
+                                  }}>История отправок / исправить ошибку</button>
+                                ) : null}
                                 {extraActionsOrderId === order.id ? (
                                   <button className="secondary compact" type="button"
                                     onClick={(event)=>{
