@@ -28,7 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
-import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -46,6 +46,8 @@ import { createPlanActions } from './features/plans/planActions'
 import { createReportExportActions } from './features/export/reportExportActions'
 import { createReferenceActions } from './features/references/referenceActions'
 import { loadManagedAuthUsers, saveManagedAuthUser, disableManagedAuthUser } from './features/auth/managedAccountActions'
+import { AuthGate } from './features/auth/AuthGate'
+import { ArchiveMonthModal } from './features/orders/ArchiveMonthModal'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
@@ -3347,111 +3349,33 @@ function removeDebtPayment(index: number) {
     setMessage(`Открыты отчёты за период ${firstMonth} — ${lastMonth}. Сохраните нужные Word/PDF перед удалением.`)
   }
 
-  if (authChecking) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">Проверяем вход...</div>
-            </div>
-          </div>
-          <p className="muted-note">Загрузка сессии.</p>
-        </section>
-      </main>
-    )
+  const authGateProps = {
+    authUser,
+    authHasUsers,
+    authLogin,
+    authPassword,
+    authDisplayName,
+    authBootstrapLogin,
+    authBootstrapPassword,
+    authBusy,
+    passwordChangeBusy,
+    passwordChangeDraft,
+    error,
+    setError,
+    setAuthLogin,
+    setAuthPassword,
+    setAuthDisplayName,
+    setAuthBootstrapLogin,
+    setAuthBootstrapPassword,
+    setPasswordChangeDraft,
+    submitAuth,
+    submitPasswordChange,
+    logout,
   }
 
-  if (!authUser) {
-    return (
-      <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitAuth} method="post" action={authHasUsers ? '/api/auth/login' : '/api/auth/setup'} autoComplete="on">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по логину и паролю' : 'Первый запуск'}</div>
-            </div>
-          </div>
-          <div>
-            <h1>{authHasUsers ? 'Вход' : 'Создать администратора'}</h1>
-            <p>
-              {authHasUsers
-                ? 'Введите логин и пароль своего аккаунта.'
-                : 'Подтвердите текущий админ-доступ и создайте первый персональный аккаунт администратора.'}
-            </p>
-          </div>
-          {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
-          {!authHasUsers ? (
-            <>
-              <label>
-                <span>Текущий админ-логин</span>
-                <input id="auth-bootstrap-username" name="bootstrap-username" value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
-              </label>
-              <label>
-                <span>Текущий админ-пароль</span>
-                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
-              </label>
-              <label>
-                <span>Имя администратора</span>
-                <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
-              </label>
-            </>
-          ) : null}
-          <label>
-            <span>{authHasUsers ? 'Логин' : 'Новый логин'}</span>
-            <input id="auth-username" name="username" value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required minLength={3} maxLength={32} placeholder="Например: admin" />
-          </label>
-          <label>
-            <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
-            <input id="auth-password" name="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
-          </label>
-          <button className="primary" type="submit" disabled={authBusy}>
-            {authBusy ? 'Проверяю...' : authHasUsers ? 'Войти' : 'Создать администратора'}
-          </button>
-        </form>
-      </main>
-    )
-  }
-
-  if (authUser.mustChangePassword) {
-    return (
-      <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">Первый вход сотрудника</div>
-            </div>
-          </div>
-          <div>
-            <h1>Смените временный пароль</h1>
-            <p>Администратор создал аккаунт с временным паролем. Перед работой нужно задать свой пароль.</p>
-          </div>
-          {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
-          <label>
-            <span>Логин</span>
-            <input id="auth-change-username" name="username" value={authUser.login} autoComplete="username" readOnly />
-          </label>
-          <label>
-            <span>Текущий временный пароль</span>
-            <input id="auth-current-password" name="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
-          </label>
-          <label>
-            <span>Новый пароль</span>
-            <input id="auth-new-password" name="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
-          </label>
-          <button className="primary" type="submit" disabled={passwordChangeBusy}>
-            {passwordChangeBusy ? 'Сохраняю...' : 'Сменить пароль и войти'}
-          </button>
-          <button className="secondary" type="button" onClick={() => void logout()} disabled={passwordChangeBusy}>Выйти</button>
-        </form>
-      </main>
-    )
-  }
+  if (authChecking) return <AuthGate stage="checking" {...authGateProps} />
+  if (!authUser) return <AuthGate stage="login" {...authGateProps} />
+  if (authUser.mustChangePassword) return <AuthGate stage="change-password" {...authGateProps} />
 
   if (!canOpenWorkspaceSector(accessRole, activeSector)) {
     return <main className="auth-shell" role="status">Открываем раздел «Заказы»…</main>
@@ -4014,97 +3938,16 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
       </div>
       {archiveModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setArchiveModalOpen(false) }}>
-          <section className="modal-card archive-month-modal" role="dialog" aria-modal="true" aria-label="Архив месяца">
-            <div className="modal-head">
-              <div>
-                <div className="card-label">Архив месяца</div>
-                <h3>Убрать закрытый месяц из работы</h3>
-                <p>Заказы не удаляются: они остаются в клиентах, отчётах и истории. Архив просто убирает закрытые записи из ежедневной таблицы.</p>
-              </div>
-              <button className="ghost compact" type="button" onClick={() => setArchiveModalOpen(false)}>Закрыть</button>
-            </div>
-
-            <div className="archive-month-controls">
-              <label>
-                <span>Месяц</span>
-                <input
-                  type="month"
-                  max={getClosedArchiveMonth().value}
-                  value={archiveDraft.month}
-                  onChange={(event) => {
-                    const month = event.target.value || getClosedArchiveMonth().value
-                    setArchiveDraft((draft) => ({
-                      ...draft,
-                      month,
-                      cutoffDate: monthEndFromInput(month),
-                      reason: `Закрытие месяца: ${monthLabelFromInput(month)}`,
-                    }))
-                    setArchivePreview(null)
-                  }}
-                />
-              </label>
-              <div className="archive-month-range">
-                <span>Период</span>
-                <strong>{formatDateShort(monthStartFromInput(archiveDraft.month))} — {formatDateShort(monthEndFromInput(archiveDraft.month))}</strong>
-              </div>
-              <label className="checkbox-row archive-checkbox">
-                <input
-                  type="checkbox"
-                  checked={archiveDraft.includeNotSent}
-                  onChange={(event) => {
-                    setArchiveDraft((draft) => ({ ...draft, includeNotSent: event.target.checked }))
-                    setArchivePreview(null)
-                  }}
-                />
-                <span>Разрешить закрытые, но не отправленные заказы</span>
-              </label>
-            </div>
-
-            <div className="archive-month-message">
-              {!archivePreview ? (
-                <span>Сначала проверьте месяц. Система покажет, мешают ли долги, активный цех или неотправленные заказы.</span>
-              ) : archivePreview.blocked.withDebt === 0 ? (
-                <span className="is-good">Долги по выбранному месяцу закрыты. Можно архивировать подходящие заказы.</span>
-              ) : (
-                <span className="is-warning">Есть незакрытые долги: {archivePreview.blocked.withDebt}. Лучше закрыть их перед архивацией.</span>
-              )}
-            </div>
-
-            {archivePreview ? (
-              <div className="archive-preview-box">
-                <div className="archive-preview-title">
-                  <strong>Предпросмотр</strong>
-                  <span>{archivePreview.eligibleCount ? `Можно архивировать: ${archivePreview.eligibleCount}` : 'Пока нечего архивировать'}</span>
-                </div>
-                <div className="archive-preview-stats">
-                  <div className="is-good"><span>Готово</span><strong>{archivePreview.eligibleCount}</strong></div>
-                  <div><span>Не закрыты</span><strong>{archivePreview.blocked.notClosed}</strong></div>
-                  <div><span>С долгом</span><strong>{archivePreview.blocked.withDebt}</strong></div>
-                  <div><span>Цех активен</span><strong>{archivePreview.blocked.activeWorkshop}</strong></div>
-                  <div><span>Не отправлены</span><strong>{archivePreview.blocked.notSent}</strong></div>
-                </div>
-                <div className="archive-preview-list">
-                  {(archivePreview.orders || []).slice(0, 10).map((order) => (
-                    <div className="archive-preview-item" key={`archive-modal-${order.id}`}>
-                      <strong>{order.externalId}</strong>
-                      <span>{formatDateShort(order.orderDate)} · {order.manager || '—'} · {formatMoney(order.totalAmount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="modal-actions">
-              <button className="secondary" type="button" onClick={() => void loadArchivePreview()} disabled={archiveBusy}>
-                {archiveBusy ? 'Проверяю...' : 'Проверить месяц'}
-              </button>
-              <button className="primary" type="button" onClick={() => void runArchiveOrders()} disabled={archiveBusy || !archivePreview?.eligibleCount}>
-                Архивировать месяц
-              </button>
-            </div>
-          </section>
-        </div>
+        <ArchiveMonthModal
+          archiveDraft={archiveDraft}
+          archivePreview={archivePreview}
+          archiveBusy={archiveBusy}
+          setArchiveDraft={setArchiveDraft}
+          setArchivePreview={setArchivePreview}
+          setArchiveModalOpen={setArchiveModalOpen}
+          loadArchivePreview={loadArchivePreview}
+          runArchiveOrders={runArchiveOrders}
+        />
       ) : null}
       <datalist id="manager-list">
         {suggestionValues.managers.map((value) => <option value={value} key={value} />)}

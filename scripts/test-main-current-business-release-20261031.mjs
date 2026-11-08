@@ -8,6 +8,8 @@ const tests=[
  'scripts/test-step189d-team-activity.mjs',
  'scripts/test-finance-f3-summary-ux.mjs',
  'scripts/test-auth-production-team-access.mjs',
+ 'scripts/test-auth-production-password-manager.mjs',
+ 'scripts/test-auth-production-hardening.mjs',
  'scripts/test-reference-payment-merge.mjs',
  'scripts/test-stage01-workshop-truth-r3.mjs',
  'scripts/test-stage02-post-review-resolver-return-ux.mjs',

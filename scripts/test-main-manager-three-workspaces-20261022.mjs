@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { build } from 'esbuild'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { workspaceModules } from '../src/app/constants.ts'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from '../src/app/managerWorkspaceAccess.ts'
 
@@ -38,4 +41,41 @@ assert(app.includes('<DeferredSection active={activeSector === \'reports\'} labe
 assert(app.includes('createOrderCreationActions({') && orderCreation.includes("authUser?.role === 'manager'"), 'Manager session handling must stay active in delegated creation')
 assert(!app.includes('setActiveSector(\'finance\')'), 'Manager business flow may not bypass role guard by direct state set')
 // This change does not alter server roles, stock, finance, master-data or D1.
+
+// The archive preview remains a separate, non-destructive confirmation UI.
+assert(app.includes('<ArchiveMonthModal') && app.includes('archiveModalOpen ? ('),
+  'Archive preview was not wired into the main application')
+const builtModal = await build({
+  entryPoints:['src/features/orders/ArchiveMonthModal.tsx'],
+  platform:'node', format:'esm', target:'es2022', bundle:true,
+  jsx:'automatic', write:false, logLevel:'silent',
+})
+const {ArchiveMonthModal} = await import(
+  'data:text/javascript;base64,' + Buffer.from(builtModal.outputFiles[0].text).toString('base64')
+)
+const draft = {month:'2026-10',cutoffDate:'2026-10-31',includeNotSent:false,reason:'Закрытие месяца'}
+const preview = {
+  eligibleCount:1,
+  blocked:{notClosed:2,withDebt:3,activeWorkshop:4,notSent:5},
+  orders:[{id:1,externalId:'TEST-ORDER',orderDate:'2026-10-17',manager:'М',totalAmount:32000}],
+}
+const modalHtml = renderToStaticMarkup(createElement(ArchiveMonthModal,{
+  archiveDraft:draft,archivePreview:preview,archiveBusy:false,
+  setArchiveDraft:()=>{},setArchivePreview:()=>{},setArchiveModalOpen:()=>{},
+  loadArchivePreview:async()=>{},runArchiveOrders:async()=>{},
+}))
+assert(modalHtml.includes('Проверить месяц') && modalHtml.includes('Архивировать месяц'),
+  'Archive operations must remain two-step')
+assert(modalHtml.includes('TEST-ORDER') && modalHtml.includes('Есть незакрытые долги: 3'),
+  'Archive modal must still show eligibility and debt blockers')
+assert(modalHtml.includes('type="month"') && modalHtml.includes('type="checkbox"'),
+  'Archive cutoff and unsent-order acknowledgement disappeared')
+const emptyHtml = renderToStaticMarkup(createElement(ArchiveMonthModal,{
+  archiveDraft:draft,archivePreview:null,archiveBusy:false,
+  setArchiveDraft:()=>{},setArchivePreview:()=>{},setArchiveModalOpen:()=>{},
+  loadArchivePreview:async()=>{},runArchiveOrders:async()=>{},
+}))
+assert(emptyHtml.includes('Сначала проверьте месяц.') && emptyHtml.includes('disabled'),
+  'Archive action must stay disabled before preview')
+
 console.log('MANAGER_CURRENT_WORKSPACES_PASSED: role/menu, deep link, first-render and admin parity')

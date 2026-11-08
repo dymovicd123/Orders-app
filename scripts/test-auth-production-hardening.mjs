@@ -7,9 +7,11 @@ try {
   const auth = read('worker/domains/auth.ts')
   const worker = read('worker/index.ts')
   const app = read('src/App.tsx')
+  const authGate = read('src/features/auth/AuthGate.tsx')
+  check(app.includes('AuthGate stage="login"'), 'App must render the centralized auth gate')
   const migration80 = read('migrations/0080_v72_auth_login_identity.sql')
   const migration81 = read('migrations/0081_v72_auth_hardening.sql')
-  const workflow = read('.github/workflows/auth-production-migrations-0080-0081.yml')
+  const workflow = read('docs/ci-archive/workflows/auth-production-migrations-0080-0081.yml')
 
   check(migration80.includes('ALTER TABLE app_users ADD COLUMN login TEXT'), 'Dedicated login identity migration missing')
   check(migration80.includes('idx_app_users_login_nocase'), 'Case-insensitive login index missing')
@@ -33,9 +35,9 @@ try {
   check(!auth.includes('details: password') && !auth.includes('details: newPassword') && !auth.includes('details: currentPassword'), 'Auth audit risks persisting a plaintext password')
   check(worker.includes('createAuthUser(env.DB, request, authUser as AuthUser)'), 'Account creation audit is not attributed to the authenticated Admin')
 
-  check(app.includes('name="username"') && app.includes('autoComplete="username"'), 'Login field is not password-manager friendly')
-  check(app.includes('name="password"') && app.includes("autoComplete={authHasUsers ? 'current-password' : 'new-password'}"), 'Password field is not password-manager friendly')
-  check(app.includes('name="current-password"') && app.includes('name="new-password"'), 'Password change form autocomplete semantics missing')
+  check(authGate.includes('name="username"') && authGate.includes('autoComplete="username"'), 'Login field is not password-manager friendly')
+  check(authGate.includes('name="password"') && authGate.includes("autoComplete={authHasUsers ? 'current-password' : 'new-password'}"), 'Password field is not password-manager friendly')
+  check(authGate.includes('name="current-password"') && authGate.includes('name="new-password"'), 'Password change form autocomplete semantics missing')
 
   check(workflow.includes('orders_db_prod') && workflow.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'), 'Auth migration workflow is not hard-locked to Production D1')
   check(workflow.includes('duplicate_manager_links') && workflow.includes('Duplicate manager-account links exist'), 'Production workflow does not fail closed on duplicate employee accounts')
