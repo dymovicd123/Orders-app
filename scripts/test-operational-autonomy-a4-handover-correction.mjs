@@ -54,7 +54,9 @@ try {
     'An active Exchange must still allow correction of a false sent mark on the current replacement')
   check(table.includes('projection.canCorrectShipping &&'),
     'Orders table must use the shared return/exchange-safe correction permission')
-  check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
+  check(projectOrderOperationalState({...operationOrder,
+    shipping_status:'not_sent',has_committed_item_return:false,committed_return_count:0}).canCorrectShipping === false,
+    'Correction action must not be offered for an order that was not sent')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
 } catch (error) {
