@@ -23,9 +23,10 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
   const historicallySent = cleanText(order.shipping_status) === 'sent'
   const legacyOrder = isPreSelectiveDispatchOrder(order.created_at)
   const hasCommittedPhysicalChange = toInt(order.committed_exchange_count, 0) > 0 || Boolean(order.has_committed_item_return)
-  const activeById = new Map<number, {quantity: number; variantId: number}>()
+  const activeById = new Map<number, {quantity: number; variantId: number; status: string}>()
   for (const reservation of reservations) {
-    if (cleanText(reservation.status) !== 'active') continue
+    const reservationStatus=cleanText(reservation.status)
+    if (reservationStatus !== 'active' && reservationStatus !== 'unresolved') continue
     const id = toInt(reservation.order_item_id, 0)
     if (id <= 0) continue
     const previous = activeById.get(id)
@@ -34,6 +35,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     activeById.set(id, {
       quantity: (previous?.quantity || 0) + Math.max(0, toInt(reservation.quantity, 0)),
       variantId: previous && previous.variantId !== variantId ? 0 : variantId,
+      status: previous && previous.status !== reservationStatus ? 'conflict' : reservationStatus,
     })
   }
   // An earlier stock handover has already reduced physical stock. A full
@@ -74,12 +76,17 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     // Post-Stage-5 orders use the normal per-item dispatch ledger even when an
     // earlier stocktake handover has already physically consumed this item.
     const dispatchPriorIssued = !legacyOrder && canConfirmPriorIssue
+    const physicalReservationReady = stockState==='reserved' && current?.status==='active' && Boolean(current?.variantId)
+    // A known SKU with a shortage-related unresolved reservation may be
+    // dispatched after confirming that the specific pieces are physically present.
+    const pendingStockResolution = stockState==='pending_reservation'
+      && current?.status==='unresolved' && Boolean(current?.variantId)
     const physicallyReady = isWorkshop
       ? ['done', 'ready'].includes(workshopState)
-      : stockState === 'reserved' && Boolean(current?.variantId)
+      : physicalReservationReady || pendingStockResolution
     const alreadyClosed = closed || (historicallySent && !pendingReplacement)
     const readyQuantity = alreadyClosed || (alreadyIssued && !dispatchPriorIssued) || (!physicallyReady && !dispatchPriorIssued) ? 0
-      : dispatchPriorIssued || isWorkshop ? quantity
+      : dispatchPriorIssued || isWorkshop || pendingStockResolution ? quantity
         : Math.min(quantity, current?.quantity || 0)
     const reason = readyQuantity ? ''
       : closed ? 'Заказ закрыт'
@@ -97,6 +104,8 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       exchangeWorkshopId: isWorkshop ? pendingExchangeWorkshopId : null,
       variantId: isWorkshop ? toInt(item.variantId, 0) : (dispatchPriorIssued ? fulfilled!.variantId : (current?.variantId || 0)),
       dispatchPriorIssued,
+      reservationStatus: pendingStockResolution ? 'unresolved' : physicalReservationReady ? 'active' : null,
+      needsStockConfirmation: Boolean(pendingStockResolution),
       readyQuantity, selectedQuantity: readyQuantity,
       selectable: readyQuantity > 0,
       canConfirmPriorIssue,
