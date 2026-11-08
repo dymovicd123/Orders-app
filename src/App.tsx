@@ -2144,7 +2144,6 @@ function App() {
   function loadTeamEmployees() { return loadTeamEmployeesAction() }
 
   const {
-    getTimesheetMonthDays,
     shiftTimesheetMonth,
     setTimesheetCurrentMonth,
     getTimesheetCalendarSlots,
