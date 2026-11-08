@@ -9,7 +9,7 @@ export function clampDispatchQuantity(input: unknown, ready: unknown, workshop =
   return workshop ? max : Math.min(value, max)
 }
 
-type DispatchLine = { orderItemId: number; readyQuantity: number; selectable: boolean; sourceType: string; dispatchPriorIssued?: boolean }
+type DispatchLine = { orderItemId: number; readyQuantity: number; selectable: boolean; sourceType: string; dispatchPriorIssued?: boolean; needsStockConfirmation?: boolean }
 
 export function dispatchSelectionError(lines: DispatchLine[], selection: Record<number, number>): string {
   for (const line of lines) {
@@ -18,7 +18,7 @@ export function dispatchSelectionError(lines: DispatchLine[], selection: Record<
     const ready = Number(line.readyQuantity)
     if (!line.selectable || !Number.isSafeInteger(selected) || selected < 0 ||
         !Number.isSafeInteger(ready) || ready < 1 || selected > ready ||
-        ((line.sourceType === 'workshop' || line.dispatchPriorIssued) && selected !== ready)) {
+        ((line.sourceType === 'workshop' || line.dispatchPriorIssued || line.needsStockConfirmation) && selected !== ready)) {
       return 'Количество изменилось или превышает доступное. Обновите отправку.'
     }
   }

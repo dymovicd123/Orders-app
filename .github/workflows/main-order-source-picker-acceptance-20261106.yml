@@ -74,13 +74,13 @@ jobs:
       - name: Existing main business release suite
         run: npm run release:check
 
-  deploy-branch2-pr800:
-    name: Isolated Branch2 deploy after PR794 acceptance
+  deploy-branch2-pr802:
+    name: Isolated Branch2 deploy after PR802 shipping acceptance
     needs: source-first-order-qa
     if: >-
       github.event_name == 'pull_request'
-      && github.event.pull_request.number == 800
-      && github.event.pull_request.head.ref == 'fix/selective-dispatch-no-stock-block-20261108'
+      && github.event.pull_request.number == 802
+      && github.event.pull_request.head.ref == 'fix/shipping-status-quantity-unification-20261108'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -105,11 +105,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = pull_request
-          test "$GITHUB_HEAD_REF" = fix/selective-dispatch-no-stock-block-20261108
+          test "$GITHUB_HEAD_REF" = fix/shipping-status-quantity-unification-20261108
           test "$GITHUB_BASE_REF" = main
-          jq -e '.pull_request.number == 800
+          jq -e '.pull_request.number == 802
             and .pull_request.head.repo.full_name == .repository.full_name
-            and .pull_request.head.ref == "fix/selective-dispatch-no-stock-block-20261108"' "$GITHUB_EVENT_PATH"
+            and .pull_request.head.ref == "fix/shipping-status-quantity-unification-20261108"' "$GITHUB_EVENT_PATH"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
@@ -123,7 +123,7 @@ jobs:
           assert.equal(c.d1_databases[0].binding,'DB')
           assert.equal(c.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
           assert.equal(c.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
-          console.log('PR800_BRANCH2_ONLY_CONFIG_VERIFIED')
+          console.log('PR802_BRANCH2_ONLY_CONFIG_VERIFIED')
           NODE
       - run: npm ci
       - name: Build confirmed PR head
@@ -170,4 +170,4 @@ jobs:
           cmp "$RUNNER_TEMP/branch2-before.json" "$RUNNER_TEMP/branch2-after.json"
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
-          echo 'PR800_BRANCH2_ONLY_DEPLOY_VERIFIED'
+          echo 'PR802_BRANCH2_ONLY_DEPLOY_VERIFIED'
