@@ -13,6 +13,7 @@ const between = (source, start, end) => {
 
 const wrangler = read('wrangler.jsonc')
 const app = read('src/App.tsx')
+const creation = read('src/features/orders/returnExchangeCreationActions.ts')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 const workerIndex = read('worker/index.ts')
 const batchWorker = read('worker/domains/exchange-batch.ts')
@@ -22,7 +23,8 @@ check(wrangler.includes('"name": "orders-app"'), 'H9C Production Worker identity
 check(wrangler.includes('"database_name": "orders_db_prod"') && wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'H9C Production D1 identity drifted')
 check(!wrangler.includes('orders_db_branch2') && !wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301'), 'H9C Branch2 D1 identity leaked into Production')
 
-const saveExchange = between(app, 'async function saveExchange()', '\n\n  async function receiveReturnedItemAction')
+check(app.includes('createReturnExchangeCreationActions({'), 'App no longer delegates Exchange to the guarded creation module')
+const saveExchange = between(creation, 'async function saveExchange()', '\n  return { saveReturn, saveExchange }')
 check(!saveExchange.includes('itemizedExchange && pairDrafts.length !== 1'), 'H9C Production still blocks itemized multi-pair exchange')
 check(saveExchange.includes('itemizedExchange && unsavedPairs.length > 1'), 'H9C Production multi-pair save branch missing')
 check(saveExchange.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)'), 'App must validate legacy Exchange pairs before any write')
