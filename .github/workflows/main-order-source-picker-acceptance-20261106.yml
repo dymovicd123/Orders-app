@@ -14,6 +14,8 @@ on:
       - worker/domains/order-core.ts
       - worker/core/types.ts
       - worker/index.ts
+      - worker/routes/order-selective-shipping.ts
+      - scripts/test-stage5b-http-routes-20261101.mjs
       - src/App.tsx
       - src/features/sections/OrdersTableSection.tsx
       - worker/domains/order-shipment-plan.ts
