@@ -25,8 +25,7 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
-import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse } from '../shared/api-contracts.ts'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
@@ -58,6 +57,8 @@ import { useWarehouseSnapshots } from './features/inventory/useWarehouseSnapshot
 import { createInventoryStocktakeClient } from './features/inventory/inventoryStocktakeClient'
 import { createInventoryOperationEditorActions } from './features/inventory/inventoryOperationEditor'
 import { createInventoryMovementActions, type StockResolutionRequiredItemView } from './features/inventory/inventoryMovementActions'
+import { createWarehouseRecoveryActions } from './features/inventory/warehouseRecoveryActions'
+import { createWarehouseGovernanceActions } from './features/inventory/warehouseGovernanceActions'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
@@ -153,7 +154,6 @@ function handoverSourceLabel(source: InventorySourceKey | string) {
   return source === 'boutique' ? 'Бутик' : 'Склад'
 }
 
-async function settleCatalogReviewRefreshes(tasks: Promise<unknown>[]) { return (await Promise.allSettled(tasks)).some((entry) => entry.status === 'rejected') }
 function App() {
   const [health, setHealth] = useState<ApiState | null>(null)
   const [dbState, setDbState] = useState<ApiState | null>(null)
@@ -1394,6 +1394,60 @@ function App() {
     askStockResolution,
   })
 
+  const {
+    loadCatalogReview,
+    reconcileCatalogReview,
+    loadCatalogReviewContext,
+    resolveCatalogReviewFacts,
+    excludeCatalogReviewItem,
+    loadInventoryLifecycle,
+    loadInventoryLifecycleContext,
+    resolveInventoryLifecycleFacts,
+    reconcileKnownInventoryLifecycle,
+    resolveCatalogReviewItem,
+  } = createWarehouseRecoveryActions({
+    canManageWarehouse,
+    catalogReview,
+    catalogReviewBusy,
+    setCatalogReview,
+    setCatalogReviewBusy,
+    inventoryLifecycle,
+    inventoryLifecycleBusy,
+    setInventoryLifecycle,
+    setInventoryLifecycleBusy,
+    apiFetch,
+    setError,
+    setMessage,
+    loadInventoryData,
+    loadCatalogData,
+    loadReferencesData,
+    loadWarehouseAttention,
+  })
+
+  const {
+    loadInventoryAudit,
+    resolveInventoryAuditIssue,
+    loadInventoryControlSettings,
+    toggleInventoryAutoWriteoff,
+    applyPendingInventoryWriteoffs,
+    reverseInventoryMovement,
+  } = createWarehouseGovernanceActions({
+    canManageWarehouse,
+    inventoryAuditBusy,
+    setInventoryAuditBusy,
+    setInventoryAudit,
+    inventoryControlBusy,
+    setInventoryControlBusy,
+    inventoryControlSettings,
+    setInventoryControlSettings,
+    reversingInventoryMovementId,
+    setReversingInventoryMovementId,
+    apiFetch,
+    setError,
+    setMessage,
+    loadInventoryData,
+  })
+
   useEffect(() => {
     if (!selectedOrderId) return
     const exists = orders.some((order) => order.id === selectedOrderId) || editorOrderOverride?.id === selectedOrderId
@@ -1738,330 +1792,6 @@ function App() {
   }
 
 
-
-  async function loadCatalogReview(force = false, orderId = 0) {
-    if (!canManageWarehouse) return null
-    if (!orderId && catalogReview?.mode !== 'order' && catalogReview && !force) return catalogReview
-    setCatalogReviewBusy(true)
-    try {
-      // Opening the review page is read-only. An orderId is used only when an old hidden
-      // exception becomes operational because the user is trying to finish that exact order.
-      const params = new URLSearchParams({ limit: '24' })
-      if (orderId > 0) params.set('orderId', String(orderId))
-      const response = await apiFetch(`/api/catalog/review?${params.toString()}`)
-      if (!response.ok) return null
-      const data = await readJsonResponse<CatalogReviewResponse>(response, 'Неразобранные товары')
-      setCatalogReview(data)
-      return data
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function reconcileCatalogReview(limit = 20) {
-    if (!canManageWarehouse || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/reconcile?limit=${Math.max(1, Math.min(20, limit))}`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Безопасное распознавание каталога')
-      if (!response.ok) throw new Error(result?.message || 'Не удалось разобрать очевидные позиции.')
-      const nextRefresh = loadCatalogReview(true)
-      const refreshIncomplete = await settleCatalogReviewRefreshes([nextRefresh, ...(Number(result?.resolvedGroups || 0) > 0 ? [loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false), loadCatalogData(true)] : [])])
-      const next = await nextRefresh.catch(() => catalogReview)
-      const successMessage = Number(result?.resolvedGroups || 0) > 0 ? `Автоматически разобрано: ${result.resolvedGroups}.` : 'Очевидных безопасных совпадений больше нет.'
-      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
-      return { ...result, review: next }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось разобрать очевидные позиции.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadCatalogReviewContext(orderItemId: number) {
-    const response = await apiFetch(`/api/catalog/review/${orderItemId}/context`)
-    const data = await readJsonResponse<CatalogResolutionContext>(response, 'Разбор позиции')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось определить, что именно требует уточнения.')
-    return data
-  }
-
-  async function resolveCatalogReviewFacts(orderItemId: number, input: CatalogResolutionInput) {
-    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/resolve-facts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось разобрать позицию.')
-      const createdReference = Array.isArray(input.createFields) && input.createFields.length > 0
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-        createdReference ? loadReferencesData(true) : Promise.resolve(null), loadWarehouseAttention(false, true),
-      ])
-      setMessage(refreshIncomplete ? `${result?.message || 'Позиция разобрана.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция разобрана.'))
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось разобрать позицию.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function excludeCatalogReviewItem(orderItemId: number) {
-    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/exclude`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось оставить позицию вне каталога.')
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-      ])
-      setMessage(refreshIncomplete ? `${result?.message || 'Позиция оставлена только в заказе.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция оставлена только в заказе.'))
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось оставить позицию вне каталога.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadInventoryLifecycle(force = false) {
-    if (!canManageWarehouse) {
-      setInventoryLifecycle(null)
-      return null
-    }
-    if (inventoryLifecycle && !force) return inventoryLifecycle
-    setInventoryLifecycleBusy(true)
-    try {
-      const response = await apiFetch('/api/inventory/lifecycle/pending?limit=60')
-      if (!response.ok) return null
-      const data = await readJsonResponse<InventoryLifecyclePendingResponse>(response, 'Ожидающие складские движения')
-      setInventoryLifecycle(data)
-      return data
-    } finally {
-      setInventoryLifecycleBusy(false)
-    }
-  }
-
-  async function loadInventoryLifecycleContext(eventId: number) {
-    const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/context`)
-    const data = await readJsonResponse<CatalogResolutionContext>(response, 'Физическая позиция')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось определить, что именно нужно уточнить.')
-    return data
-  }
-
-  async function resolveInventoryLifecycleFacts(eventId: number, input: CatalogResolutionInput) {
-    if (!canManageWarehouse || !eventId || inventoryLifecycleBusy) return null
-    setInventoryLifecycleBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/resolve-facts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Физическая позиция')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось применить складское движение.')
-      const createdReference = Array.isArray(input.createFields) && input.createFields.length > 0
-      await Promise.all([
-        loadInventoryLifecycle(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadCatalogData(true),
-        createdReference ? loadReferencesData(true) : Promise.resolve(null),
-      ])
-      setMessage(result?.message || 'Физическая позиция подтверждена и склад обновлён.')
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось применить складское движение.')
-      return null
-    } finally {
-      setInventoryLifecycleBusy(false)
-    }
-  }
-
-  async function reconcileKnownInventoryLifecycle(eventId: number) {
-    if (!eventId) return null
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/reconcile-known`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Приёмка известной позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось завершить приёмку.')
-      const [attentionData] = await Promise.all([
-        loadWarehouseAttention(true),
-        canManageWarehouse ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      setMessage(result?.message || 'Приёмка завершена.')
-      return { ...result, warehouseAttention: attentionData }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось завершить приёмку.')
-      return null
-    }
-  }
-
-  async function resolveCatalogReviewItem(orderItemId: number, variantId: number) {
-    if (!canManageWarehouse || !orderItemId || !variantId || catalogReviewBusy) return false
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/resolve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variantId }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; linked?: number; reserved?: number; fulfilled?: number }>(response, 'Привязка товара')
-      if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать позицию с каталогом.')
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true), loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-      ])
-      const successMessage = result.message || `Позиция связана с каталогом${Number(result.linked || 0) > 1 ? `; одинаковых записей обработано: ${result.linked}` : ''}.`
-      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось связать позицию с каталогом.')
-      return false
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadInventoryAudit() {
-    setInventoryAuditBusy(true)
-    try {
-      const response = await apiFetch('/api/inventory/audit')
-      if (!response.ok) return null
-      const data = await readJsonResponse<InventoryAuditResponse>(response, 'Проверка автосписания')
-      setInventoryAudit(data)
-      return data
-    } finally {
-      setInventoryAuditBusy(false)
-    }
-  }
-
-  async function resolveInventoryAuditIssue(row: InventoryAuditResponse['missing'][number] | InventoryAuditResponse['resolved'][number], resolved = true) {
-    if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return
-    if (resolved) {
-      const question = 'Подтверждайте расхождение только после фактической сверки этой позиции. Система НЕ изменит остаток автоматически — она запомнит, что исторический разрыв проверен сотрудником. Продолжить?'
-      if (!window.confirm(question)) return
-    }
-    setInventoryAuditBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/audit/resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          issueKey: row.issueKey,
-          resolved,
-          comment: resolved ? 'Фактический остаток проверен сотрудником после сверки.' : 'Проблема возвращена в активную проверку.',
-        }),
-      })
-      if (!response.ok) throw new Error('Не удалось сохранить результат сверки.')
-      const data = await readJsonResponse<InventoryAuditResponse>(response, 'Результат сверки склада')
-      setInventoryAudit(data)
-      setMessage(resolved ? 'Расхождение отмечено как проверенное. Остаток автоматически не изменялся.' : 'Расхождение снова требует проверки.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить результат сверки.')
-    } finally {
-      setInventoryAuditBusy(false)
-    }
-  }
-
-  async function loadInventoryControlSettings() {
-    const response = await apiFetch('/api/inventory/settings')
-    if (!response.ok) return null
-    const data = await readJsonResponse<InventoryControlSettings>(response, 'Настройки склада')
-    setInventoryControlSettings(data)
-    return data
-  }
-
-  async function toggleInventoryAutoWriteoff() {
-    if (!canManageWarehouse || inventoryControlBusy) return
-    const nextEnabled = !(inventoryControlSettings?.autoWriteoffEnabled ?? true)
-    const question = nextEnabled
-      ? 'Включить автосписание? Новые заказы со склада и бутика снова будут сразу менять остатки.'
-      : 'Выключить автосписание? Новые заказы сохранятся, но остатки не изменятся, пока администратор не запустит отложенное списание.'
-    if (!window.confirm(question)) return
-    setInventoryControlBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoWriteoffEnabled: nextEnabled }),
-      })
-      const data = await readJsonResponse<InventoryControlSettings>(response, 'Настройки склада')
-      setInventoryControlSettings(data)
-      setMessage(nextEnabled ? 'Автосписание включено.' : 'Автосписание выключено. Новые заказы не меняют остатки.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось изменить автосписание.')
-    } finally {
-      setInventoryControlBusy(false)
-    }
-  }
-
-  async function applyPendingInventoryWriteoffs() {
-    if (!canManageWarehouse || inventoryControlBusy) return
-    const pending = inventoryControlSettings?.pendingWriteoffCount || 0
-    if (!pending) {
-      setMessage('Отложенных списаний нет.')
-      return
-    }
-    if (!window.confirm(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
-    setInventoryControlBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/pending-writeoffs/apply', { method: 'POST' })
-      const data = await readJsonResponse<{ ok: boolean; applied: number; reconciled?: number; pendingWriteoffCount: number }>(response, 'Отложенное списание')
-      setInventoryControlSettings((current) => current ? { ...current, pendingWriteoffCount: data.pendingWriteoffCount } : current)
-      await Promise.all([
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      const reconciled = Number(data.reconciled || 0)
-      setMessage(`Списано позиций: ${data.applied}.${reconciled ? ` Уже учтено ранее и безопасно синхронизировано: ${reconciled}.` : ''} Осталось: ${data.pendingWriteoffCount}.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось выполнить отложенное списание.')
-    } finally {
-      setInventoryControlBusy(false)
-    }
-  }
-
-  async function reverseInventoryMovement(movement: InventoryMovementRecord) {
-    if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return
-    const label = `${movement.productName} · ${movement.quantityDelta >= 0 ? '+' : ''}${movement.quantityDelta}`
-    if (!window.confirm(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
-    setReversingInventoryMovementId(movement.id)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/movements/${movement.id}/reverse?returnInventory=0`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment: 'Отменено из журнала склада' }),
-      })
-      const data = await readJsonResponse<{ ok: boolean; reversedRows: number }>(response, 'Отмена складской операции')
-      await Promise.all([
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadInventoryControlSettings(),
-      ])
-      setMessage(`Операция отменена. Восстановлено движений: ${data.reversedRows}.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось отменить складскую операцию.')
-    } finally {
-      setReversingInventoryMovementId(null)
-    }
-  }
 
   async function loadWorkshopData(
     nextFilters = workshopFilters,
