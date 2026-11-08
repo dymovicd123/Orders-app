@@ -175,18 +175,19 @@ const client={
    {status:200,headers:{'Content-Type':'application/json'}})
  },
 }
-const itemizedMulti=prepareLegacyExchangePairs(itemized,{...draft,queuedPairs:[queued]},canIssue)
+const transportOrder={...itemized,total_amount:11000}
+const itemizedMulti=prepareLegacyExchangePairs(transportOrder,{...draft,queuedPairs:[queued]},canIssue)
 assert.equal(itemizedMulti.ok,true)
-await assert.rejects(()=>submitLegacyExchangeBatch(client,itemized,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs),
+await assert.rejects(()=>submitLegacyExchangeBatch(client,transportOrder,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs),
  /Exchange response unknown/)
 assert.equal(completedOperations.length,0,'Unknown batch outcome must retain its requestId')
-const batchResult=await submitLegacyExchangeBatch(client,itemized,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs)
+const batchResult=await submitLegacyExchangeBatch(client,transportOrder,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs)
 assert.equal(batchResult.exchangeCount,2)
 assert.equal(observedRequests[0].url,'/api/exchanges/batch')
 assert.equal(observedRequests[0].method,'POST')
 assert.equal(observedRequests[0].token,observedRequests[1].token,'Batch replay must use one stable idempotency requestId')
-assert.equal(observedRequests[1].body.expectedOrderTotal,undefined,
- 'Legacy payload should not manufacture an order total if not provided')
+assert.equal(observedRequests[1].body.expectedOrderTotal,11000,
+ 'Batch must submit the exact historic order-total CAS snapshot')
 assert.equal(observedRequests[1].body.pairs.length,2)
 assert.equal(observedRequests[1].body.pairs[0].expectedOldActiveQuantity,2)
 assert.equal(observedRequests[1].body.pairs[0].expectedOldUnitPrice,4000)
@@ -226,10 +227,10 @@ assert.equal(lastRetry.body.financialAmount,150)
 assert.equal(lastRetry.body.paymentMethod,'НАЛИЧНЫЕ')
 assert.equal(lastRetry.body.oldPhysicalState,'pending')
 assert.equal(completedOperations.length,3,'Only successful durable batch and children complete a critical token')
-const itemizedFirst=await submitLegacyExchangePair(client,itemized,financeDraft,itemizedMulti.unsavedPairs[0],2,true)
+const itemizedFirst=await submitLegacyExchangePair(client,transportOrder,financeDraft,itemizedMulti.unsavedPairs[0],2,true)
 assert.equal(itemizedFirst.exchangeId,135)
 const itemizedBody=observedRequests[6].body
-assert.equal(itemizedBody.expectedOrderTotal,undefined,'Itemized stale snapshot must only use actually supplied order total')
+assert.equal(itemizedBody.expectedOrderTotal,11000,'Itemized pair must carry the exact order-total CAS snapshot')
 assert.equal(itemizedBody.expectedOldActiveQuantity,2)
 assert.equal(itemizedBody.expectedOldUnitPrice,4000)
 assert.equal(itemizedBody.expectedOldLineTotal,8000)
