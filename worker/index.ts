@@ -1937,12 +1937,6 @@ export default {
         const id = toInt(orderShippingMatch[1], 0);
         if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся товары через «Отправить товары».'},{status:409});
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
-        // Legacy PATCH is retained only for evidenced pre-Stage-5 handovers.
-        // New physical shipments must use the per-item atomic dispatch ledger.
-        if (input.confirmAlreadyIssued !== true) {
-          return json({ok:false,code:'selective_dispatch_required',
-            message:'Отправьте выбранные товары через кнопку «Отправить товары».'},{status:409});
-        }
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
            FROM orders WHERE id = ?`
