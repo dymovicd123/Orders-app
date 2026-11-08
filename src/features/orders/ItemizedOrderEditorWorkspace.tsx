@@ -187,7 +187,7 @@ export function ItemizedOrderEditorWorkspace({orderId,draft,setDraft,updateItem,
        item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender,
        item.color==='БЕЗ ЦВЕТА'?'Без цвета':item.color,
        item.material==='СТАНДАРТ'?'':item.material,
-       item.length==='СТАНДАРТ'?'Обычная длина':item.length,
+       String(item.length||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.length,
        ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').toUpperCase())?'Без размера':item.size
       ].filter(Boolean).join(' · ')}
      </p>
