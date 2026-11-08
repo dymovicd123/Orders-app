@@ -3,6 +3,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { build } from 'esbuild'
+import { createEditorDraft, createEmptyEditorPayment } from '../src/app/utils.ts'
 
 const moneySource=fs.readFileSync('worker/domains/money.ts','utf8')
 const returnsSource=fs.readFileSync('worker/domains/order-return-creation.ts','utf8')
@@ -166,6 +168,116 @@ link.run('exchange-set-72','payment','exchange:set:payment:2',502)
 assert.deepEqual(await exchangeSetPaymentIds(financeD1,72),[501,502],
   'Split exchange payment linkage must preserve both exact IDs')
 assert.deepEqual(await exchangeSetPaymentIds(financeD1,999),[])
+// Actual bundled editor payment client: adding cash is a separate idempotent write,
+// and correcting historical payment method must not change the amount or its date.
+const editorBundle = await build({
+  entryPoints: ['src/features/orders/orderEditorActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createOrderEditorActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(editorBundle.outputFiles[0].text).toString('base64')
+)
+const recordedOrder = {
+  id: 917, external_id: 'QA-PAYMENT-917', pricing_mode: 'itemized_v1', order_date: '2026-11-08',
+  manager_id: 1, total_amount: 25000, received_amount: 5000, debt_amount: 20000,
+  order_status: 'active', workshop_status: 'ready', items: [],
+  payments: [{ id: 901, paymentDate: '2026-11-08', method: 'КАРТА', amount: 5000, paymentKind: 'primary', comment: 'Оплачено' }],
+}
+let editorPaymentDraft = createEditorDraft(recordedOrder)
+editorPaymentDraft.payments.push({
+  ...createEmptyEditorPayment('2026-11-08'), draftKey: 'qa-917-new',
+  paymentKind: 'debt_close', paymentDate: '2026-11-08', method: 'НАЛИЧНЫЕ', amount: 2500,
+})
+let editorPaymentCalls = []
+let editorPaymentCompleted = []
+let financeInvalidations = 0
+let moneyErrors = []
+const paymentArgs = {
+  editorDraft: editorPaymentDraft, selectedOrder: recordedOrder, savingOrder: false,
+  catalogData: null, getSizeOptions: () => ['44', '46'], isAdmin: true,
+  setEditorDraft: next => { editorPaymentDraft = typeof next === 'function' ? next(editorPaymentDraft) : next },
+  setSavingOrder: () => {}, setError: next => { if(next)moneyErrors.push(next) },
+  setMessage: () => {},
+  prepareCriticalRequest: (key, payload) => ({ requestId: 'qa-new-payment-917', payload: { ...payload, requestId: 'qa-new-payment-917' } }),
+  completeCriticalRequest: (key, id) => { editorPaymentCompleted.push({ key, id }) },
+  apiFetch: async (url, options = {}) => {
+    editorPaymentCalls.push({ url: String(url), options })
+    return new Response(JSON.stringify({ ok: true, paymentId: 902 }),
+      { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+  upsertOrderInState: () => {}, setSelectedOrderId: () => {},
+  setEditorOrderOverride: () => {},
+  invalidateFinanceReadCaches: () => { financeInvalidations++ },
+  refreshDashboard: () => {}, refreshFinanceReports: () => {},
+}
+await createOrderEditorActions(paymentArgs).saveEditorPayment(1)
+assert.equal(editorPaymentCalls.length, 1)
+assert.equal(editorPaymentCalls[0].url, '/api/payments')
+assert.equal(editorPaymentCalls[0].options.method, 'POST')
+assert.equal(editorPaymentCalls[0].options.headers['X-Idempotency-Key'], 'qa-new-payment-917')
+const postedPayment = JSON.parse(editorPaymentCalls[0].options.body)
+assert.deepEqual({
+  orderId: postedPayment.orderId, paymentDate: postedPayment.paymentDate,
+  method: postedPayment.method, amount: postedPayment.amount, paymentKind: postedPayment.paymentKind,
+}, {
+  orderId: 917, paymentDate: '2026-11-08',
+  method: 'НАЛИЧНЫЕ', amount: 2500, paymentKind: 'debt_close',
+}, 'Only the intended debt-close money event may be recorded')
+assert.equal(postedPayment.requestId, 'qa-new-payment-917')
+assert.equal(editorPaymentDraft.payments[1].id, 902)
+assert.equal(editorPaymentDraft.payments[1].draftKey, undefined)
+assert.equal(editorPaymentCompleted.length, 1)
+assert.equal(financeInvalidations, 1)
+
+editorPaymentCalls = []
+editorPaymentCompleted = []
+const missingIdentityDraft = createEditorDraft(recordedOrder)
+missingIdentityDraft.payments.push({
+  ...createEmptyEditorPayment('2026-11-08'), paymentKind: 'primary',
+  draftKey: 'qa-no-payment-id', method: 'КАРТА', amount: 2000,
+})
+await createOrderEditorActions({
+  ...paymentArgs, editorDraft: missingIdentityDraft,
+  apiFetch: async (url, options = {}) => {
+    editorPaymentCalls.push({ url: String(url), options })
+    return new Response(JSON.stringify({ ok: true, paymentId: null }),
+      { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+  setEditorDraft: () => { throw new Error('Unknown payment state must retain its draft') },
+}).saveEditorPayment(1)
+assert.equal(editorPaymentCalls.length, 1)
+assert.equal(editorPaymentCompleted.length, 0, 'Missing payment ID after 2xx is not safe to acknowledge as locally committed')
+assert.match(moneyErrors.at(-1), /могла сохраниться/, 'Ambiguous payment success must guide a safe retry')
+
+let methodCorrectionCalls = []
+let methodCompletion = []
+const updated = createOrderEditorActions({
+  ...paymentArgs,
+  isAdmin: false,
+  apiFetch: async () => { throw new Error('Manager is forbidden to correct posted payment methods') },
+})
+assert.equal((await updated.correctRecordedPaymentMethod(recordedOrder, recordedOrder.payments[0], 'НАЛИЧНЫЕ')).ok, false)
+const correction = await createOrderEditorActions({
+  ...paymentArgs,
+  apiFetch: async (url, options = {}) => {
+    methodCorrectionCalls.push({ url: String(url), options })
+    return new Response(JSON.stringify({ ok: true }),
+      { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+  completeCriticalRequest: (key, id) => methodCompletion.push({ key, id }),
+}).correctRecordedPaymentMethod(recordedOrder, recordedOrder.payments[0], 'ТЕРМИНАЛ')
+assert.equal(correction.ok, true)
+assert.equal(methodCorrectionCalls.length, 1)
+assert.equal(methodCorrectionCalls[0].url, '/api/orders/917')
+assert.equal(methodCorrectionCalls[0].options.method, 'PATCH')
+const methodPayload = JSON.parse(methodCorrectionCalls[0].options.body)
+assert.deepEqual(methodPayload.paymentCorrections[0], {
+  paymentId: 901, method: 'ТЕРМИНАЛ',
+  expectedPaymentDate: '2026-11-08', expectedMethod: 'КАРТА',
+  expectedAmount: 5000, expectedPaymentKind: 'primary', expectedComment: 'Оплачено',
+}, 'Historical method correction must supply unchanged amount/date/kind CAS and no second payment')
+assert.equal(methodCompletion.length, 1)
+
 financeSql.close()
 console.log('P0_FINANCIAL_CHANNELS_PASSED: split validation, two-channel refunds/exchanges, idempotent reversal, exact linked payments')
 console.log('P0_FINANCIAL_SQL_ATOMIC_GUARDS_PASSED: payment and Return limits execute against extracted Worker SQL')
