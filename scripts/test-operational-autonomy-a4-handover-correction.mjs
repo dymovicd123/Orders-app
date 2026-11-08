@@ -15,6 +15,7 @@ try {
   const ordersWrite = read('worker/domains/orders-write.ts')
   const worker = read('worker/index.ts')
   const app = read('src/App.tsx')
+  const shipping = read('src/features/orders/orderShippingHandoverActions.ts')
   const table = read('src/features/sections/OrdersTableSection.tsx')
 
   check(reservations.includes('export async function correctMistakenOrderHandover'), 'dedicated handover correction domain action missing')
@@ -39,9 +40,9 @@ try {
   check(worker.includes('correctMistakenOrderHandoverWithCurrentExchange(env.DB, id'), 'correction route is not wired to exchange-aware domain action')
   check(worker.includes("nextShippingStatus !== 'sent'"), 'ordinary shipping route no longer remains send-only')
 
-  check(app.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
-  check(app.includes("physicalOutcome: 'not_issued' as const"), 'frontend correction does not explicitly confirm physical outcome')
-  check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
+  check(app.includes('createOrderShippingHandoverActions({') && shipping.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
+  check(shipping.includes("physicalOutcome: 'not_issued' as const"), 'frontend correction does not explicitly confirm physical outcome')
+  check(shipping.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
   check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
   check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
   const { projectOrderOperationalState } = await import('../src/app/orderOperationalProjection.ts')
