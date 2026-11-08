@@ -18,6 +18,8 @@ import { previewExchangeCancellationChain } from './domains/exchange-cancel-chai
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
+import { readPriorIssuedItemIds } from './domains/order-prior-issued-origin.ts'
+import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
 import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
@@ -1839,6 +1841,18 @@ export default {
           if (await orderHasNewDispatchHistory(id)) {
             return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки». Остальные товары не изменятся.'},{status:409});
           }
+          // A status-only confirmation of previously issued stock must never
+          // fall through to the legacy physical correction (would restock twice).
+          const statusOnly = await correctPriorIssuedOrderShippingIfApplicable(env.DB,id,{
+            physicalOutcome:input.physicalOutcome,
+            actor:authenticatedActor(request)||'Сотрудник',
+          });
+          if (statusOnly) {
+            let updatedOrder=null;
+            try { updatedOrder=await getOrder(env.DB,id) }
+            catch(error) { console.warn('Prior-issued correction readback failed',error) }
+            return json({...statusOnly,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
+          }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
@@ -1943,13 +1957,14 @@ export default {
         const order = await getOrder(env.DB, orderId);
         if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
         const activeReservations = await env.DB.prepare(
-          `SELECT order_item_id, quantity, status, variant_id
-           FROM inventory_reservations WHERE order_id = ? AND status = 'active'
+          `SELECT order_item_id, quantity, status, variant_id, inventory_source
+           FROM inventory_reservations WHERE order_id = ? AND status IN ('active','fulfilled')
            ORDER BY order_item_id ASC, id ASC`
         ).bind(orderId).all<Record<string,unknown>>();
         return json(buildOrderShipmentPlan(
           order as Parameters<typeof buildOrderShipmentPlan>[0],
           (activeReservations.results || []) as Parameters<typeof buildOrderShipmentPlan>[1],
+          await readPriorIssuedItemIds(env.DB,orderId),
         ));
       }
 
@@ -1959,7 +1974,7 @@ export default {
         if(request.method==='PATCH' && await orderHasNewDispatchHistory(id)){
           return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».'},{status:409});
         }
-        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown }>(request);
+        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
            FROM orders WHERE id = ?`
@@ -1986,6 +2001,22 @@ export default {
             refreshRequired: !alreadySentOrder,
             inventoryDelivery: { fulfilled: 0, unresolved: 0 },
           });
+        }
+        if (input.confirmAlreadyIssued === true) {
+          try {
+            const confirmed=await confirmPriorIssuedOrderShipping(env.DB,id,{
+              shippingDate:cleanText(input.shippingDate),
+              actor:authenticatedActor(request)||'Сотрудник',
+            });
+            let updatedOrder=null;
+            try { updatedOrder=await getOrder(env.DB,id) }
+            catch(error) { console.warn('Prior-issued shipping readback failed',error) }
+            return json({...confirmed,...(updatedOrder?{order:updatedOrder}:{}),
+              refreshRequired:!updatedOrder});
+          } catch(error) {
+            const e=publicApiError(error);
+            return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
+          }
         }
         const workshop = await orderWorkshopPendingForShipping(env.DB, id);
         if (workshop.pending) {
