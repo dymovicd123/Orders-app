@@ -51,6 +51,8 @@ jobs:
         run: node scripts/test-branch2-exchange-replacement-picker-20261107.mjs
       - name: STANDARD material and length stay hidden in orders, workshop and invoice exports
         run: node scripts/test-branch2-standard-display-20261108.mjs
+      - name: Work mixed order edit - immutable catalog snapshot and 7 lines
+        run: node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
