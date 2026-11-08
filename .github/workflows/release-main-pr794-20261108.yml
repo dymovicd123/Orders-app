@@ -14,7 +14,7 @@ jobs:
   audit-dispatch-readonly:
     if: >-
       github.event_name == 'pull_request'
-      && github.event.pull_request.number == 0
+      && github.event.pull_request.number == 796
       && github.event.pull_request.head.ref == 'audit/main-dispatch-85953d6c-20261108'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jq -e '.pull_request.number == 0
+          jq -e '.pull_request.number == 796
             and .pull_request.head.repo.full_name == .repository.full_name
             and .pull_request.head.ref == "audit/main-dispatch-85953d6c-20261108"' "$GITHUB_EVENT_PATH"
           grep -q '"name": "orders-app"' wrangler.jsonc
