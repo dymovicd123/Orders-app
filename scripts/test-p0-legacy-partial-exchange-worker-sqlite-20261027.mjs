@@ -816,8 +816,20 @@ try {
     operationType:'exchange',operationId:lateExchangeId,
     operationItemId:oldPending.id,destination:'warehouse',
   }
-  const lateReceived=await api('/api/returned-items/receive','POST',lateReceiptPayload)
-  assert.equal(lateReceived.data.ok,true)
+  let confirmedReceiptPayload=lateReceiptPayload
+  let lateReceived=await api('/api/returned-items/receive','POST',lateReceiptPayload)
+  // Earlier synthetic quick-check and this freshly created Exchange can share
+  // the same SQLite datetime second. Honor the actual newer-count preflight:
+  // it must never silently add Physical. In this fixture the item just arrived
+  // after that check, so explicitly supply the employee's factual decision.
+  if(!lateReceived.data.ok && lateReceived.data.code==='intake_freshness_confirmation_required') {
+    assert(lateReceived.data.latestCheck?.id,'Newer physical truth needs an exact checkpoint')
+    assert.equal(Number(stock().quantity),lateOldBefore,
+      'Unconfirmed post-stocktake intake must not write any Physical')
+    confirmedReceiptPayload={...lateReceiptPayload,freshnessDecision:'arrived_after_check'}
+    lateReceived=await api('/api/returned-items/receive','POST',confirmedReceiptPayload)
+  }
+  assert.equal(lateReceived.data.ok,true,'Late Exchange receipt response: '+JSON.stringify(lateReceived.data))
   assert.equal(lateReceived.data.stockApplied,true,
     'Exact physically returned exchange item must be applied once: '+JSON.stringify({result:lateReceived.data,oldStock:stock(),oldItem:sqlite.prepare('SELECT * FROM exchange_items WHERE id=?').get(oldPending.id)}))
   assert.equal(Number(stock().quantity),lateOldBefore+1)
@@ -828,7 +840,7 @@ try {
     'Exchange receipt must not alter pending replacement reservation')
   const receivedAt=sql('SELECT physical_received_at FROM exchange_items WHERE id=?',oldPending.id).physical_received_at
   assert(receivedAt,'Exchange old item must durably record physical receipt timestamp')
-  const lateReplay=await api('/api/returned-items/receive','POST',lateReceiptPayload)
+  const lateReplay=await api('/api/returned-items/receive','POST',confirmedReceiptPayload)
   assert.equal(lateReplay.data.ok,true)
   assert.equal(Number(stock().quantity),lateOldBefore+1,
     'Same requestId after network replay cannot add exchange old SKU twice')
