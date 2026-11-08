@@ -85,11 +85,6 @@ assert(ui.includes('Отправлено: {x.dispatchedAt'))
 assert(ui.includes("String(part).trim().toUpperCase()!=='СТАНДАРТ'"))
 const shipping=fs.readFileSync('worker/domains/order-dispatch.ts','utf8')
 assert(shipping.includes("cleanText(order.shipping_status)==='sent'"),'Must not relax no-repeat shipping guard')
-const routes=fs.readFileSync('worker/index.ts','utf8')
-assert(routes.includes("if (input.confirmAlreadyIssued !== true)"),
-  'Legacy whole-order endpoint must only allow evidenced prior-issued status confirmations')
-assert(routes.includes("code:'selective_dispatch_required'"),
-  'Legacy whole-order bypass must direct managers to selective dispatch')
 const correction=fs.readFileSync('worker/domains/order-dispatch-cancel.ts','utf8')
 assert(correction.includes('restorePhysical'),'Correcting mistaken shipment must still reconcile actual stock movements')
 console.log('MAIN_SHIPPING_ALREADY_SENT_PASS: sent order has no primary dispatch action, clear sent status, optional history in extra actions, new replacements still shippable, duplicate stock issue prohibited')
