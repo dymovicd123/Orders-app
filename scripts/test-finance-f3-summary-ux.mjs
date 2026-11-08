@@ -56,7 +56,7 @@ try {
     close: () => {},
   }
   globalThis.document = {
-    getElementById: (id) => id === 'selectedFinanceReportExport' || id === 'planReportExport' || id === 'inventoryStocktakePrint'
+    getElementById: (id) => id === 'selectedFinanceReportExport' || id === 'planReportExport' || id === 'teamPlanReportExport' || id === 'inventoryStocktakePrint'
       ? { innerHTML: '<p>Сводка</p>' } : null,
     createElement: (tag) => {
       assert.equal(tag, 'iframe')
