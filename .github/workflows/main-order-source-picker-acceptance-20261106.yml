@@ -17,6 +17,11 @@ on:
       - src/App.tsx
       - src/features/sections/OrdersTableSection.tsx
       - worker/domains/order-shipment-plan.ts
+      - worker/domains/order-dispatch.ts
+      - worker/domains/order-dispatch-confirmation.ts
+      - worker/domains/order-dispatch-cancel.ts
+      - scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - scripts/test-selective-shipping-shortage-http-20261108.mjs
       - scripts/test-main-confirmed-shipping-state-20261108.mjs
 permissions:
   contents: read
@@ -60,18 +65,22 @@ jobs:
         run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: Completed dispatch must remain blocked and shown clearly
         run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
+      - name: Selective shipping shortage confirmation without hard stock block
+        run: node scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - name: Worker HTTP and SQLite shipment shortage, idempotency and cancellation
+        run: node scripts/test-selective-shipping-shortage-http-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
         run: npm run release:check
 
-  deploy-branch2-pr794:
+  deploy-branch2-pr800:
     name: Isolated Branch2 deploy after PR794 acceptance
     needs: source-first-order-qa
     if: >-
       github.event_name == 'pull_request'
-      && github.event.pull_request.number == 794
-      && github.event.pull_request.head.ref == 'feature/main-source-first-order-picker-20261106'
+      && github.event.pull_request.number == 800
+      && github.event.pull_request.head.ref == 'fix/selective-dispatch-no-stock-block-20261108'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -96,11 +105,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = pull_request
-          test "$GITHUB_HEAD_REF" = feature/main-source-first-order-picker-20261106
+          test "$GITHUB_HEAD_REF" = fix/selective-dispatch-no-stock-block-20261108
           test "$GITHUB_BASE_REF" = main
-          jq -e '.pull_request.number == 794
+          jq -e '.pull_request.number == 800
             and .pull_request.head.repo.full_name == .repository.full_name
-            and .pull_request.head.ref == "feature/main-source-first-order-picker-20261106"' "$GITHUB_EVENT_PATH"
+            and .pull_request.head.ref == "fix/selective-dispatch-no-stock-block-20261108"' "$GITHUB_EVENT_PATH"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
@@ -114,7 +123,7 @@ jobs:
           assert.equal(c.d1_databases[0].binding,'DB')
           assert.equal(c.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
           assert.equal(c.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
-          console.log('PR794_BRANCH2_ONLY_CONFIG_VERIFIED')
+          console.log('PR800_BRANCH2_ONLY_CONFIG_VERIFIED')
           NODE
       - run: npm ci
       - name: Build confirmed PR head
@@ -161,4 +170,4 @@ jobs:
           cmp "$RUNNER_TEMP/branch2-before.json" "$RUNNER_TEMP/branch2-after.json"
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
-          echo 'PR794_BRANCH2_ONLY_DEPLOY_VERIFIED'
+          echo 'PR800_BRANCH2_ONLY_DEPLOY_VERIFIED'

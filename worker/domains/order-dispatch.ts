@@ -4,10 +4,11 @@ import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { priorIssueEvidenceSql, readPriorIssuedItemIds } from './order-prior-issued-origin.ts'
 import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts'
 import { CriticalOperationConflictError } from './critical.ts'
+import { boundedDispatchStock, DispatchStockConfirmationRequired, normalizeDispatchStockConfirmations, type DispatchStockConfirmation } from './order-dispatch-confirmation.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
 
 type Selection = { orderItemId: number; quantity: number }
-type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
+type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; activeQuantity: number; unresolvedQuantity: number; needsConfirmation: boolean; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
 
 const fail = (message: string): never => { throw new CriticalOperationConflictError(message) }
 
@@ -22,12 +23,13 @@ const fail = (message: string): never => { throw new CriticalOperationConflictEr
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
   orderId: number,
-  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string },
+  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; stockConfirmations?: DispatchStockConfirmation[] },
 ) {
   const requestId = cleanText(input.requestId)
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)) fail('Повторите отправку после обновления заказа.')
   if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 40) fail('Выберите товары для отправки.')
   if (input.items.some(row=>!Number.isSafeInteger(row.orderItemId)||row.orderItemId<=0||!Number.isSafeInteger(row.quantity)||row.quantity<=0)) fail('Укажите корректное количество.')
+  const confirmations=normalizeDispatchStockConfirmations(input.stockConfirmations)
   const uniqueIds = new Set(input.items.map(x=>x.orderItemId))
   if (uniqueIds.size !== input.items.length) fail('Одна позиция выбрана несколько раз.')
   const replay = await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=? LIMIT 1').bind(requestId).first<{id:number;order_id:number}>()
@@ -132,13 +134,17 @@ export async function dispatchSelectedCompleteOrderLines(
   const reservations = (reserved.results||[]).filter(row=>selectedStock.some(x=>x.orderItemId===toInt(row.order_item_id,0)))
   if (reservations.length!==selectedStock.length || reservations.some(x=>{
     const item=selectedStock.find(row=>row.orderItemId===toInt(x.order_item_id,0))
-    return !item || cleanText(x.status)!==(item.dispatchPriorIssued?'fulfilled':'active')
-  })) fail('Резерв товара изменился. Обновите заказ.')
+    const expected=item?.dispatchPriorIssued?'fulfilled':item?.reservationStatus==='unresolved'?'unresolved':'active'
+    return !item || cleanText(x.status)!==expected
+  })) fail('Связь заказа с товаром изменилась. Обновите заказ.')
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
   for (const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)
     if (!r || toInt(r.quantity,0)!==item.originalQuantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
-      fail('Резерв, склад или характеристики вещи изменились. Обновите заказ.')
+      fail('Связь со складом или характеристики вещи изменились. Обновите заказ.')
+    }
+    if(r && cleanText(r.status)==='unresolved' && item.quantity!==item.originalQuantity){
+      fail('При уточнении наличия отправьте всю выбранную позицию. Для частичной отправки сначала разделите заказ.')
     }
   }
 
@@ -173,9 +179,13 @@ export async function dispatchSelectedCompleteOrderLines(
   for(const item of selectedPhysicalStock) {
     const key=`${item.sourceType}:${toInt(item.variantId,0)}`
     const previous=groups.get(key)
+    const unresolved=item.reservationStatus==='unresolved'
     groups.set(key,{
       source:item.sourceType as 'warehouse'|'boutique',variantId:toInt(item.variantId,0),
       quantity:(previous?.quantity||0)+item.quantity,
+      activeQuantity:(previous?.activeQuantity||0)+(unresolved?0:item.quantity),
+      unresolvedQuantity:(previous?.unresolvedQuantity||0)+(unresolved?item.quantity:0),
+      needsConfirmation:false,
       stockId:0,before:0,reservedBefore:0,productId:0,productName:'',
       gender:null,color:null,material:null,length:null,size:null,
     })
@@ -195,8 +205,29 @@ export async function dispatchSelectedCompleteOrderLines(
     group.productId=toInt(stock.product_id,0);group.productName=cleanText(stock.product_name)
     group.gender=cleanText(stock.gender)||null;group.color=cleanText(stock.color)||null
     group.material=cleanText(stock.material)||null;group.length=cleanText(stock.length)||null;group.size=cleanText(stock.size)||null
-    if(group.before<group.quantity || group.reservedBefore<group.quantity) fail(`Не хватает товара «${group.productName}». Проверьте остаток перед отправкой.`)
+    group.needsConfirmation=group.before<group.quantity
+      || group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0
   }
+  const requiredConfirmations=[] as DispatchStockConfirmationRequired['items']
+  for(const group of groups.values()){
+    const key=`${group.source}:${group.variantId}`
+    const confirmation=confirmations.find(row=>`${row.source}:${row.variantId}`===key)
+    if(confirmation && (confirmation.expectedQuantity!==group.before || confirmation.operationQuantity!==group.quantity)){
+      fail('Остаток или выбранное количество изменились. Обновите отправку и подтвердите ещё раз.')
+    }
+    if(group.needsConfirmation && !confirmation){
+      requiredConfirmations.push({
+        source:group.source,variantId:group.variantId,
+        expectedQuantity:group.before,trackedPhysicalQuantity:group.before,
+        operationQuantity:group.quantity,productName:group.productName,
+        reservationShortage:group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0,
+      })
+    }
+  }
+  if(confirmations.some(row=>!groups.has(`${row.source}:${row.variantId}`))){
+    fail('В подтверждении есть товар, которого нет в выбранной отправке.')
+  }
+  if(requiredConfirmations.length)throw new DispatchStockConfirmationRequired(requiredConfirmations)
 
   // Commit in one D1 transaction. A competing worker must make a required
   // predicate fail and trigger the deliberate unique-key rollback below.
@@ -242,9 +273,9 @@ export async function dispatchSelectedCompleteOrderLines(
        WHERE NOT EXISTS (
          SELECT 1 FROM inventory_reservations r JOIN order_items oi ON oi.id=r.order_item_id
          JOIN orders o ON o.id=r.order_id
-         WHERE r.id=? AND r.order_id=? AND r.order_item_id=? AND r.status='active'
+         WHERE r.id=? AND r.order_id=? AND r.order_item_id=? AND r.status=?
            AND r.quantity=? AND r.variant_id=? AND r.inventory_source=?
-           AND oi.quantity=? AND oi.stock_writeoff_status='reserved'
+           AND oi.quantity=? AND oi.stock_writeoff_status=?
            AND (o.shipping_status<>'sent' OR EXISTS(
              SELECT 1 FROM inventory_lifecycle_events le
              JOIN exchanges e ON e.id=le.operation_id
@@ -260,7 +291,11 @@ export async function dispatchSelectedCompleteOrderLines(
            AND o.order_status NOT IN ('archived','deleted')
            AND COALESCE(o.archived_at,'')=''
        )`
-    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity,toInt(item.exchangeEventId,0)))
+    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,
+      item.reservationStatus==='unresolved'?'unresolved':'active',
+      item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity,
+      item.reservationStatus==='unresolved'?'pending_reservation':'reserved',
+      toInt(item.exchangeEventId,0)))
   }
   for(const item of selectedWorkshop) {
     statements.push(db.prepare(
@@ -323,17 +358,32 @@ export async function dispatchSelectedCompleteOrderLines(
     )
   }
   for(const g of groups.values()){
+    const bounded=boundedDispatchStock(g.before,g.quantity,g.reservedBefore,g.activeQuantity)
     statements.push(
       db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
           SELECT 'human_inventory_v2','__dispatch_stock_changed__',?
           WHERE NOT EXISTS(
             SELECT 1 FROM inventory_stock WHERE id=? AND inventory_source=? AND variant_id=? AND quantity=? AND reserved_quantity=?
           )`).bind(stamp,g.stockId,g.source,g.variantId,g.before,g.reservedBefore),
-      db.prepare(`UPDATE inventory_stock SET quantity=quantity-?,reserved_quantity=reserved_quantity-?,
+      db.prepare(`UPDATE inventory_stock SET quantity=?,reserved_quantity=?,
         last_action='Отправка товаров',last_source_ref=?,updated_at=?
         WHERE id=? AND quantity=? AND reserved_quantity=?`
-      ).bind(g.quantity,g.quantity,`dispatch:${requestId}`,stamp,g.stockId,g.before,g.reservedBefore),
+      ).bind(bounded.after,bounded.reservedAfter,`dispatch:${requestId}`,stamp,g.stockId,g.before,g.reservedBefore),
     )
+    if(g.needsConfirmation){
+      // Confirmation records the concrete physical shipment, not an invented
+      // whole-SKU stocktake or a release of other orders' reservations.
+      statements.push(db.prepare(
+        `INSERT OR IGNORE INTO inventory_operation_evidence(
+          evidence_key,inventory_source,variant_id,operation_type,operation_reference,
+          tracked_physical_before,confirmed_operation_quantity,explained_quantity,unexplained_quantity,
+          confirmed_by,occurred_at,created_at
+        ) VALUES(?,?,?,'shipping',?,?,?,?,?,?,?,?)`
+      ).bind(`dispatch:${requestId}:${g.source}:${g.variantId}`,
+        g.source,g.variantId,`${order.external_id}:dispatch:${requestId}`,
+        g.before,g.quantity,bounded.deducted,bounded.unaccounted,
+        cleanText(input.actor)||'Сотрудник',stamp,stamp))
+    }
   }
   const running=new Map(Array.from(groups.entries()).map(([k,g])=>[k,g.before]))
   for(const item of selected){
@@ -356,7 +406,9 @@ export async function dispatchSelectedCompleteOrderLines(
     }
     const group=groups.get(`${item.sourceType}:${toInt(item.variantId,0)}`)!
     const key=`${item.sourceType}:${item.variantId}`
-    const next=(running.get(key)||0)-item.quantity
+    const beforeLine=running.get(key)||0
+    const next=Math.max(0,beforeLine-item.quantity)
+    const accountedDeduction=beforeLine-next
     running.set(key,next)
     const ref=`dispatch:${requestId}:item:${item.orderItemId}`
     statements.push(
@@ -367,13 +419,17 @@ export async function dispatchSelectedCompleteOrderLines(
           reference_type,reference_id,comment,created_at
         ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,'order_dispatch',?,?,?)`
       ).bind(group.source,group.productId,group.variantId,group.productName,group.gender,group.color,
-        group.material,group.length,group.size,-item.quantity,next,ref,`Отправлен заказ ${order.external_id}`,stamp),
-      db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',fulfilled_at=?,updated_at=?
-         WHERE id=? AND status='active' AND quantity=?`
-      ).bind(item.quantity,stamp,stamp,toInt(r.id,0),item.originalQuantity),
+        group.material,group.length,group.size,-accountedDeduction,next,ref,
+        `Отправлен заказ ${order.external_id}${group.needsConfirmation?' · наличие подтверждено при отправке':''}`,stamp),
+      db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',
+         unresolved_reason=NULL,fulfilled_at=?,updated_at=?
+         WHERE id=? AND status=? AND quantity=?`
+      ).bind(item.quantity,stamp,stamp,toInt(r.id,0),
+        item.reservationStatus==='unresolved'?'unresolved':'active',item.originalQuantity),
       db.prepare(`UPDATE order_items SET stock_writeoff_status='fulfilled',stock_quantity_before=?,stock_quantity_after=?
-         WHERE id=? AND stock_writeoff_status='reserved'`
-      ).bind(next+item.quantity,next,item.orderItemId),
+         WHERE id=? AND stock_writeoff_status=?`
+      ).bind(beforeLine,next,item.orderItemId,
+        item.reservationStatus==='unresolved'?'pending_reservation':'reserved'),
       db.prepare(
         `INSERT INTO order_dispatch_items(
           dispatch_id,order_item_id,source_type,variant_id,reservation_id,movement_id,quantity,created_at
