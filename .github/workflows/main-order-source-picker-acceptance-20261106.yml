@@ -49,6 +49,8 @@ jobs:
         run: node scripts/test-branch2-itemized-editor-picker-20261107.mjs
       - name: Exchange replacement uses exact create-order picker in Chrome
         run: node scripts/test-branch2-exchange-replacement-picker-20261107.mjs
+      - name: STANDARD material and length stay hidden in orders, workshop and invoice exports
+        run: node scripts/test-branch2-standard-display-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
