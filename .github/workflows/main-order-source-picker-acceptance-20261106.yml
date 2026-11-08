@@ -15,6 +15,9 @@ on:
       - worker/core/types.ts
       - worker/index.ts
       - src/App.tsx
+      - src/features/sections/OrdersTableSection.tsx
+      - worker/domains/order-shipment-plan.ts
+      - scripts/test-main-confirmed-shipping-state-20261108.mjs
 permissions:
   contents: read
 jobs:
@@ -55,6 +58,8 @@ jobs:
         run: node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
       - name: Real HTTP six-to-seven line editor rewrite with payment and reservation checks
         run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
+      - name: Completed dispatch must remain blocked and shown clearly
+        run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
