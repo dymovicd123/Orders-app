@@ -41,6 +41,7 @@ import { listOrderSourcePicker } from './domains/order-source-picker.ts'
 import { readPriorIssuedItemIds } from './domains/order-prior-issued-origin.ts'
 import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
+import { DispatchStockConfirmationRequired } from './domains/order-dispatch-confirmation.ts'
 import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
@@ -1870,7 +1871,7 @@ export default {
           return json({ok:true,dispatches:records.results||[]});
         }
         try {
-          const input=await readJson<{ requestId?:unknown; items?:unknown; dispatchDate?:unknown }>(request);
+          const input=await readJson<{ requestId?:unknown; items?:unknown; dispatchDate?:unknown; stockConfirmations?:unknown }>(request);
           const items=Array.isArray(input.items) ? input.items.map((row:any)=>({
             orderItemId:Number(row?.orderItemId),quantity:Number(row?.quantity)
           })) : [];
@@ -1878,12 +1879,16 @@ export default {
             requestId:cleanText(input.requestId),items,
             dispatchDate:cleanText(input.dispatchDate),
             actor:cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
+            stockConfirmations:input.stockConfirmations as any,
           });
           let updatedOrder=null;
           try { updatedOrder=await getOrder(env.DB,orderId) }
           catch(error) { console.warn('Dispatch committed; order readback failed',error) }
           return json({...result,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
         }catch(error){
+          if(error instanceof DispatchStockConfirmationRequired){
+            return json({ok:false,code:error.code,message:error.message,items:error.items},{status:409})
+          }
           const e=publicApiError(error);
           return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
         }
