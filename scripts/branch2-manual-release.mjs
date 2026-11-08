@@ -6,7 +6,7 @@
 // read-only Branch2 D1 preflight, Worker-only deploy, read-only postflight.
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve, relative, isAbsolute } from 'node:path'
+import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const ROOT=process.cwd()
