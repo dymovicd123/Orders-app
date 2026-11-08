@@ -74,7 +74,7 @@ const browser=[
  "const change=(node,value)=>{if(!node)throw Error('Missing input');const p=node.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value').set.call(node,value);node.dispatchEvent(new Event(node.tagName==='SELECT'?'change':'input',{bubbles:true}))};",
  "(async()=>{try{",
  "await wait(250);",
- "if(window.__details.includes('СТАНДАРТ')||!window.__details.includes('Без размера')||!window.__details.includes('Обычная длина')||window.__details.includes('Размер Без размера')||!window.__zero.includes('0'))throw Error('F6 human labels');",
+ "if(window.__details.includes('СТАНДАРТ')||!window.__details.includes('Без размера')||window.__details.includes('Обычная длина')||window.__details.includes('Размер Без размера')||!window.__zero.includes('0'))throw Error('F6 human labels');",
  "await click(document.querySelector('.clothing-source-model'));",
  "const color=document.querySelector('select[aria-label=\"Фильтр по цвету\"]');const size=document.querySelector('select[aria-label=\"Фильтр по размеру\"]');if(!color||!size)throw Error('Fixture did not show adaptive filters');",
  "change(color,'БЕЖЕВЫЙ');await wait(90);change(size,'44');await wait(90);",
