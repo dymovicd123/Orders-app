@@ -146,3 +146,7 @@
 .main-workshop-expand:hover{text-decoration:underline}
 
 .main-workshop-match{margin:0;padding:9px 11px;border:1px solid #c3d9e9;border-radius:8px;background:#f3f9ff;color:#2b567d;font-size:12px;line-height:1.5}
+
+/* In the guided editor, suggestions take up layout space rather than covering the full-form action. */
+.main-workshop-quick .main-manual-options{position:static;z-index:auto;margin-top:6px;box-shadow:none}
+.main-workshop-quick-base .main-workshop-expand{justify-self:start;margin-top:2px}
