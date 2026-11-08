@@ -16,9 +16,11 @@ export type DispatchStockConfirmationItem = DispatchStockConfirmation & {
 
 export class DispatchStockConfirmationRequired extends Error {
   readonly code = 'dispatch_stock_confirmation_required'
-  constructor(readonly items: DispatchStockConfirmationItem[]) {
+  readonly items: DispatchStockConfirmationItem[]
+  constructor(items: DispatchStockConfirmationItem[]) {
     super('По учёту остатка или резерва недостаточно. Если конкретные вещи находятся у вас, подтвердите их отправку. Общий остаток не будет изменён наугад.')
     this.name = 'DispatchStockConfirmationRequired'
+    this.items = items
   }
 }
 
