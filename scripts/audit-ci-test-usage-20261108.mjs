@@ -54,6 +54,7 @@ const result = {
   referencedInOtherScripts: fromOtherScripts.size,
   referencedInPackageScripts: fromPackage.size,
   candidatesForManualReview: candidateUnreferenced.length,
+  manualReviewCandidates: candidateUnreferenced,
   candidateExamples: candidateUnreferenced.slice(0,25),
   exactDuplicateGroups: duplicates.length,
   exactDuplicateFiles: duplicates.flat().length,
@@ -70,6 +71,6 @@ if (process.argv.includes('--json')) {
     if (Array.isArray(v)) continue
     console.log('CI_INVENTORY', k, v)
   }
-  console.log('CI_INVENTORY_REVIEW_CANDIDATES (not deletion list)', JSON.stringify(result.candidateExamples))
+  console.log('CI_INVENTORY_REVIEW_CANDIDATES (not deletion list)', JSON.stringify(result.manualReviewCandidates))
   console.log('CI_INVENTORY_LARGEST_TESTS', JSON.stringify(result.largestTests))
 }
