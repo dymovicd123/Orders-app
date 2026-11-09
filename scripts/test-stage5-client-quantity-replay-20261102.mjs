@@ -34,6 +34,16 @@ assert.equal(dispatchSelectionError([unresolved],{15:1}),'','Known-SKU shortage 
 assert.equal(dispatchSelectionError([unresolved],{15:2}),'')
 assert.equal(dispatchSelectionError([unresolved],{15:0}),'')
 const src=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
+const contextSource=fs.readFileSync('src/features/orders/orderTableSectionContext.ts','utf8')
+assert(!src.includes('@ts-nocheck'), 'Order table must remain compiled under TypeScript')
+assert(!/[:<,|]\s*any\b|\bas\s+any\b|\bany\s*\[\s*\]/.test(src), 'Order table must not revert to unchecked any-based drafts')
+assert(!/[:<,|]\s*any\b|\bas\s+any\b|\bany\s*\[\s*\]/.test(contextSource), 'Order table contract must remain precisely typed')
+assert(src.includes('type SectionContext = OrderTableSectionContext'), 'Order table must consume the typed context')
+assert(contextSource.includes("ReturnType<typeof createOrderShippingHandoverActions>"),
+  'Stock and shipment callback signatures must remain derived from the real action owners')
+assert(contextSource.includes("ReturnType<typeof createOrderDependentCancellationActions>"),
+  'Return/exchange cancellation contract must remain tied to the actual CAS owner')
+
 const actionsSource=fs.readFileSync('src/features/orders/orderTableDispatchActions.ts','utf8')
 const modalSource=fs.readFileSync('src/features/orders/OrderTableDispatchModal.tsx','utf8')
 assert(src.includes('<OrderTableDispatchModal'),'OrdersTable must wire the typed shipping modal')

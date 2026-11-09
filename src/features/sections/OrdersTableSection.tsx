@@ -1,39 +1,43 @@
-// @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
+import type { OrderRecord } from '../../app/types'
+import type { RetiredExchangePriceOption } from '../orders/orderCorrectionsActions'
+import type { ReturnCancelChoice } from '../orders/orderDependentCancellationActions'
+import type { OrderExchangeCancelPlan } from '../../app/orderExchangeCancellationPlan'
+import type { OrderDeleteExchangeLine, OrderDeletePreview, OrderTableSectionContext } from '../orders/orderTableSectionContext'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 import { isOrderShipmentCompleteForActions, projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
 import { createOrderTableDispatchActions, type OrderTableDispatchDraft } from '../orders/orderTableDispatchActions'
 import { OrderTableDispatchModal } from '../orders/OrderTableDispatchModal'
 import './OrderShipmentStatus.css'
-type SectionContext = Record<string, any>
+type SectionContext = OrderTableSectionContext
 
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
   const [metadataDraft,setMetadataDraft]=useState<{
-    order:any;next:Record<string,string>;error:string;
+    order:OrderRecord;next:Record<string,string>;error:string;
   }|null>(null)
   // Historical old V2 pricing keeps its backend/audit for rare reconciliation,
   // but no longer clutters the everyday order menu.
   const showRetiredExchangePriceActions=false
-  const [priceDraft, setPriceDraft] = useState<{order: any; prices: Record<number,string>; error: string} | null>(null)
+  const [priceDraft, setPriceDraft] = useState<{order: OrderRecord; prices: Record<number,string>; error: string} | null>(null)
   const [oldExchangePriceDraft,setOldExchangePriceDraft] = useState<{
-    order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
+    order:OrderRecord; items:RetiredExchangePriceOption[]; itemId:number; price:string; error:string; loading:boolean;
   } | null>(null)
   const [exchangeChainDraft,setExchangeChainDraft] = useState<{
-    order:any;mode:'last'|'all';plan:any|null;error:string;loading:boolean;submitting:boolean;progress:string;
+    order:OrderRecord;mode:'last'|'all';plan:OrderExchangeCancelPlan|null;error:string;loading:boolean;submitting:boolean;progress:string;
   } | null>(null)
-  const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<any|null>(null)
+  const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<OrderRecord|null>(null)
   const [linkedPaymentDraft,setLinkedPaymentDraft]=useState<{
-    order:any;paymentId:number;method:string;error:string;
+    order:OrderRecord;paymentId:number;method:string;error:string;
   }|null>(null)
   const [returnCancelDraft,setReturnCancelDraft]=useState<{
-    order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
+    order:OrderRecord;choices:ReturnCancelChoice[];selectedId:number;loading:boolean;submitting:boolean;error:string;
   }|null>(null)
   const [dispatchDraft,setDispatchDraft] = useState<OrderTableDispatchDraft | null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
-    order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
+    order:OrderRecord;preview:OrderDeletePreview|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
   } | null>(null)
   const {
@@ -44,7 +48,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     correctRecordedPaymentMethod,
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
-    loadExchangeCancellationPreview,
     loadOrderExchangeCancellationPlan,
     cancelOrderExchangeChain,
     loadOrderReturnCancellationChoices,
@@ -65,7 +68,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     isAdmin,
     kaspiMode = false,
     ManagerBadge,
-    markOrderSentToClient,
     apiFetch,
     askActionConfirmation,
     askStockResolution,
@@ -84,7 +86,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     sectorStyle,
     selectedOrderId,
     setExpandedOrderItemCounts,
-    shippingStatusLabel,
     suggestionValues,
     summarizeOrderItemLines,
     summarizeOrderPaymentLines,
@@ -112,18 +113,18 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   })
 
   const priceItems = priceDraft ? (priceDraft.order.items || []).filter(
-    (item:any)=>Number(item.id)>0 && Number(item.quantity)>0,
+    (item)=>Number(item.id)>0 && Number(item.quantity)>0,
   ) : []
-  const priceChanges = priceItems.flatMap((item:any)=>{
+  const priceChanges = priceItems.flatMap((item)=>{
     const nextText = priceDraft?.prices[Number(item.id)] ?? ''
     const next = Number(nextText)
     return nextText.trim() !== '' && Number.isSafeInteger(next) && next >= 0
       && next !== Number(item.unitPrice || 0) ? [{item,unitPrice:next}] : []
   })
-  const priceDifference = priceChanges.reduce((sum:number,change:any)=>
+  const priceDifference = priceChanges.reduce((sum:number,change)=>
     sum + Number(change.item.quantity || 0) *
       (change.unitPrice - Number(change.item.unitPrice || 0)),0)
-  const priceHasInvalid = priceItems.some((item:any)=>{
+  const priceHasInvalid = priceItems.some((item)=>{
     const value = priceDraft?.prices[Number(item.id)] ?? ''
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
@@ -131,7 +132,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
     &&!adminDeleteDraft.preview.activeSaga
     &&(adminDeleteDraft.preview.requiresPhysicalFact
-      ||(adminDeleteDraft.preview.appliedStockReview?.appliedCount>0
+      ||((adminDeleteDraft.preview.appliedStockReview?.appliedCount ?? 0)>0
         &&adminDeleteDraft.preview.appliedStockReview?.allowed)))
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
@@ -139,12 +140,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
         && reason.startsWith('Для цепочки с зафиксированной выдачей товара'))) : []
 
 
-  const openLinkedPaymentCorrection=(order:any)=>{
-    const payment=Array.isArray(order.payments)?order.payments.find((p:any)=>Number(p.id)>0):null
+  const openLinkedPaymentCorrection=(order:OrderRecord)=>{
+    const payment=Array.isArray(order.payments)?order.payments.find((p)=>Number(p.id)>0):null
     if(!payment)return
     setLinkedPaymentDraft({order,paymentId:Number(payment.id),method:String(payment.method||''),error:''})
   }
-  const openMetadataCorrection=(order:any)=>setMetadataDraft({order,error:'',next:{
+  const openMetadataCorrection=(order:OrderRecord)=>setMetadataDraft({order,error:'',next:{
     orderDate:String(order.order_date||'').trim(),
     customerPhone:String(order.customer_phone||'').trim(),
     customerName:String(order.customer_name||'').trim(),
@@ -152,12 +153,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     deliveryType:String(order.delivery_type||'').trim(),
     comment:String(order.comment||'').trim(),
   }})
-  const openPriceCorrection=(order:any)=>setPriceDraft({order,error:'',
+  const openPriceCorrection=(order:OrderRecord)=>setPriceDraft({order,error:'',
     prices:Object.fromEntries((order.items||[])
-      .filter((item:any)=>Number(item.id)>0&&Number(item.quantity)>0)
-      .map((item:any)=>[Number(item.id),String(item.unitPrice??0)])),
+      .filter((item)=>Number(item.id)>0&&Number(item.quantity)>0)
+      .map((item)=>[Number(item.id),String(item.unitPrice??0)])),
   })
-  const openExchangeCancellation=(order:any,mode:'last'|'all')=>{
+  const openExchangeCancellation=(order:OrderRecord,mode:'last'|'all')=>{
     setExchangeChainDraft({order,mode,plan:null,error:'',loading:true,submitting:false,progress:''})
     void (async()=>{
       try{
@@ -170,13 +171,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     })()
   }
 
-  const openReturnCancel=(order:any)=>{
+  const openReturnCancel=(order:OrderRecord)=>{
     setReturnCancelDraft({order,choices:[],selectedId:0,loading:true,submitting:false,error:''})
     void(async()=>{
       try{
         const choices=await loadOrderReturnCancellationChoices(order)
         setReturnCancelDraft(d=>d&&d.order.id===order.id
-          ?{...d,choices,selectedId:choices.find((choice:any)=>!choice.parentExchangeId)?.id||choices[0]?.id||0,
+          ?{...d,choices,selectedId:choices.find((choice)=>!choice.parentExchangeId)?.id||choices[0]?.id||0,
             loading:false,error:''}:d)
       }catch(error){
         setReturnCancelDraft(d=>d&&d.order.id===order.id
@@ -467,7 +468,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Отправить товары
                               </button>
                             ) : null}
-                            {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
+                            {projection.canCorrectShipping && !(order.items||[]).some((item)=>item.shipmentSentQuantity!=null) ? (
                               <button
                                 className="secondary compact"
                                 type="button"
@@ -525,7 +526,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  if(projection.canEdit)handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  if(projection.canEdit)handleEditOrder(order, 'orders')
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
@@ -553,7 +554,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить реквизиты
                                   </button>
                             ) : null}
-                                {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
+                                {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
                                     openPriceCorrection(order)
@@ -690,7 +691,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <h4>Товар действительно передавался клиенту?</h4>
                             <p className="muted">
                               {adminDeleteDraft.preview?.requiresPhysicalFact
-                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
+                                ||(adminDeleteDraft.preview?.appliedStockReview?.appliedCount ?? 0)>0
                                 ?'В учёте есть движения товара или отметки выдачи.'
                                 :'В учёте нет подтверждённой выдачи.'}
                               {' '}Перед удалением подтвердите, что произошло на самом деле.
@@ -745,8 +746,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <h4>Склад</h4>
                             <p>Снимутся активные резервы: <strong>
                               {(adminDeleteDraft.preview.impact?.reservations||[])
-                                .filter((x:any)=>x.action==='release_reserve')
-                                .reduce((sum:number,x:any)=>sum+x.quantity,0)} шт.</strong></p>
+                                .filter((x)=>x.action==='release_reserve')
+                                .reduce((sum:number,x)=>sum+x.quantity,0)} шт.</strong></p>
                             <p>Учётных отметок выдачи: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
                             {(adminDeleteDraft.preview.appliedStockReview?.reversals||[]).length ? (
                               <div style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:10,marginTop:10}}>
@@ -754,7 +755,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 <p className="muted">При нулевом списании отмена снимет ошибочную учётную выдачу, не прибавляя товар к остатку.
                                   Реальные списания и резервы обрабатываются отдельно.</p>
                                 <ul style={{paddingLeft:18}}>
-                                  {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect:any)=>(
+                                  {adminDeleteDraft.preview.appliedStockReview?.reversals.map((effect)=>(
                                     <li key={effect.eventId}>
                                       <strong>{effect.name}</strong> ·
                                       {' '}{effect.source==='warehouse'?'Склад':
@@ -780,14 +781,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <section style={{marginTop:14}}>
                           <h4>Оплаты, которые будут аннулированы</h4>
                           {(adminDeleteDraft.preview.impact?.payments||[]).length ? (
-                            <ul>{adminDeleteDraft.preview.impact.payments.map((payment:any)=>(
+                            <ul>{adminDeleteDraft.preview.impact.payments.map((payment)=>(
                               <li key={payment.id}>#{payment.id} · {payment.date||'Без даты'} ·
                                 {' '}{payment.method}: <strong>{formatMoney(payment.amount)} ₸</strong></li>
                             ))}</ul>
                           ) : <p className="muted">Оплат нет.</p>}
                           <h4>Возвраты денег</h4>
                           {(adminDeleteDraft.preview.impact?.refunds||[]).length ? (
-                            <ul>{adminDeleteDraft.preview.impact.refunds.map((refund:any)=>(
+                            <ul>{adminDeleteDraft.preview.impact.refunds.map((refund)=>(
                               <li key={refund.id}>Возврат #{refund.id} · {refund.date||'Без даты'} ·
                                 {' '}{refund.method}: <strong>{formatMoney(refund.amount)} ₸</strong></li>
                             ))}</ul>
@@ -797,20 +798,20 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           <h4>Обмены и возвраты товаров</h4>
                           {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
                             <ol style={{display:'grid',gap:12,paddingLeft:22}}>
-                              {adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>{
+                              {adminDeleteDraft.preview.chainPlan.steps.map((step)=>{
                                 const exchange=step.type==='exchange'
-                                  ?(adminDeleteDraft.preview.impact?.exchanges||[]).find((item:any)=>item.id===step.id)
+                                  ?(adminDeleteDraft.preview?.impact?.exchanges||[]).find((item)=>item.id===step.id)
                                   :null
                                 const exchangeSource=(source:string)=>source==='not_issued'?'не выдавался'
                                   :source==='warehouse'?'склад':source==='boutique'?'бутик'
                                     :source==='workshop'?'цех':source==='pending'?'ожидает подтверждения'
                                       :source||''
-                                const renderExchangeItems=(items:any[],label:string)=>(
+                                const renderExchangeItems=(items:OrderDeleteExchangeLine[],label:string)=>(
                                   <div style={{flex:'1 1 230px',minWidth:0}}>
                                     <div style={{fontWeight:600,marginBottom:6}}>{label}</div>
                                     {items.length ? (
                                       <ul style={{margin:'0 0 0 18px',padding:0,display:'grid',gap:7}}>
-                                        {items.map((item:any,i:number)=>{
+                                        {items.map((item,i:number)=>{
                                           const attributes=[item.color,item.size,item.material,item.length]
                                             .map((v:unknown)=>String(v||'').trim()).filter(Boolean)
                                           return <li key={item.id||i}>
@@ -866,7 +867,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <section>
                           <h4>Резервы и складские движения по позициям</h4>
                           {(adminDeleteDraft.preview.impact?.reservations||[]).length ? (
-                            <ul>{adminDeleteDraft.preview.impact.reservations.map((stock:any,i:number)=>(
+                            <ul>{adminDeleteDraft.preview.impact.reservations.map((stock,i:number)=>(
                               <li key={stock.orderItemId+':'+i}>{stock.name} ·
                                 {' '}{stock.source==='boutique'?'Бутик':stock.source==='warehouse'?'Склад':stock.source} ·
                                 {' '}{stock.quantity} шт. —
@@ -906,6 +907,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ||(physicalQuestionRequired&&adminDeleteDraft.physicalAnswer!=='not_issued')}
                           onClick={()=>{void(async()=>{
                             const draft=adminDeleteDraft
+                            if (!draft.preview) return
                             const answer=physicalQuestionRequired ?'not_issued':undefined
                             setAdminDeleteDraft(d=>d?{...d,submitting:true,error:''}:d)
                             try{
@@ -969,13 +971,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       }}>Исправить реквизиты</button>
                       {linkedAdminEditOrder.pricing_mode==='itemized_v1'
                         &&Array.isArray(linkedAdminEditOrder.items)
-                        &&linkedAdminEditOrder.items.some((item:any)=>Number(item.id)>0&&Number(item.quantity)>0)?(
+                        &&linkedAdminEditOrder.items.some((item)=>Number(item.id)>0&&Number(item.quantity)>0)?(
                         <button className="secondary" type="button" onClick={()=>{
                           openPriceCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                         }}>Исправить цены</button>
                       ):null}
                       {Array.isArray(linkedAdminEditOrder.payments)
-                        &&linkedAdminEditOrder.payments.some((payment:any)=>Number(payment.id)>0)?(
+                        &&linkedAdminEditOrder.payments.some((payment)=>Number(payment.id)>0)?(
                         <button className="secondary" type="button" onClick={()=>{
                           openLinkedPaymentCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                         }}>Исправить способ оплаты</button>
@@ -1002,7 +1004,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     onSubmit={event=>{event.preventDefault();void(async()=>{
                       const draft=linkedPaymentDraft
                       if(!draft||savingOrder)return
-                      const payment=draft.order.payments.find((p:any)=>Number(p.id)===draft.paymentId)
+                      const payment=draft.order.payments.find((p)=>Number(p.id)===draft.paymentId)
                       if(!payment){setLinkedPaymentDraft(d=>d?{...d,error:'Оплата не найдена. Обновите заказ.'}:d);return}
                       const result=await correctRecordedPaymentMethod(draft.order,payment,draft.method)
                       if(result.ok)setLinkedPaymentDraft(null)
@@ -1022,11 +1024,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <select value={linkedPaymentDraft.paymentId} disabled={savingOrder}
                           style={{width:'100%',boxSizing:'border-box'}}
                           onChange={event=>{
-                            const payment=linkedPaymentDraft.order.payments.find((p:any)=>Number(p.id)===Number(event.target.value))
+                            const payment=linkedPaymentDraft.order.payments.find((p)=>Number(p.id)===Number(event.target.value))
                             if(payment)setLinkedPaymentDraft(d=>d?{...d,paymentId:Number(payment.id),
                               method:String(payment.method||''),error:''}:d)
                           }}>
-                          {linkedPaymentDraft.order.payments.filter((p:any)=>Number(p.id)>0).map((p:any)=>(
+                          {linkedPaymentDraft.order.payments.filter((p)=>Number(p.id)>0).map((p)=>(
                             <option key={p.id} value={p.id}>
                               {'#'+p.id+' · '+(p.paymentDate||'Без даты')+' · '+formatMoney(p.amount)+' ₸ · '+(p.method||'Не указан')}
                             </option>
@@ -1041,8 +1043,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           <option value="">Выберите способ</option>
                           {[...new Set([
                             ...(Array.isArray(suggestionValues?.paymentMethods)?suggestionValues.paymentMethods:[])
-                              .map((value:any)=>String(value||'').trim()).filter(Boolean),
-                            ...linkedPaymentDraft.order.payments.map((p:any)=>String(p.method||'').trim()).filter(Boolean),
+                              .map((value)=>String(value||'').trim()).filter(Boolean),
+                            ...linkedPaymentDraft.order.payments.map((p)=>String(p.method||'').trim()).filter(Boolean),
                           ])].map((value:string)=><option key={value} value={value}>{value}</option>)}
                         </select>
                       </label>
@@ -1056,7 +1058,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       <button type="submit" className="primary"
                         disabled={savingOrder||!linkedPaymentDraft.method.trim()
                           ||linkedPaymentDraft.method.trim().toUpperCase()===String(
-                            linkedPaymentDraft.order.payments.find((p:any)=>Number(p.id)===linkedPaymentDraft.paymentId)?.method||''
+                            linkedPaymentDraft.order.payments.find((p)=>Number(p.id)===linkedPaymentDraft.paymentId)?.method||''
                           ).trim().toUpperCase()}>
                         {savingOrder?'Сохраняю…':'Сохранить способ оплаты'}
                       </button>
@@ -1097,7 +1099,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           {' '}Шагов отмены: {exchangeChainDraft.plan.steps.length}.</strong></p>
                         <p className="muted">{exchangeChainDraft.plan.notice}</p>
                         <ol style={{paddingLeft:24,display:'grid',gap:8}}>
-                          {exchangeChainDraft.plan.steps.map((step:any)=>(
+                          {exchangeChainDraft.plan.steps.map((step)=>(
                             <li key={step.type+':'+step.id}>
                               {step.type==='return'?'Возврат':'Обмен'} #{step.id}
                               {' — '}{step.reason}
@@ -1119,7 +1121,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           onClick={()=>{void(async()=>{
                             const draft=exchangeChainDraft
                             if(!draft?.plan)return
-                            const returns=draft.plan.steps.filter((s:any)=>s.type==='return').length
+                            const returns=draft.plan.steps.filter((s)=>s.type==='return').length
                             if(!window.confirm('Отменить '+draft.plan.selectedExchangeIds.length
                               +' обмен(ов) по заказу '+draft.order.external_id+'?\n'
                               +'Шагов: '+draft.plan.steps.length+'. Зависимых возвратов: '+returns
@@ -1170,7 +1172,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           <select value={returnCancelDraft.selectedId}
                             disabled={returnCancelDraft.submitting||returnCancelDraft.loading}
                             onChange={event=>setReturnCancelDraft(d=>d?{...d,selectedId:Number(event.target.value),error:''}:d)}>
-                            {returnCancelDraft.choices.map((entry:any)=>(
+                            {returnCancelDraft.choices.map((entry)=>(
                               <option key={entry.id} value={entry.id}>
                                 {'#'+entry.id+' · '+(entry.date||'Без даты')+' · '+formatMoney(entry.amount)+' ₸'
                                 +(entry.parentExchangeId?' · обмен #'+entry.parentExchangeId:'')}
@@ -1178,7 +1180,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ))}
                           </select>
                         </label>
-                        {(()=>{const selected=returnCancelDraft.choices.find((x:any)=>x.id===returnCancelDraft.selectedId)
+                        {(()=>{const selected=returnCancelDraft.choices.find((x)=>x.id===returnCancelDraft.selectedId)
                           if(!selected)return null
                           return <div style={{border:'1px solid var(--border,#dce1e8)',padding:12,borderRadius:10,margin:'12px 0'}}>
                             <p>Возврат денег: <strong>{formatMoney(selected.amount)} ₸</strong>
@@ -1198,13 +1200,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     <div className="toolbar-actions">
                       <button className="secondary" type="button" disabled={returnCancelDraft.submitting}
                         onClick={()=>setReturnCancelDraft(null)}>Закрыть</button>
-                      {(()=>{const selected=returnCancelDraft.choices.find((x:any)=>x.id===returnCancelDraft.selectedId)
+                      {(()=>{const selected=returnCancelDraft.choices.find((x)=>x.id===returnCancelDraft.selectedId)
                         return selected&&!selected.parentExchangeId?(
                           <button className="ghost danger" type="button"
                             disabled={returnCancelDraft.submitting||returnCancelDraft.loading||savingOrder}
                             onClick={()=>{void(async()=>{
                               const draft=returnCancelDraft
-                              const chosen=draft?.choices.find((x:any)=>x.id===draft.selectedId)
+                              const chosen=draft?.choices.find((x)=>x.id===draft.selectedId)
                               if(!chosen||chosen.parentExchangeId)return
                               if(!window.confirm('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
                                 '? Сумма: '+formatMoney(chosen.amount)+' ₸. Склад и деньги будут проверены перед выполнением.'))return
@@ -1217,7 +1219,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 try{
                                   const choices=await loadOrderReturnCancellationChoices(draft.order)
                                   setReturnCancelDraft(d=>d?{...d,choices,
-                                    selectedId:choices.find((x:any)=>x.id===chosen.id)?.id||choices[0]?.id||0,
+                                    selectedId:choices.find((x)=>x.id===chosen.id)?.id||choices[0]?.id||0,
                                     submitting:false,error:message}:d)
                                 }catch{
                                   setReturnCancelDraft(d=>d?{...d,submitting:false,error:message}:d)
@@ -1239,7 +1241,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     aria-label="Исправление цены до обмена" style={{maxWidth:560}}
                     onSubmit={(event)=>{event.preventDefault();void (async()=>{
                       if(!oldExchangePriceDraft||oldExchangePriceDraft.loading)return
-                      const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===oldExchangePriceDraft.itemId)
+                      const item=oldExchangePriceDraft.items.find((x)=>x.orderItemId===oldExchangePriceDraft.itemId)
                       const next=Number(oldExchangePriceDraft.price)
                       if(!item||!Number.isSafeInteger(next)||next<0){
                         setOldExchangePriceDraft((d)=>d?{...d,error:'Укажите целую корректную цену.'}:d);return
@@ -1264,11 +1266,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           <select value={oldExchangePriceDraft.itemId} disabled={savingOrder}
                             onChange={(event)=>{
                               const itemId=Number(event.target.value)
-                              const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===itemId)
+                              const item=oldExchangePriceDraft.items.find((x)=>x.orderItemId===itemId)
                               setOldExchangePriceDraft((d)=>d?{...d,itemId,
                                 price:String(item?.currentRecordedUnitPrice??0),error:''}:d)
                             }}>
-                            {oldExchangePriceDraft.items.map((item:any)=>
+                            {oldExchangePriceDraft.items.map((item)=>
                               <option key={item.exchangeId+':'+item.orderItemId} value={item.orderItemId}>
                                 {item.productName} · {item.size||'—'} · {item.color||'—'} (обмен #{item.exchangeId})
                               </option>
@@ -1326,7 +1328,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     <p>Измените нужные цены. Неизменённые позиции останутся как были.</p>
                     <div style={{display:'grid',gap:12,margin:'14px 0'}}>
-                      {priceItems.map((item:any)=>{
+                      {priceItems.map((item)=>{
                         const id=Number(item.id)
                         const current=Number(item.unitPrice||0)
                         const changed=priceDraft.prices[id]?.trim()!=='' &&
@@ -1442,7 +1444,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               {[...new Set([
                                 ...(Array.isArray(key==='city'?suggestionValues?.cities:suggestionValues?.deliveryTypes)
                                   ? (key==='city'?suggestionValues.cities:suggestionValues.deliveryTypes) : [])
-                                  .map((value:any)=>String(value||'').trim()).filter(Boolean),
+                                  .map((value)=>String(value||'').trim()).filter(Boolean),
                                 String(metadataDraft.next[key]||'').trim(),
                               ].filter(Boolean))].map((value:string)=>(
                                 <option key={value} value={value}>{value}</option>
