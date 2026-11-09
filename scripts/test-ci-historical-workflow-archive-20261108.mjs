@@ -103,6 +103,11 @@ assert(monitor.includes('Read current live deployment without changing traffic')
   'Upload observer must independently show active deployment without publishing it')
 assert(monitor.includes('/workers/scripts/$WORKER_NAME/deployments'),
   'Upload observer must read actual deployed Worker versions')
+assert(monitor.includes('.result.deployments | sort_by(.created_on)'),
+  'Cloudflare deployment API wraps the list in result.deployments')
+assert(readFileSync('scripts/main-version-promotion.mjs','utf8')
+  .includes('response?.deployments'),
+  'Manual promotion must unwrap the Cloudflare deployments response')
 assert(monitor.includes('Cloudflare upload finished (NOT serving traffic)'),
   'Successful build must be labelled as upload-only')
 assert(monitor.includes("github.event_name == 'push'"),
