@@ -5,16 +5,17 @@ const check = (value, message) => { if (!value) throw new Error(message) }
 
 const worker = read('worker/index.ts')
 const movement = read('worker/domains/inventory-movement.ts')
+const materializer = read('worker/domains/inventory-arrival-materialization.ts')
 const app = read('src/App.tsx')
 const dialog = read('src/features/inventory/views/ArrivalRecoveryDialog.tsx')
 const flow = read('src/features/inventory/arrivalRecoveryFlow.ts')
 const css = read('src/styles/192c-arrival-recovery.css')
 
-check(movement.includes("export class ArrivalRecoveryRequiredError extends Error"), 'Arrival recovery error contract missing')
-check(movement.includes("code: 'arrival_retired_product'"), 'retired-product Arrival recovery code missing')
+check(materializer.includes("export class ArrivalRecoveryRequiredError extends Error"), 'Arrival recovery error contract missing')
+check(materializer.includes("code: 'arrival_retired_product'"), 'retired-product Arrival recovery code missing')
 check(movement.includes("code: 'arrival_stale_variant'"), 'stale-variant Arrival recovery code missing')
-check(movement.includes("latestCompletedProductRetirementId"), 'retired-product recovery cannot locate its safe restore record')
-check(movement.includes("catalog_retirement_operations"), 'retired-product recovery is not tied to Catalog retirement history')
+check(materializer.includes("latestCompletedProductRetirementId"), 'retired-product recovery cannot locate its safe restore record')
+check(materializer.includes("catalog_retirement_operations"), 'retired-product recovery is not tied to Catalog retirement history')
 check(movement.includes("staleArrivalById"), 'stale selected Arrival variants are not identified before retry')
 check(movement.includes("productActive: toInt(row.product_active, 0) === 1"), 'stale variant does not distinguish a retired product shell')
 
