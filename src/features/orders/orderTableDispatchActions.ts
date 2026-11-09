@@ -108,6 +108,14 @@ export function createOrderTableDispatchActions({
   onShipmentChange,
 }: OrderTableDispatchActionsArgs) {
   const newDispatchRequestId=()=>`order-dispatch:${crypto.randomUUID()}`
+  // A committed shipment is never a failed shipment merely because its readback fails.
+  // Keep the modal busy until the latest order list read finishes, then show its result.
+  const finishCommittedShipment=async(message:string)=>{
+    let refreshed=true
+    try{refreshed=(await onShipmentChange())!==false}catch{refreshed=false}
+    setDispatchDraft(null)
+    setMessage(refreshed?message:`${message} Список заказов не обновился — обновите его вручную.`)
+  }
   const openDispatchDraft=(order:OrderTableDispatchOrder)=>{
     setDispatchDraft({order,plan:null,history:[],loading:true,submitting:false,
       error:'',selected:{},requestId:newDispatchRequestId(),correctionKey:'',correctionItemId:0})
@@ -179,9 +187,7 @@ export function createOrderTableDispatchActions({
           }))))
         }
         if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось отправить товары.')
-        setDispatchDraft(null)
-        setMessage(`Заказ ${d.order.external_id}: отправлено ${data.shippedQuantity||items.reduce((n:number,x:{quantity:number})=>n+x.quantity,0)} шт.`)
-        await onShipmentChange()
+        await finishCommittedShipment(`Заказ ${d.order.external_id}: отправлено ${data.shippedQuantity||items.reduce((n:number,x:{quantity:number})=>n+x.quantity,0)} шт.`)
       }catch(e){
         setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
           error:e instanceof Error?e.message:'Ошибка отправки. Повторите без изменения выбора.'}:v)
@@ -203,9 +209,7 @@ export function createOrderTableDispatchActions({
         })
         const data=await res.json() as OrderTableDispatchMutationResult as OrderTableDispatchMutationResult
         if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось подтвердить отправку.')
-        setDispatchDraft(null)
-        setMessage(`Заказ ${d.order.external_id}: отправка подтверждена без повторного списания склада.`)
-        await onShipmentChange()
+        await finishCommittedShipment(`Заказ ${d.order.external_id}: отправка подтверждена без повторного списания склада.`)
       }catch(e){
         setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
           error:e instanceof Error?e.message:'Не удалось подтвердить отправку.'}:v)
@@ -231,11 +235,9 @@ export function createOrderTableDispatchActions({
         })
         const data=await res.json()
         if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось исправить отправку.')
-        setDispatchDraft(null)
-        setMessage(data.needsStockCheck
+        await finishCommittedShipment(data.needsStockCheck
           ? 'Отправка исправлена. После недавнего пересчёта остаток автоматически не увеличен — уточните количество на складе.'
           : 'Отправка исправлена. Остальные товары заказа не изменились.')
-        await onShipmentChange()
       }catch(e){
         setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
           error:e instanceof Error?e.message:'Не удалось исправить отправку.'}:v)
