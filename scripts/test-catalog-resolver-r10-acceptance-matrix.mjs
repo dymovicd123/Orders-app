@@ -6,7 +6,7 @@ import ts from 'typescript'
 const flowSource = fs.readFileSync('src/features/orders/catalogResolutionFlow.ts', 'utf8')
 const modal = fs.readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
-const reservations = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
+const reservations = fs.readFileSync('worker/domains/order-catalog-identity.ts', 'utf8') + '\n' + fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
 const catalog = fs.readFileSync('worker/domains/catalog.ts', 'utf8')
 const review = fs.readFileSync('worker/domains/catalog-review.ts', 'utf8')
 const worker = fs.readFileSync('worker/index.ts', 'utf8')

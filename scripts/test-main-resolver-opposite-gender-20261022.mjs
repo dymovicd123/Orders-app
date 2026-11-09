@@ -118,7 +118,7 @@ assert.equal(sql.prepare('SELECT gender_scope FROM catalog_products WHERE id=12'
 
 sql.close()
 
-const orderResolver=readFileSync('worker/domains/order-reservations.ts','utf8')
+const orderResolver=readFileSync('worker/domains/order-catalog-identity.ts','utf8')
 const ui=readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx','utf8')
 const review=readFileSync('worker/domains/catalog-review.ts','utf8')
 assert(!orderResolver.includes('enteredGender !== fixedProductGender'),

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import * as catalogIdentityBoundary from '../worker/domains/order-catalog-identity.ts'
+import * as reservationCompatibilityBoundary from '../worker/domains/order-reservations.ts'
 import { inferUnambiguousCatalogReviewGender } from '../worker/domains/catalog-review.ts'
 import { createResolutionSession, sameReferenceValue, rankedReferenceValues, segmentCompoundRemainder } from '../src/features/orders/catalogResolutionFlow.ts'
+
+
+// Architecture guard: all public catalog resolver exports retain their old import identity.
+for (const [name, implementation] of Object.entries(catalogIdentityBoundary)) {
+  assert.equal(reservationCompatibilityBoundary[name], implementation, `Catalog resolver export ${name} must remain compatible`)
+}
 
 const sql=new DatabaseSync(':memory:')
 sql.exec([
