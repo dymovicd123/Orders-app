@@ -54,16 +54,28 @@ assert(cfg.includes('npm run release:check'), 'Central regression gate must rema
 // The Main/Branch2 monitor may attest Cloudflare builds, but must not be
 // another privileged publisher capable of deploying when Cloudflare skips.
 const monitor = readFileSync('.github/workflows/cloudflare-deploy-monitor.yml', 'utf8')
-assert(monitor.includes('build_trigger_metadata.commit_hash == $sha'),
-  'Cloudflare monitor must match the exact commit before claiming success')
-assert(monitor.includes('build_trigger_metadata.branch == $branch'),
-  'Cloudflare monitor must match the exact branch before claiming success')
-assert(monitor.includes('if [[ "$outcome" != "success" ]]; then'),
-  'Missing/failed/skipped native builds must not report successful release')
-assert(monitor.includes('Mark build failure') && monitor.includes('Mark build pending'),
-  'Cloudflare monitor lost explicit failure/pending build statuses')
-assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
-  'GitHub monitor must not trigger an independent Worker production deploy')
+const branch2Monitor = readFileSync('wrangler.jsonc','utf8').includes('"name": "orders-app-branch2"')
+if (branch2Monitor) {
+  // Branch2's native Cloudflare integration is UPLOAD-ONLY until owner approval.
+  // Its archived GitHub monitor must never publish, not even through manual dispatch.
+  assert(monitor.includes('if: false'), 'Branch2 archived monitor was enabled')
+  assert(monitor.includes('workflow_dispatch:'), 'Branch2 monitor changed its archival trigger')
+  assert(!/\n\s+push:|\n\s+pull_request:/.test(monitor),
+    'Branch2 archived monitor must not react to push or pull requests')
+  assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
+    'Branch2 archived monitor must never publish a Worker')
+} else {
+  assert(monitor.includes('build_trigger_metadata.commit_hash == $sha'),
+    'Cloudflare monitor must match the exact commit before claiming success')
+  assert(monitor.includes('build_trigger_metadata.branch == $branch'),
+    'Cloudflare monitor must match the exact branch before claiming success')
+  assert(monitor.includes('if [[ "$outcome" != "success" ]]; then'),
+    'Missing/failed/skipped native builds must not report successful release')
+  assert(monitor.includes('Mark build failure') && monitor.includes('Mark build pending'),
+    'Cloudflare monitor lost explicit failure/pending build statuses')
+  assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
+    'GitHub monitor must not trigger an independent Worker production deploy')
+}
 
 
 /*
@@ -96,18 +108,20 @@ for (const [filename, expectedJob] of [
 
 // Native Cloudflare Builds is the only production publisher. GitHub watches exact
 // build SHA/branch and reads the active deployment, but never deploys itself.
-assert(monitor.includes('cloudflare-build/$GITHUB_REF_NAME'),
-  'Cloudflare monitoring must report build status rather than claiming upload or deployment')
-assert(monitor.includes('Cloudflare build successful; inspect active deployment in log'),
-  'Build status must not claim an unverified release')
-assert(monitor.includes('.result.deployments | sort_by(.created_on)'),
-  'Monitor must read the actual active Worker deployment from the Cloudflare API')
-assert(monitor.includes('build_trigger_metadata.commit_hash == $sha'),
-  'Monitor must match the exact commit SHA')
-assert(!monitor.includes('workflow_dispatch:'),
-  'No manual Main production promotion inside the build monitor')
-assert(!monitor.includes('manual-main-promote:') && !monitor.includes('manual-main-inspect:'),
-  'Retired manual Main release jobs must stay removed')
+if (!branch2Monitor) {
+  assert(monitor.includes('cloudflare-build/$GITHUB_REF_NAME'),
+    'Cloudflare monitoring must report build status rather than claiming upload or deployment')
+  assert(monitor.includes('Cloudflare build successful; inspect active deployment in log'),
+    'Build status must not claim an unverified release')
+  assert(monitor.includes('.result.deployments | sort_by(.created_on)'),
+    'Monitor must read the actual active Worker deployment from the Cloudflare API')
+  assert(monitor.includes('build_trigger_metadata.commit_hash == $sha'),
+    'Monitor must match the exact commit SHA')
+  assert(!monitor.includes('workflow_dispatch:'),
+    'No manual Main production promotion inside the build monitor')
+  assert(!monitor.includes('manual-main-promote:') && !monitor.includes('manual-main-inspect:'),
+    'Retired manual Main release jobs must stay removed')
+  }
 assert(!existsSync('scripts/main-version-promotion.mjs'),
   'Retired manual Main release script must not be reintroduced')
 
