@@ -52,6 +52,7 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
 import { useApiClient } from './app/controllers/useApiClient'
+import { createLatestRequestGuard } from './app/latestRequestGuard'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { useReturnExchangeWorkspace } from './app/controllers/useReturnExchangeWorkspace'
@@ -113,6 +114,7 @@ function App() {
   const [orderPeriodStats, setOrderPeriodStats] = useState<OrderPeriodStats | null>(null)
   const [orderPageOffset, setOrderPageOffset] = useState(0)
   const [orderPageInfo, setOrderPageInfo] = useState({ offset: 0, limit: 100, totalCount: 0, hasMore: false, hasPrevious: false })
+  const orderListReadGuardRef = useRef(createLatestRequestGuard())
   const [clientsData, setClientsData] = useState<ClientsResponse | null>(null)
   const [clientMode, setClientMode] = useState<ClientMode>('all')
   const [clientQuery, setClientQuery] = useState('')
@@ -2403,6 +2405,8 @@ function App() {
   }
 
   async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
+    const requestId = orderListReadGuardRef.current.begin()
+    const isCurrentRead = () => orderListReadGuardRef.current.isCurrent(requestId)
     const activeFilters = overrideFilters
     const searchQuery = activeFilters.q.trim()
     if (searchQuery && Array.from(searchQuery).length < 3) {
@@ -2452,6 +2456,8 @@ function App() {
       const ordersResponse = await apiFetch(`/api/orders?${params.toString()}`)
       const ordersData = await readJsonResponse<OrderListResponse>(ordersResponse, 'Заказы')
       if (!ordersResponse.ok) throw new Error(`Orders load failed: ${ordersResponse.status}`)
+      // A prior filter/page read must never overwrite a newer shipment refresh.
+      if (!isCurrentRead()) return null
 
       const nextOrders = Array.isArray(ordersData.orders) ? ordersData.orders : []
       setOrders(nextOrders)
@@ -2498,6 +2504,8 @@ function App() {
         loadReferencesData(forceReferences),
       ])
 
+      // Even optional health/reference responses must not replace newer list feedback.
+      if (!isCurrentRead()) return null
       const healthResult = optionalResults[0] as PromiseSettledResult<ApiState>
       const dashboardResult = optionalResults[1] as PromiseSettledResult<DashboardInsightsResponse | null>
       const referencesResult = optionalResults[2] as PromiseSettledResult<unknown>
@@ -2529,7 +2537,9 @@ function App() {
 
       // Orders including Kaspi use the same paginated read and period summary.
       // Do not add a duplicate D1 summary read during each page fetch.
+      return ordersData
     } catch (err) {
+      if (!isCurrentRead()) return null
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
       if (hasPreviousData && isTransientApiError(err)) {
         setError(null)
@@ -2541,7 +2551,7 @@ function App() {
         setError(`Не удалось загрузить список заказов: ${messageText}`)
       }
     } finally {
-      setBusy(false)
+      if (isCurrentRead()) setBusy(false)
     }
   }
 
@@ -3894,7 +3904,7 @@ function removeDebtPayment(index: number) {
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
         <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text), askStockResolution,
-        onShipmentChange: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false) },
+        onShipmentChange: async () => { invalidateInventoryStockCaches(true); return (await loadDashboard(false)) != null },
         setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 

@@ -24,3 +24,23 @@ export function dispatchSelectionError(lines: DispatchLine[], selection: Record<
   }
   return ''
 }
+
+type DispatchAccessibleLine = {
+  orderItemId: number
+  productName: string
+  color?: string | null
+  size?: string | null
+  material?: string | null
+  length?: string | null
+  sourceType: string
+}
+
+/** A unique, human-readable label even when one model has several order lines. */
+export function dispatchLineAccessibleName(line: DispatchAccessibleLine): string {
+  const source = line.sourceType === 'workshop' ? 'Цех'
+    : line.sourceType === 'boutique' ? 'Бутик' : 'Склад'
+  const details = [line.productName, line.color, line.size, line.material, line.length]
+    .map(part => String(part || '').trim())
+    .filter(part => part && part.toUpperCase() !== 'СТАНДАРТ')
+  return [...details, source, `позиция №${line.orderItemId}`].join(' · ')
+}
