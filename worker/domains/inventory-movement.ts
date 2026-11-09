@@ -16,6 +16,8 @@ import { getPendingInventoryWriteoffCount } from './references.ts'
 import { isInventoryAutoWriteoffEnabled } from './storage.ts'
 import { boundedOutboundStock, buildStockResolutionRequired } from './stock-resolution.ts'
 
+import { inventoryManualRequestFingerprint, normalizeInventoryOperationStockConfirmations, arrivalFactsMatchCanonicalSku, inventoryTransferExternalId, inventoryTransferRequestFingerprint, transferProvidedFactsMatchCanonicalSku } from './inventory-operation-contract.ts'
+
 // Compatibility facade: old inventory-operation imports retain the same public exports.
 export * from './inventory-operation-contract.ts';
 
