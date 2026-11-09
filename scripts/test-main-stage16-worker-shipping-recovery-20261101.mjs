@@ -14,9 +14,18 @@ for(const file of migrations)sqlite.exec(readFileSync(path.join('migrations',fil
 // Existing known Main schema gap; test-only compatibility, never applied to Main D1.
 if(!sqlite.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").get())
  sqlite.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
+if(!sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_manager_audit'").get())
+ sqlite.exec(`CREATE TABLE order_manager_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, external_id TEXT,
+  previous_manager_id INTEGER, previous_manager_name TEXT, new_manager_id INTEGER,
+  new_manager_name TEXT, action TEXT, source TEXT, actor_role TEXT, actor_label TEXT,
+  details TEXT, created_at TEXT
+ )`) // #648 fresh-schema gap: TEST ONLY, never applied to active D1
 
 let stolenLeaseBeforeOrderBatch = ''
 let stolenLeaseBeforeItemBatch = ''
+let failEditCompletionOnce = ''
+let failEditActivityBatchOnce = ''
 function prepared(sql,params=[]){
  const st=sqlite.prepare(sql)
  return {
@@ -24,7 +33,12 @@ function prepared(sql,params=[]){
   bind(...args){return prepared(sql,args)},
   async first(key){const row=st.get(...params)??null;return typeof key==='string'?row?.[key]??null:row},
   async all(){return {success:true,results:st.all(...params)}},
-  async run(){const out=st.columns().length?{changes:0,lastInsertRowid:0}:st.run(...params);return{success:true,meta:{changes:out.changes||0,last_row_id:Number(out.lastInsertRowid||0)}}},
+  async run(){
+    if(failEditCompletionOnce && sql.includes("SET status = 'completed'") && params[3]===failEditCompletionOnce){
+     failEditCompletionOnce=''
+     throw new Error('injected lost-response before edit finalization')
+    }
+    const out=st.columns().length?{changes:0,lastInsertRowid:0}:st.run(...params);return{success:true,meta:{changes:out.changes||0,last_row_id:Number(out.lastInsertRowid||0)}}},
  }
 }
 const DB={
@@ -46,6 +60,14 @@ const DB={
    const stolen=sqlite.prepare("UPDATE critical_operations SET lease_token=?, lease_until_ms=? WHERE request_id=? AND status='started' AND step='order_created'")
      .run('another-request-owns-item-lease',Date.now()+90000,requestId)
    assert.equal(stolen.changes,1,'Fault injection must steal the current item-stage lease')
+  }
+  if(failEditActivityBatchOnce && statements.some(stmt=>stmt.sqlText?.includes('INSERT INTO activity_log ('))){
+   const requestId=failEditActivityBatchOnce
+   failEditActivityBatchOnce=''
+   const state=sqlite.prepare("SELECT step,status FROM critical_operations WHERE request_id=?").get(requestId)
+   assert.equal(state?.step,'shipping_committed','Audit injection must run after business edit')
+   assert.equal(state?.status,'started','Audit injection must run before completion')
+   throw new Error('injected temporary failure between manager and activity evidence')
   }
   sqlite.exec('SAVEPOINT resolver_http')
   try {const r=[];for(const stmt of statements)r.push(await stmt.run());sqlite.exec('RELEASE resolver_http');return r}
@@ -200,6 +222,62 @@ try{
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items').get().n,beforeItemRows,'Stolen lease must not produce an unmapped order item')
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations').get().n,beforeItemReservations,'Stolen lease cannot reserve inventory')
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(partial.target_id).n,0)
+
+ // #651: HTTP edit with lost completion response, after durable activity.
+ const editBefore=(await api('/api/orders/'+secondId)).data.order
+ const expectedMeta={
+  orderDate:String(editBefore.order_date||''),customerPhone:String(editBefore.customer_phone||''),
+  customerName:String(editBefore.customer_name||''),city:String(editBefore.city||''),
+  deliveryType:String(editBefore.delivery_type||''),comment:String(editBefore.comment||''),
+ }
+ const editRequestId='qa-edit-activity-before-complete-20261109'
+ const metadataPatch={requestId:editRequestId,metadataCorrection:{
+  expected:expectedMeta,next:{...expectedMeta,comment:'EVIDENCE-REPLAY'},
+  expectedState:{totalAmount:Number(editBefore.total_amount),receivedAmount:Number(editBefore.received_amount),
+   debtAmount:Number(editBefore.debt_amount),returnAmount:Number(editBefore.return_amount||0),
+   shippingStatus:String(editBefore.shipping_status),orderStatus:String(editBefore.order_status)},
+ }}
+ const activityCount=()=>sqlite.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type='order_updated' AND order_id=?").get(secondId).n
+ const previousActivityCount=activityCount()
+ const previousReserveId=sqlite.prepare('SELECT id FROM inventory_reservations WHERE order_id=?').get(secondId).id
+ failEditCompletionOnce=editRequestId
+ await api('/api/orders/'+secondId,'PATCH',metadataPatch,409)
+ assert.equal(failEditCompletionOnce,'','Completion fault injection did not fire')
+ assert.equal(sqlite.prepare('SELECT comment FROM orders WHERE id=?').get(secondId).comment,'EVIDENCE-REPLAY')
+ assert.equal(activityCount(),previousActivityCount+1,'Activity must be durable before edit completion')
+ const pendingEdit=sqlite.prepare('SELECT step,status FROM critical_operations WHERE request_id=?').get(editRequestId)
+ assert.deepEqual({...pendingEdit},{step:'shipping_committed',status:'started'})
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM critical_operation_entities WHERE request_id=? AND entity_type='activity_log' AND entity_key='order_updated'").get(editRequestId).n,1)
+ await api('/api/orders/'+secondId,'PATCH',metadataPatch,200)
+ await api('/api/orders/'+secondId,'PATCH',metadataPatch,200)
+ assert.equal(activityCount(),previousActivityCount+1,'Retry must not duplicate order activity')
+ assert.equal(sqlite.prepare('SELECT id FROM inventory_reservations WHERE order_id=?').get(secondId).id,previousReserveId)
+ assert.equal(sqlite.prepare('SELECT status FROM critical_operations WHERE request_id=?').get(editRequestId).status,'completed')
+
+ // One manager-audit row commits, then activity temporarily fails.
+ // Replaying the same requestId creates only the missing activity row.
+ const anotherManager=sqlite.prepare('SELECT id,name FROM managers WHERE is_active=1 AND id<>? ORDER BY id LIMIT 1').get(manager.id)
+ assert(anotherManager?.id>0,'Another seeded manager is required for reassignment')
+ const managerEditId='qa-manager-changed-evidence-20261109'
+ const managerChange={requestId:managerEditId,managerId:anotherManager.id,managerName:anotherManager.name}
+ const managerAuditCount=()=>sqlite.prepare("SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id=? AND action='changed' AND source='admin_order_edit'").get(secondId).n
+ const priorManagerAudit=managerAuditCount(),priorChangedActivity=activityCount()
+ const preManagerStock={...stock()}
+ const preManagerMovementCount=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+ failEditActivityBatchOnce=managerEditId
+ await api('/api/orders/'+secondId,'PATCH',managerChange,409)
+ assert.equal(failEditActivityBatchOnce,'','Activity fault injection did not fire')
+ assert.equal(sqlite.prepare('SELECT manager_id FROM orders WHERE id=?').get(secondId).manager_id,anotherManager.id)
+ assert.equal(managerAuditCount(),priorManagerAudit+1,'Manager audit must persist before activity')
+ assert.equal(activityCount(),priorChangedActivity,'Activity must not be claimed before it commits')
+ await api('/api/orders/'+secondId,'PATCH',managerChange,200)
+ await api('/api/orders/'+secondId,'PATCH',managerChange,200)
+ assert.equal(managerAuditCount(),priorManagerAudit+1,'Manager reassignment audit must be once-only')
+ assert.equal(activityCount(),priorChangedActivity+1,'Replay must restore activity once')
+ assert.equal(sqlite.prepare('SELECT status FROM critical_operations WHERE request_id=?').get(managerEditId).status,'completed')
+ assert.deepEqual({...stock()},preManagerStock,'Manager edit must not change stock')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,preManagerMovementCount)
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM critical_operation_entities WHERE request_id=? AND entity_type IN ('order_manager_audit','activity_log')").get(managerEditId).n,2)
 
  console.log('MAIN_STAGE16_PENDING_RECOVERY_REAL_WORKER_HTTP_PASS',JSON.stringify({
   firstPending:firstId,firstActive:secondId,secondPending:thirdId,
