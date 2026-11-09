@@ -170,6 +170,8 @@ assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().
 
 
 const view = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
-assert(view.includes('confirmAlreadyIssued:true'))
+const dispatchActions = fs.readFileSync('src/features/orders/orderTableDispatchActions.ts', 'utf8')
+assert(view.includes('createOrderTableDispatchActions({'))
+assert(dispatchActions.includes('confirmAlreadyIssued:true'))
 assert(view.includes('Подтвердить отправку без повторного списания'))
 console.log('MAIN_PRIOR_ISSUED_SHIPPING_SAFE_PASS')

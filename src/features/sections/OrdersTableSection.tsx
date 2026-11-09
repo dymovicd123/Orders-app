@@ -4,6 +4,7 @@ import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 import { isOrderShipmentCompleteForActions, projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
 import { clampDispatchQuantity, dispatchSelectionError } from '../orders/shippingSelection'
+import { createOrderTableDispatchActions, type OrderTableDispatchDraft } from '../orders/orderTableDispatchActions'
 import './OrderShipmentStatus.css'
 type SectionContext = Record<string, any>
 
@@ -30,11 +31,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [returnCancelDraft,setReturnCancelDraft]=useState<{
     order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
   }|null>(null)
-  const [dispatchDraft,setDispatchDraft] = useState<{
-    order:any;plan:any|null;history:any[];loading:boolean;submitting:boolean;
-    error:string;selected:Record<number,number>;requestId:string;
-    correctionKey:string;correctionItemId:number;
-  }|null>(null)
+  const [dispatchDraft,setDispatchDraft] = useState<OrderTableDispatchDraft | null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
@@ -99,138 +96,20 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     workspaceSector = 'orders',
   } = ctx
 
-  const newDispatchRequestId=()=>`order-dispatch:${crypto.randomUUID()}`
-  const openDispatchDraft=(order:any)=>{
-    setDispatchDraft({order,plan:null,history:[],loading:true,submitting:false,
-      error:'',selected:{},requestId:newDispatchRequestId(),correctionKey:'',correctionItemId:0})
-    void (async()=>{
-      try{
-        const [planRes,historyRes]=await Promise.all([
-          apiFetch(`/api/orders/${order.id}/shipping/plan`),
-          apiFetch(`/api/orders/${order.id}/shipping/dispatches`),
-        ])
-        const [plan,history]=await Promise.all([planRes.json(),historyRes.json()])
-        if(!planRes.ok||!plan.ok)throw new Error(plan.message||'Не удалось загрузить готовые товары.')
-        if(!historyRes.ok||!history.ok)throw new Error(history.message||'Не удалось загрузить отправки.')
-        const selected=Object.fromEntries((plan.lines||[]).filter((row:any)=>row.selectable)
-          .map((row:any)=>[Number(row.orderItemId),Number(row.selectedQuantity)]))
-        setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,plan,
-          history:history.dispatches||[],selected,error:''}:d)
-      }catch(e){
-        setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,
-          error:e instanceof Error?e.message:'Не удалось загрузить отправки.'}:d)
-      }
-    })()
-  }
-  const submitSelectedDispatch=()=>{
-    const d=dispatchDraft
-    if(!d||d.loading||d.submitting)return
-    const items=(d.plan?.lines||[]).flatMap((row:any)=>{
-      const quantity=Number(d.selected[Number(row.orderItemId)]||0)
-      return row.selectable&&Number.isSafeInteger(quantity)&&quantity>0
-        ? [{orderItemId:Number(row.orderItemId),quantity}] : []
-    })
-    const selectionError=dispatchSelectionError(d.plan?.lines||[],d.selected)
-    if(selectionError){setDispatchDraft(v=>v?{...v,error:selectionError}:v);return}
-    if(!items.length){setDispatchDraft(v=>v?{...v,error:'Выберите хотя бы одну готовую вещь.'}:v);return}
-    setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
-    void (async()=>{
-      try{
-        const submit=async(stockConfirmations?:Array<{source:'warehouse'|'boutique';variantId:number;expectedQuantity:number;operationQuantity:number}>)=>{
-          const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatches`,{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({requestId:d.requestId,items,stockConfirmations}),
-          })
-          return {res,data:await res.json()}
-        }
-        let {res,data}=await submit()
-        if(!res.ok && data.code==='dispatch_stock_confirmation_required' && Array.isArray(data.items) && data.items.length){
-          const confirmed=await askStockResolution({
-            title:'Подтвердите наличие отправляемых вещей',
-            intro:'По системе остатка или резерва недостаточно. Если эти конкретные вещи действительно у вас, подтвердите их передачу. Чужие резервы останутся на месте.',
-            actionLabel:'Да, эти вещи отправляю',
-            items:data.items.map((row:any)=>({
-              productName:String(row.productName||'Товар'),
-              tracked:Math.max(0,Number(row.trackedPhysicalQuantity||0)),
-              needed:Math.max(1,Number(row.operationQuantity||1)),
-            })),
-            note:'Подтверждается только эта отправка, а не весь остаток склада. Система запишет расхождение и не спишет одну вещь дважды.',
-          })
-          if(!confirmed){
-            setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,error:'Отправка не проведена. Можно вернуться к ней после проверки.'}:v)
-            return
-          }
-          ;({res,data}=await submit(data.items.map((row:any)=>({
-            source:row.source==='boutique'?'boutique' as const:'warehouse' as const,
-            variantId:Number(row.variantId),
-            expectedQuantity:Math.max(0,Number(row.expectedQuantity)),
-            operationQuantity:Math.max(1,Number(row.operationQuantity)),
-          }))))
-        }
-        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось отправить товары.')
-        setDispatchDraft(null)
-        setMessage(`Заказ ${d.order.external_id}: отправлено ${data.shippedQuantity||items.reduce((n:any,x:any)=>n+x.quantity,0)} шт.`)
-        await onShipmentChange()
-      }catch(e){
-        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
-          error:e instanceof Error?e.message:'Ошибка отправки. Повторите без изменения выбора.'}:v)
-      }
-    })()
-  }
-  const confirmIssuedOnlyDispatch=()=>{
-    const d=dispatchDraft
-    if(!d || d.loading || d.submitting || !d.plan?.canConfirmIssuedOnly)return
-    setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
-    void (async()=>{
-      try{
-        const today=new Date()
-        const shippingDate=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-        const res=await apiFetch(`/api/orders/${d.order.id}/shipping`,{
-          method:'PATCH',
-          headers:{'Content-Type':'application/json','X-Idempotency-Key':d.requestId},
-          body:JSON.stringify({shippingStatus:'sent',shippingDate,confirmAlreadyIssued:true}),
-        })
-        const data=await res.json()
-        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось подтвердить отправку.')
-        setDispatchDraft(null)
-        setMessage(`Заказ ${d.order.external_id}: отправка подтверждена без повторного списания склада.`)
-        await onShipmentChange()
-      }catch(e){
-        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
-          error:e instanceof Error?e.message:'Не удалось подтвердить отправку.'}:v)
-      }
-    })()
-  }
-  const cancelDispatchedLine=(line:any)=>{
-    const d=dispatchDraft
-    if(!d||d.submitting)return
-    void (async()=>{
-      const yes=await askActionConfirmation(
-        `Отменить отправку товара «${line.productName}», ${line.quantity} шт.? Подтверждайте только если клиенту эту вещь фактически не передавали. Если вещь уже у клиента, оформите возврат.`
-      )
-      if(!yes)return
-      const key=d.correctionItemId===Number(line.dispatchItemId)&&d.correctionKey
-        ? d.correctionKey : newDispatchRequestId()
-      setDispatchDraft(v=>v?{...v,submitting:true,error:'',correctionKey:key,
-        correctionItemId:Number(line.dispatchItemId)}:v)
-      try{
-        const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatch-items/${line.dispatchItemId}/correct`,{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({requestId:key,reason:'Исправление ошибочной отправки'}),
-        })
-        const data=await res.json()
-        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось исправить отправку.')
-        setDispatchDraft(null)
-        setMessage(data.needsStockCheck
-          ? 'Отправка исправлена. После недавнего пересчёта остаток автоматически не увеличен — уточните количество на складе.'
-          : 'Отправка исправлена. Остальные товары заказа не изменились.')
-        await onShipmentChange()
-      }catch(e){
-        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
-          error:e instanceof Error?e.message:'Не удалось исправить отправку.'}:v)
-      }
-    })()
-  }
+  const {
+    openDispatchDraft,
+    submitSelectedDispatch,
+    confirmIssuedOnlyDispatch,
+    cancelDispatchedLine,
+  } = createOrderTableDispatchActions({
+    dispatchDraft,
+    setDispatchDraft,
+    apiFetch,
+    askStockResolution,
+    askActionConfirmation,
+    setMessage,
+    onShipmentChange,
+  })
 
   const priceItems = priceDraft ? (priceDraft.order.items || []).filter(
     (item:any)=>Number(item.id)>0 && Number(item.quantity)>0,
