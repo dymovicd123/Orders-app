@@ -1,0 +1,164 @@
+name: Kaspi Production migration 0082
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'migrations/0082_v72_kaspi_order_payment_method.sql'
+      - '.github/workflows/kaspi-production-migration-0082.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply Kaspi order identity migration to Production D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity and migration scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 D1 binding detected. Refusing Production Kaspi migration." >&2
+            exit 20
+          fi
+
+          migration='migrations/0082_v72_kaspi_order_payment_method.sql'
+          grep -Fq 'ALTER TABLE orders ADD COLUMN order_payment_method TEXT' "$migration"
+          grep -Fq "SET order_payment_method = 'КАСПИ МАГАЗИН'" "$migration"
+          grep -Fq 'idx_orders_order_payment_method_status_date' "$migration"
+          if grep -Eiq '\b(DELETE|DROP|INSERT|REPLACE)\b' "$migration"; then
+            echo "Migration 0082 widened into destructive or row-creating operations." >&2
+            exit 21
+          fi
+          if grep -Fq 'delivery_type' "$migration"; then
+            echo "Migration 0082 must not infer Kaspi identity from delivery." >&2
+            exit 22
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Read-only preflight snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT
+                o.id,
+                o.order_status,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS kaspi_amount,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS other_amount
+              FROM orders o
+              LEFT JOIN payments p ON p.order_id = o.id
+              GROUP BY o.id
+            )
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name = 'order_payment_method') AS column_exists,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 THEN 1 ELSE 0 END) AS safe_candidates,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 AND order_status NOT IN ('deleted','archived') THEN 1 ELSE 0 END) AS safe_active_candidates,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount > 0 THEN 1 ELSE 0 END) AS mixed_review_candidates
+            FROM per_order;
+          " --json
+
+      - name: Apply additive column once
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS column_exists FROM pragma_table_info('orders') WHERE name = 'order_payment_method'" --json)"
+          echo "$schema"
+          column_exists="$(jq -r '.[0].results[0].column_exists // 0' <<<"$schema")"
+          if [[ "$column_exists" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0082_v72_kaspi_order_payment_method.sql
+          elif [[ "$column_exists" == "1" ]]; then
+            echo "order_payment_method already exists; keeping rerun idempotent."
+          else
+            echo "Unexpected order_payment_method schema state." >&2
+            exit 23
+          fi
+
+      - name: Reconcile safe historical backfill and index
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            UPDATE orders
+            SET order_payment_method = 'КАСПИ МАГАЗИН'
+            WHERE COALESCE(TRIM(order_payment_method), '') = ''
+              AND EXISTS (
+                SELECT 1 FROM payments p
+                WHERE p.order_id = orders.id
+                  AND UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                  AND COALESCE(p.amount, 0) > 0
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM payments p
+                WHERE p.order_id = orders.id
+                  AND COALESCE(p.amount, 0) > 0
+                  AND UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+              );
+            CREATE INDEX IF NOT EXISTS idx_orders_order_payment_method_status_date
+            ON orders(order_payment_method, order_status, order_date, id);
+          "
+
+      - name: Verify Production Kaspi schema and backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name = 'order_payment_method') AS column_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_orders_order_payment_method_status_date') AS index_exists,
+              (SELECT COUNT(*)
+               FROM orders o
+               WHERE EXISTS (
+                 SELECT 1 FROM payments p
+                 WHERE p.order_id = o.id
+                   AND UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                   AND COALESCE(p.amount, 0) > 0
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM payments p
+                 WHERE p.order_id = o.id
+                   AND COALESCE(p.amount, 0) > 0
+                   AND UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+               )
+               AND UPPER(TRIM(COALESCE(o.order_payment_method, ''))) <> 'КАСПИ МАГАЗИН') AS missing_backfill,
+              (SELECT COUNT(*) FROM orders WHERE UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН') AS classified_total,
+              (SELECT COUNT(*) FROM orders WHERE UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН' AND order_status NOT IN ('deleted','archived')) AS classified_active
+          " --json)"
+          echo "$result"
+          column_exists="$(jq -r '.[0].results[0].column_exists // 0' <<<"$result")"
+          index_exists="$(jq -r '.[0].results[0].index_exists // 0' <<<"$result")"
+          missing_backfill="$(jq -r '.[0].results[0].missing_backfill // -1' <<<"$result")"
+          [[ "$column_exists" == "1" && "$index_exists" == "1" && "$missing_backfill" == "0" ]] || {
+            echo "Kaspi migration 0082 verification failed." >&2
+            exit 24
+          }
+          echo "Kaspi migration 0082 verified on Production D1."

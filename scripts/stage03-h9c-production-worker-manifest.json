@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "stage03-h9c-production-worker",
+  "files": {
+    "worker/index.ts": {
+      "beforeGitBlob": "21e1d7aae5879c4050514031766cc21ea4726fce",
+      "beforeLines": 1620,
+      "afterGitBlob": "7bf8fdaec83181b03997c7bb7c281813833bf692",
+      "afterLines": 1631,
+      "replacements": [
+        {
+          "beforeBlock": "import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'",
+          "afterBlock": "import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'\nimport { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'"
+        },
+        {
+          "beforeBlock": "      if (url.pathname === '/api/exchanges' && request.method === 'POST') {",
+          "afterBlock": "      if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {\n        try {\n          return json(await createItemizedExchangeBatchFromRequest(env.DB, request), { status: 201 });\n        } catch (error) {\n          const criticalResponse = criticalOperationErrorResponse(error);\n          if (criticalResponse) return criticalResponse;\n          throw error;\n        }\n      }\n\n      if (url.pathname === '/api/exchanges' && request.method === 'POST') {"
+        }
+      ]
+    },
+    "worker/domains/exchange-batch.ts": {
+      "addedGitBlob": "f7817ec6296a27c2bedd2bcdcf9a68abdeb6112a",
+      "addedLines": 517
+    }
+  }
+}

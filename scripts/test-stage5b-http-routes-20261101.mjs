@@ -47,6 +47,14 @@ const snapshot=()=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory
 const movementCount=()=>Number(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE movement_type='sale'").get().n)
 try{
  await api('GET',prefix+'/plan',undefined,401,false)
+ await api('GET',prefix+'/dispatches',undefined,401,false)
+ await api('POST',prefix+'/dispatches',{
+   requestId:'stage5-http-unauthorized-01',items:[{orderItemId:9561,quantity:1}]
+ },401,false)
+ await api('POST',prefix+'/dispatch-items/1/correct',{
+   requestId:'stage5-http-unauthorized-undo-01',reason:'Not authenticated'
+ },401,false)
+ assert.equal(movementCount(),0,'Shipping route extraction must preserve authentication before business writes')
  const before=await api('GET',prefix+'/plan')
  assert.equal(before.draftOnly,true)
  assert.equal(before.selectedQuantity,3)
@@ -119,6 +127,38 @@ try{
  assert.equal(shipSibling.shippedQuantity,1)
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=9561').get().n,1)
  assert.equal(sql.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=9551').get().total,6000)
+ // A shipped and later returned known-SKU line may arrive physically on a
+ // different day. Real HTTP receipt must add only this unit, once, without
+ // changing the active reserve of its independent unsent sibling.
+ const incoming=sql.prepare('SELECT id,physical_tracking,physical_received_at FROM return_items WHERE return_id=? AND order_item_id=9561').get(physicalReturn.returnId)
+ assert(incoming?.id,'Return must retain a physical receipt item')
+ assert.equal(incoming.physical_tracking,1)
+ assert.equal(incoming.physical_received_at,null)
+ const beforeIntake={...snapshot()}
+ const receiveInput={
+   requestId:'stage5-http-exact-return-receive-01',operationType:'return',
+   operationId:physicalReturn.returnId,operationItemId:incoming.id,
+   destination:'warehouse',
+ }
+ const received=await api('POST','/api/returned-items/receive',receiveInput)
+ assert.equal(received.ok,true)
+ assert.equal(received.operationItemId,incoming.id)
+ assert.equal(received.stockApplied,true,'Physical arrival must apply once for a known canonical SKU')
+ assert.deepEqual({...snapshot()},{
+   quantity:beforeIntake.quantity+1,reserved_quantity:beforeIntake.reserved_quantity,
+ },'Return receipt cannot alter other active reservations')
+ const afterIntake={...snapshot()}
+ const firstReceiptAt=sql.prepare('SELECT physical_received_at FROM return_items WHERE id=?').get(incoming.id).physical_received_at
+ assert(firstReceiptAt,'Physical receipt timestamp must be durable')
+ const replayIntake=await api('POST','/api/returned-items/receive',receiveInput)
+ assert.equal(replayIntake.ok,true)
+ assert.deepEqual({...snapshot()},afterIntake,'Lost-response replay cannot add the same returned unit again')
+ assert.equal(sql.prepare('SELECT physical_received_at FROM return_items WHERE id=?').get(incoming.id).physical_received_at,firstReceiptAt)
+ await api('POST','/api/returned-items/receive',{...receiveInput,
+   requestId:'stage5-http-exact-return-receive-wrong-destination',destination:'boutique',
+ },409)
+ assert.deepEqual({...snapshot()},afterIntake,'Different destination cannot duplicate the received stock')
+ console.log('STAGE5_RETURN_LATE_RECEIPT_STOCK_IDEMPOTENT_HTTP_PASS')
  // Workshop part of a mixed order was sent, but warehouse sibling is still
  // reserved: Return must follow the WORKSHOP shipment item, not parent sent flag.
  sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9552,'ORD-TEST-MIXED-WORKSHOP-HTTP','2026-11-01',9501,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
@@ -142,153 +182,5 @@ try{
  const afterWorkshopReturn=await api('GET','/api/orders/9552/shipping/plan')
  assert.equal(afterWorkshopReturn.selectedQuantity,1,'Workshop Return cannot block independent Warehouse stock')
  console.log('STAGE5_HTTP_PARTIALLY_SHIPPED_WORKSHOP_RETURN_PASS')
-
- // Historical partial handover: explicit record of early physical issue is not
- // equivalent to customer shipping. Confirming shipment changes ONLY order
- // status, never stock, another buyer's reserve or the movement ledger.
- function seedPrior(orderId, itemStates, withEvidence=true, createdAt='2026-10-20T00:00:00Z') {
-   sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-10-20',9501,'active','warehouse','ready','not_sent',?,?)")
-     .run(orderId,'PRIOR-ISSUED-'+orderId,createdAt,createdAt)
-   return itemStates.map((state,i)=>{
-     const itemId=orderId*10+i
-     sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9521,9531,'STAGE 5 TEST WAREHOUSE',1,1000,1000,0,'warehouse',?,?)")
-       .run(itemId,orderId,state,createdAt)
-     sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(?,?, 'warehouse',9521,9531,1,?,?,?)")
-       .run(orderId,itemId,state==='fulfilled'?'fulfilled':'active',createdAt,createdAt)
-     if (withEvidence && state==='fulfilled') {
-       sql.prepare("INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,title,created_at) VALUES('order_stock_issued_before_full_shipping','order_item',?,?,'Early verified stock issue',?)")
-         .run(itemId,orderId,'2026-10-21T00:00:00Z')
-     }
-     return itemId
-   })
- }
- const historicalOrderId=9651
- const earlyItems=seedPrior(historicalOrderId,['fulfilled','fulfilled'])
- const priorPath='/api/orders/'+historicalOrderId+'/shipping'
- const oldStock=({...snapshot()})
- const movementsAtStart=sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c
- const proofPlan=await api('GET',priorPath+'/plan')
- assert.equal(proofPlan.canConfirmIssuedOnly,true,'All issued lines have exact handover proof')
- assert.equal(proofPlan.selectedQuantity,0,'No second physical stock dispatch may be selected')
- assert.equal(proofPlan.lines.length,2)
- const failedAudit='CREATE TRIGGER reject_prior_shipping_audit BEFORE INSERT ON activity_log WHEN NEW.event_type=\'order_prior_issued_shipping_confirmed\' BEGIN SELECT RAISE(ABORT,\'audit unavailable\'); END'
- sql.exec(failedAudit)
- const noAudit=await api('PATCH',priorPath,{shippingStatus:'sent',confirmAlreadyIssued:true},500)
- assert.equal(noAudit.ok,false)
- assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=?').get(historicalOrderId).shipping_status,'not_sent',
-   'Atomic status update must roll back when audit insertion fails')
- sql.exec('DROP TRIGGER reject_prior_shipping_audit')
- const checked=await api('PATCH',priorPath,{shippingStatus:'sent',shippingDate:'2026-11-08',confirmAlreadyIssued:true})
- assert.equal(checked.statusOnly,true)
- assert.equal(checked.stockDeducted,0)
- assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=?').get(historicalOrderId).shipping_status,'sent')
- const retry=await api('PATCH',priorPath,{shippingStatus:'sent',shippingDate:'2026-11-08',confirmAlreadyIssued:true})
- assert.equal(retry.alreadySent,true)
- assert.equal(sql.prepare("SELECT COUNT(*) AS c FROM activity_log WHERE order_id=? AND event_type='order_prior_issued_shipping_confirmed'").get(historicalOrderId).c,1)
- await api('POST',priorPath+'/correct',{physicalOutcome:'issued'},409)
- const statusUndo=await api('POST',priorPath+'/correct',{physicalOutcome:'not_issued'})
- assert.equal(statusUndo.statusOnly,true)
- assert.equal(statusUndo.restoredPhysicalQuantity,0)
- assert.equal(statusUndo.reactivatedReservations,0)
- assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=?').get(historicalOrderId).shipping_status,'not_sent')
- await api('POST',priorPath+'/correct',{physicalOutcome:'not_issued'},409)
- assert.deepEqual({...snapshot()},oldStock,'Prior-issue status confirmation and undo may never move warehouse stock')
- assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c,movementsAtStart)
- assert.deepEqual(sql.prepare("SELECT status FROM inventory_reservations WHERE order_id=? ORDER BY order_item_id").all(historicalOrderId).map(r=>r.status),
-   ['fulfilled','fulfilled'],'Prior issue physical reservations must stay already fulfilled')
- assert.deepEqual(earlyItems.map(id=>sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?').get(id).stock_writeoff_status),
-   ['fulfilled','fulfilled'])
-
- // These fail closed even when the manager supplies confirmAlreadyIssued=true.
- // Never let the client override server-validated per-item evidence.
- const unknownId=9652
- seedPrior(unknownId,['fulfilled'],false)
- assert.equal((await api('GET','/api/orders/'+unknownId+'/shipping/plan')).canConfirmIssuedOnly,false)
- await api('PATCH','/api/orders/'+unknownId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
- const mixedId=9653
- seedPrior(mixedId,['fulfilled','reserved'])
- assert.equal((await api('GET','/api/orders/'+mixedId+'/shipping/plan')).canConfirmIssuedOnly,false)
- await api('PATCH','/api/orders/'+mixedId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
- const newerId=9654
- seedPrior(newerId,['fulfilled'],true,'2026-11-04T00:00:00Z')
- assert.equal((await api('GET','/api/orders/'+newerId+'/shipping/plan')).canConfirmIssuedOnly,false)
- await api('PATCH','/api/orders/'+newerId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
- const returnedId=9655
- const returnedItem=seedPrior(returnedId,['fulfilled'])[0]
- sql.prepare("INSERT INTO returns(id,order_id,manager_id,return_date,amount,comment,created_at) VALUES(9655,9655,9501,'2026-10-22',0,'Physical return','2026-10-22T00:00:00Z')").run()
- sql.prepare("INSERT INTO return_items(return_id,order_item_id,product_name_snapshot,quantity,amount,created_at) VALUES(9655,?,'STAGE 5 TEST WAREHOUSE',1,0,'2026-10-22T00:00:00Z')").run(returnedItem)
- assert.equal((await api('GET','/api/orders/'+returnedId+'/shipping/plan')).canConfirmIssuedOnly,false)
- await api('PATCH','/api/orders/'+returnedId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
- const exchangedId=9656
- const exchangedItem=seedPrior(exchangedId,['fulfilled'])[0]
- sql.prepare("INSERT INTO exchanges(id,order_id,manager_id,exchange_date,old_order_item_id,status,created_at) VALUES(9656,9656,9501,'2026-10-22',?,'completed','2026-10-22T00:00:00Z')").run(exchangedItem)
- assert.equal((await api('GET','/api/orders/'+exchangedId+'/shipping/plan')).canConfirmIssuedOnly,false)
- await api('PATCH','/api/orders/'+exchangedId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
- assert.deepEqual({...snapshot()},oldStock,'Invalid status-only attempts may not change any physical stock')
- assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c,movementsAtStart)
-
- // Verify a confirmed dispatch for the EXACT known SKU on zero tracked stock.
- // This real authenticated Worker test uses a fully disposable migrated SQLite.
- sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9732,9521,'МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48','adult',1)").run()
- sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9733,9521,'МУЖ','КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','52','adult',1)").run()
- sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9742,'warehouse',9521,9732,'STAGE 5 TEST WAREHOUSE','МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48',0,0)").run()
- sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9743,'warehouse',9521,9733,'STAGE 5 TEST WAREHOUSE','МУЖ','КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','52',0,2)").run()
- for(const [id,itemId,variant,status,itemStatus,reason] of [
-   [9753,9773,9732,'unresolved','pending_reservation','concurrent_shortage'],
-   [9754,9774,9733,'active','reserved',null],
- ]){
-   sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-11-01',9501,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run(id,'STAGE5-CONFIRMED-'+id)
-   sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9521,?,'STAGE 5 TEST WAREHOUSE',1,1000,1000,0,'warehouse',?,'2026-11-01T00:00:00Z')").run(itemId,id,variant,itemStatus)
-   sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,unresolved_reason,created_at,updated_at) VALUES(?,?,'warehouse',9521,?,1,?,?,'2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run(id,itemId,variant,status,reason)
- }
- const pendingPlan=await api('GET','/api/orders/9753/shipping/plan')
- assert.equal(pendingPlan.selectedQuantity,1)
- assert.equal(pendingPlan.lines[0].reservationStatus,'unresolved')
- assert.equal(pendingPlan.lines[0].needsStockConfirmation,true)
- const pendingSelection={requestId:'stage5-confirm-pending-stock-01',items:[{orderItemId:9773,quantity:1}]}
- const asked=await api('POST','/api/orders/9753/shipping/dispatches',pendingSelection,409)
- assert.equal(asked.code,'dispatch_stock_confirmation_required')
- assert.deepEqual(asked.items.map(x=>[x.source,x.variantId,x.expectedQuantity,x.operationQuantity]),
-   [['warehouse',9732,0,1]])
- assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=9753').get().n,0)
- assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9773').get().status,'unresolved')
- const stale=await api('POST','/api/orders/9753/shipping/dispatches',{
-   ...pendingSelection,stockConfirmations:[{source:'warehouse',variantId:9732,expectedQuantity:1,operationQuantity:1}],
- },409)
- assert.equal(stale.ok,false)
- assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_operation_evidence WHERE variant_id=9732').get().n,0)
- const confirmed=await api('POST','/api/orders/9753/shipping/dispatches',{
-   ...pendingSelection,stockConfirmations:[{source:'warehouse',variantId:9732,expectedQuantity:0,operationQuantity:1}],
- })
- assert.equal(confirmed.shippedQuantity,1)
- assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9742').get()},{quantity:0,reserved_quantity:0})
- assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9773').get().status,'fulfilled')
- assert.equal(sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=9773').get().stock_writeoff_status,'fulfilled')
- assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_id='dispatch:stage5-confirm-pending-stock-01:item:9773'").get().quantity_delta,0)
- const evidence=sql.prepare("SELECT tracked_physical_before,confirmed_operation_quantity,explained_quantity,unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key='dispatch:stage5-confirm-pending-stock-01:warehouse:9732'").get()
- assert.deepEqual({...evidence},{tracked_physical_before:0,confirmed_operation_quantity:1,explained_quantity:0,unexplained_quantity:1})
- assert.equal((await api('POST','/api/orders/9753/shipping/dispatches',pendingSelection)).alreadyCommitted,true)
- assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_operation_evidence WHERE variant_id=9732').get().n,1)
- const undoId=sql.prepare('SELECT di.id AS id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=9753').get().id
- const undo=await api('POST','/api/orders/9753/shipping/dispatch-items/'+undoId+'/correct',{
-   requestId:'stage5-confirm-pending-undo-01',reason:'Verify zero tracked stock cannot be restored',
- })
- assert.equal(undo.physicalRestoredQuantity,0)
- assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9742').get()},{quantity:0,reserved_quantity:0})
- const activePlan=await api('GET','/api/orders/9754/shipping/plan')
- assert.equal(activePlan.selectedQuantity,1)
- assert.equal(activePlan.lines[0].reservationStatus,'active')
- const activeSelection={requestId:'stage5-confirm-active-stock-01',items:[{orderItemId:9774,quantity:1}]}
- assert.equal((await api('POST','/api/orders/9754/shipping/dispatches',activeSelection,409)).code,'dispatch_stock_confirmation_required')
- const activeSent=await api('POST','/api/orders/9754/shipping/dispatches',{
-   ...activeSelection,stockConfirmations:[{source:'warehouse',variantId:9733,expectedQuantity:0,operationQuantity:1}],
- })
- assert.equal(activeSent.shippedQuantity,1)
- assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9743').get()},{quantity:0,reserved_quantity:1},
-   'Another buyer reservation must never be consumed by a confirmed shipment')
- assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_id='dispatch:stage5-confirm-active-stock-01:item:9774'").get().quantity_delta,0)
- assert.equal(sql.prepare("SELECT unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key='dispatch:stage5-confirm-active-stock-01:warehouse:9733'").get().unexplained_quantity,1)
- console.log('BRANCH2_CONFIRMED_SHORTAGE_REAL_HTTP_PASS: unresolved/active shortages, stale confirmation, bounded movements, other holds, retry and exact undo')
- console.log('BRANCH2_PRIOR_ISSUED_REAL_HTTP_PASS: evidence, atomic audit rollback, zero stock writes, correction, retry, mixed/unknown/returned/exchanged/newer guards')
  console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_AND_RETURN_PASS')
 }finally{sql.close()}

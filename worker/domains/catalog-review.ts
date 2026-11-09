@@ -65,9 +65,10 @@ export function catalogReviewBasePredicate(oi = 'oi', o = 'o') {
 }
 
 
-// A known active SKU may be recorded on an unsent order even if the original
-// reservation was never committed. Recovery is order-scoped, never global.
-// Do not reactivate historical reservations, issued/returned lines or stock.
+// A confirmed SKU may already be recorded on an unsent order while its stock reservation
+// was never committed (legacy interrupted order creation/edit). This is NOT a missing SKU.
+// Only offer exact order-scoped recovery of a still-pending, never-reserved line.
+// Never resurrect fulfilled/released reservations or create new stock on a returned item.
 export function catalogReviewPendingKnownReservationPredicate(oi = 'oi', o = 'o') {
   return `${oi}.quantity > 0
     AND COALESCE(${oi}.is_workshop, 0) = 0
@@ -76,16 +77,8 @@ export function catalogReviewPendingKnownReservationPredicate(oi = 'oi', o = 'o'
     AND COALESCE(${o}.shipping_status, 'not_sent') <> 'sent'
     AND COALESCE(${o}.order_status, 'active') = 'active'
     AND COALESCE(${o}.archived_at, '') = ''
-    AND (
-      NOT EXISTS (SELECT 1 FROM inventory_reservations r
-        WHERE r.order_item_id = ${oi}.id)
-      OR EXISTS (
-        SELECT 1 FROM inventory_reservations r
-        WHERE r.order_item_id = ${oi}.id
-          AND r.status = 'unresolved'
-          AND r.unresolved_reason = 'concurrent_shortage'
-      )
-    )
+    AND NOT EXISTS (SELECT 1 FROM inventory_reservations pending_reservation
+      WHERE pending_reservation.order_item_id = ${oi}.id)
     AND NOT EXISTS (
       SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
       WHERE ri.order_item_id = ${oi}.id
@@ -456,7 +449,7 @@ export async function resolveCatalogReviewFacts(
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
   if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
       && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
-    throw new Error('Товар уже распознан, но его резерв ожидает проверки нехватки. Измените заказ или подтвердите резерв после проверки фактического наличия; повторное уточнение каталога не поможет.');
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
   }
   if (cleanText(anchor.stock_writeoff_status) === 'catalog_retired') {
     throw new Error('Эта позиция заказа относится к удалённой исторической SKU. Сначала восстановите или заново создайте точную рабочую комбинацию в Каталоге, затем повторите проверку заказа.');
@@ -511,8 +504,6 @@ export async function resolveCatalogReviewFacts(
       productId: product.id, category, material, length, color, size,
     });
   }
-  // A *new* product has an explicit newly selected scope; an existing product
-  // does not get to guess a missing order-item gender from that old default.
   if (!gender && !product?.id) gender = catalogGenderForProductScope(requestedGenderScope || 'unisex');
 
   // Pure workshop tasks intentionally stop at the base product and never validate/create a warehouse SKU.
@@ -817,7 +808,7 @@ export async function resolveCatalogReviewRows(
     const item = catalogReviewRowToOrderItem(row);
     const targetSource = normalizeSourceType(item.inventorySource);
     let existingReservation = await db.prepare(
-      `SELECT id, status, quantity, inventory_source, product_id, variant_id, unresolved_reason
+      `SELECT id, status, quantity, inventory_source, product_id, variant_id
        FROM inventory_reservations
        WHERE order_item_id = ?
        LIMIT 1`
@@ -906,18 +897,6 @@ export async function resolveCatalogReviewRows(
       && toInt(committedReservation?.product_id, 0) === productId
       && Math.max(0, toInt(committedReservation?.quantity, 0)) === Math.max(1, toInt(item.quantity, 1));
     if (!committedMatchesTarget) {
-      const queuedShortage = cleanText(committedReservation?.status) === 'unresolved'
-        && cleanText(committedReservation?.unresolved_reason) === 'concurrent_shortage'
-        && normalizeSourceType(committedReservation?.inventory_source) === targetSource
-        && toInt(committedReservation?.variant_id, 0) === variantId
-        && Math.max(0, toInt(committedReservation?.quantity, 0)) === Math.max(1, toInt(item.quantity, 1));
-      if (queuedShortage) {
-        // A known SKU remains in Resolver until availability or an explicit
-        // new decision permits safe admission. Never pretend it was reserved
-        // and never make shipment auto-reconciliation throw after saving it.
-        skipped += 1;
-        continue;
-      }
       throw new Error('Резерв позиции изменился одновременно с исправлением каталога. Обновите заказ и повторите действие.');
     }
 
@@ -979,7 +958,7 @@ export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
     }
 
     const item = catalogReviewRowToOrderItem(normalSample);
-    const resolved = await resolveCatalogProductAndVariantV2(db, item);
+    const resolved = await resolveCatalogProductAndVariantV2(db, item, { createMissing: false });
 
     // Even when the exact combination still needs a human decision, remembering a safely
     // recognized base product reduces the next task to the actual missing detail.
@@ -1038,18 +1017,18 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
       remainingRows.push(row);
       continue;
     }
-    // A known exact SKU whose reservation is already pending a physical
-    // shortage is NOT a catalog repair. Repeated shipment attempts must never
-    // delete its pending reservation and recreate a new ID just to reach the
-    // same blocker. Real edits or identity mismatches remain repairable.
+    // A known SKU with an identical unresolved shortage must keep its reservation
+    // identity through retries; it is a physical shortage, not a catalog error.
+    // This is important when OTHER items on the same order need real resolver work.
     if (cleanText(row.stock_writeoff_status) === 'pending_reservation'
         && toInt(row.product_id, 0) > 0) {
       const pending = await db.prepare(
-        `SELECT status, unresolved_reason, inventory_source, variant_id, quantity
+        `SELECT status, unresolved_reason, inventory_source, product_id, variant_id, quantity
          FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
       ).bind(toInt(row.id ?? row.order_item_id, 0)).first<Record<string, unknown>>();
       if (cleanText(pending?.status) === 'unresolved'
           && cleanText(pending?.unresolved_reason) === 'concurrent_shortage'
+          && toInt(pending?.product_id, 0) === toInt(row.product_id, 0)
           && normalizeSourceType(pending?.inventory_source) === normalizeSourceType(row.source_type)
           && toInt(pending?.variant_id, 0) === toInt(row.variant_id, 0)
           && toInt(pending?.quantity, 0) === toInt(row.quantity, 0)) {
@@ -1090,7 +1069,7 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
     if (!sample) continue;
     try {
       const item = catalogReviewRowToOrderItem(sample);
-      const resolved = await resolveCatalogProductAndVariantV2(db, item);
+      const resolved = await resolveCatalogProductAndVariantV2(db, item, { createMissing: false });
       if (resolved.productId) {
         const timestamp = new Date().toISOString();
         for (const row of matching) {
@@ -1131,7 +1110,7 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
   if (!anchor?.id) throw new Error('Позиция не найдена в этом заказе.');
   if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
       && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
-    throw new Error('Товар уже распознан, но резерв ожидает проверки нехватки. Откройте редактирование заказа или подтвердите фактическое наличие перед резервированием; повторное сохранение SKU не поможет.');
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
   }
   if (normalizeShippingStatus(anchor.shipping_status) === 'sent') throw new Error('Заказ уже отправлен. Складскую привязку здесь менять нельзя.');
   if (normalizeOrderStatus(anchor.order_status) !== 'active' || cleanText(anchor.archived_at)) throw new Error('Этот заказ уже не активен.');

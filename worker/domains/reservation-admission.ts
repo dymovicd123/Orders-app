@@ -93,3 +93,104 @@ export async function admitOrderReservationAtomically(db: D1Database, p: Reserva
   }
   return { status: persisted.status as 'active' | 'unresolved', reason: persisted.unresolved_reason };
 }
+
+
+// Recover a confirmed SKU only on an explicit shipment retry after stock arrival.
+// Keep the same reservation/item identity. Never manufacture physical inventory.
+export async function recoverPendingOrderReservationsBeforeShipping(
+  db: D1Database, orderId: number, timestamp: string,
+) {
+  if (!Number.isSafeInteger(orderId) || orderId <= 0) return { attempted: 0, activated: 0 };
+  const pending = await db.prepare(
+    `SELECT r.id AS reservation_id, r.order_item_id, r.inventory_source, r.variant_id,
+            r.product_id, r.quantity, stock.id AS stock_id
+     FROM inventory_reservations r
+     JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+     JOIN orders o ON o.id = r.order_id
+     JOIN catalog_variants v ON v.id = r.variant_id AND v.product_id = r.product_id AND v.is_active = 1
+     JOIN catalog_products p ON p.id = r.product_id AND p.is_active = 1
+     JOIN inventory_stock stock ON stock.inventory_source = r.inventory_source AND stock.variant_id = r.variant_id
+     WHERE r.order_id = ?
+       AND r.status = 'unresolved' AND r.unresolved_reason = 'concurrent_shortage'
+       AND r.inventory_source IN ('warehouse', 'boutique') AND r.quantity > 0
+       AND oi.quantity = r.quantity AND oi.variant_id = r.variant_id AND oi.product_id = r.product_id
+       AND COALESCE(oi.is_workshop, 0) = 0 AND oi.stock_writeoff_status = 'pending_reservation'
+       AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+       AND COALESCE(o.order_status, 'active') = 'active' AND COALESCE(o.archived_at, '') = ''
+       AND NOT EXISTS (
+         SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
+         WHERE ri.order_item_id = oi.id AND COALESCE(ret.status, 'completed') <> 'cancelled'
+       )
+     ORDER BY r.id ASC LIMIT 100`
+  ).bind(orderId).all<{
+    reservation_id: number; order_item_id: number; inventory_source: string;
+    variant_id: number; product_id: number; quantity: number; stock_id: number;
+  }>();
+  let activated = 0;
+  for (const row of pending.results || []) {
+    const reservationId = Number(row.reservation_id);
+    const itemId = Number(row.order_item_id);
+    const stockId = Number(row.stock_id);
+    const quantity = Number(row.quantity);
+    if (![reservationId, itemId, stockId, quantity, Number(row.product_id), Number(row.variant_id)]
+      .every(v => Number.isSafeInteger(v) && v > 0)) continue;
+    // The order's state, original identity and return evidence are rechecked
+    // in the same transaction as the stock claim; concurrent retry is harmless.
+    const eligible = `EXISTS (
+      SELECT 1 FROM inventory_reservations r
+      JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+      JOIN orders o ON o.id = r.order_id
+      JOIN catalog_variants v ON v.id = r.variant_id AND v.product_id = r.product_id AND v.is_active = 1
+      JOIN catalog_products p ON p.id = r.product_id AND p.is_active = 1
+      WHERE r.id = ? AND r.order_id = ? AND r.order_item_id = ?
+        AND r.status = 'unresolved' AND r.unresolved_reason = 'concurrent_shortage'
+        AND r.inventory_source = inventory_stock.inventory_source
+        AND r.variant_id = inventory_stock.variant_id
+        AND r.product_id = ? AND r.variant_id = ? AND r.quantity = ?
+        AND oi.product_id = r.product_id AND oi.variant_id = r.variant_id
+        AND oi.quantity = r.quantity AND COALESCE(oi.is_workshop, 0) = 0
+        AND oi.stock_writeoff_status = 'pending_reservation'
+        AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+        AND COALESCE(o.order_status, 'active') = 'active'
+        AND COALESCE(o.archived_at, '') = ''
+        AND NOT EXISTS (
+          SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
+          WHERE ri.order_item_id = oi.id AND COALESCE(ret.status, 'completed') <> 'cancelled'
+        )
+    )`;
+    await db.batch([
+      db.prepare(
+        `UPDATE inventory_stock
+         SET reserved_quantity = COALESCE(reserved_quantity, 0) + ?,
+             last_action = 'Резерв восстановлен', last_source_ref = ?, updated_at = ?
+         WHERE id = ? AND quantity >= COALESCE(reserved_quantity, 0) + ?
+           AND ` + eligible
+      ).bind(
+        quantity, 'order-item:' + itemId, timestamp, stockId, quantity,
+        reservationId, orderId, itemId, Number(row.product_id), Number(row.variant_id), quantity,
+      ),
+      db.prepare(
+        `UPDATE inventory_reservations
+         SET status = CASE WHEN changes() = 1 THEN 'active' ELSE status END,
+             unresolved_reason = CASE WHEN changes() = 1 THEN NULL ELSE unresolved_reason END,
+             updated_at = CASE WHEN changes() = 1 THEN ? ELSE updated_at END
+         WHERE id = ? AND order_id = ? AND order_item_id = ?
+           AND status = 'unresolved' AND unresolved_reason = 'concurrent_shortage'`
+      ).bind(timestamp, reservationId, orderId, itemId),
+      db.prepare(
+        `UPDATE order_items SET stock_writeoff_status = 'reserved',
+             stock_quantity_before = NULL, stock_quantity_after = NULL
+         WHERE id = ? AND order_id = ? AND stock_writeoff_status = 'pending_reservation'
+           AND EXISTS (
+             SELECT 1 FROM inventory_reservations r
+             WHERE r.id = ? AND r.order_item_id = order_items.id AND r.status = 'active'
+           )`
+      ).bind(itemId, orderId, reservationId),
+    ]);
+    const persisted = await db.prepare(
+      `SELECT status FROM inventory_reservations WHERE id = ? AND order_id = ? AND order_item_id = ?`
+    ).bind(reservationId, orderId, itemId).first<{status:string}>();
+    if (persisted?.status === 'active') activated += 1;
+  }
+  return { attempted: (pending.results || []).length, activated };
+}

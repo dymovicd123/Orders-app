@@ -1,0 +1,187 @@
+name: Stage03 Production migrations 0073-0074
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/stage03-production-migrations-0073-0074.yml'
+      - 'migrations/0073_v72_order_item_pricing_foundation.sql'
+      - 'migrations/0074_v72_retained_order_pricing_mode.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply Stage03 0073-0074 to Production D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders-app-branch2' wrangler.jsonc || grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity detected. Refusing Production Stage03 migration." >&2
+            exit 20
+          fi
+
+          m73='migrations/0073_v72_order_item_pricing_foundation.sql'
+          grep -Fq "ADD COLUMN pricing_mode TEXT NOT NULL DEFAULT 'legacy_manual_total'" "$m73"
+          grep -Fq "CHECK (pricing_mode IN ('legacy_manual_total', 'itemized_v1'))" "$m73"
+          grep -Fq 'ADD COLUMN catalog_price_snapshot INTEGER' "$m73"
+          grep -Fq 'catalog_price_snapshot IS NULL OR catalog_price_snapshot >= 0' "$m73"
+          if grep -Eiq '\\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM)\\b' "$m73"; then
+            echo "0073 contains a business-row write/backfill." >&2
+            exit 21
+          fi
+          if grep -Fiq 'catalog_execution_prices' "$m73"; then
+            echo "0073 attempts to infer historical prices from current Catalog." >&2
+            exit 22
+          fi
+
+          m74='migrations/0074_v72_retained_order_pricing_mode.sql'
+          grep -Fq 'ALTER TABLE retained_order_summaries' "$m74"
+          grep -Fq "ADD COLUMN pricing_mode TEXT NOT NULL DEFAULT 'legacy_manual_total'" "$m74"
+          grep -Fq "CHECK (pricing_mode IN ('legacy_manual_total', 'itemized_v1'))" "$m74"
+          if grep -Eiq '\\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM)\\b' "$m74"; then
+            echo "0074 contains a business-row write/backfill." >&2
+            exit 23
+          fi
+          if grep -Fiq 'catalog_execution_prices' "$m74" || grep -Fiq 'catalog_price_snapshot' "$m74"; then
+            echo "0074 attempts to infer retained pricing from current Catalog." >&2
+            exit 24
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit Production schema and capture business fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS execution_price_table,
+            (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='pricing_mode') AS order_pricing_mode,
+            (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot') AS item_catalog_snapshot,
+            (SELECT COUNT(*) FROM pragma_table_info('retained_order_summaries') WHERE name='pricing_mode') AS retained_pricing_mode" --json)"
+          echo "$schema"
+          exec_table="$(jq -r '.[0].results[0].execution_price_table // -1' <<<"$schema")"
+          opm="$(jq -r '.[0].results[0].order_pricing_mode // -1' <<<"$schema")"
+          cps="$(jq -r '.[0].results[0].item_catalog_snapshot // -1' <<<"$schema")"
+          rpm="$(jq -r '.[0].results[0].retained_pricing_mode // -1' <<<"$schema")"
+          [[ "$exec_table" == "1" ]] || { echo "0072 execution-price table is missing in Production." >&2; exit 25; }
+          [[ "$opm" == "0" || "$opm" == "1" ]]
+          [[ "$cps" == "0" || "$cps" == "1" ]]
+          [[ "$rpm" == "0" || "$rpm" == "1" ]]
+          [[ "$opm" == "$cps" ]] || { echo "Partial 0073 schema detected; refusing automatic repair." >&2; exit 26; }
+
+          fingerprint="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COALESCE(SUM(return_amount),0) FROM orders) AS orders_return,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS item_quantity,
+            (SELECT COALESCE(SUM(unit_price),0) FROM order_items) AS item_unit_price_sum,
+            (SELECT COALESCE(SUM(line_total),0) FROM order_items) AS item_line_total_sum,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM returns WHERE COALESCE(status,'completed') <> 'cancelled') AS active_return_count,
+            (SELECT COALESCE(SUM(amount),0) FROM returns WHERE COALESCE(status,'completed') <> 'cancelled') AS active_return_amount,
+            (SELECT COUNT(*) FROM exchanges WHERE COALESCE(status,'completed') <> 'cancelled') AS active_exchange_count,
+            (SELECT COUNT(*) FROM retained_order_summaries) AS retained_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM retained_order_summaries) AS retained_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM retained_order_summaries) AS retained_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM retained_order_summaries) AS retained_debt,
+            (SELECT COALESCE(SUM(return_amount),0) FROM retained_order_summaries) AS retained_return" --json)"
+          echo "$fingerprint"
+          before="$(jq -cS '.[0].results[0]' <<<"$fingerprint")"
+          [[ -n "$before" && "$before" != "null" ]] || { echo "Could not capture Production fingerprint." >&2; exit 27; }
+          printf '%s' "$before" > /tmp/stage03-prod-before.json
+          printf '%s' "$opm" > /tmp/stage03-prod-0073-present
+          printf '%s' "$rpm" > /tmp/stage03-prod-0074-present
+
+      - name: Apply exact additive Stage03 schema if absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/stage03-prod-0073-present)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0073_v72_order_item_pricing_foundation.sql
+          else
+            echo "0073 already present; verification only."
+          fi
+          if [[ "$(cat /tmp/stage03-prod-0074-present)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0074_v72_retained_order_pricing_mode.sql
+          else
+            echo "0074 already present; verification only."
+          fi
+
+      - name: Verify legacy classification, no historical price backfill, and unchanged totals
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='pricing_mode') AS order_pricing_mode,
+            (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot') AS item_catalog_snapshot,
+            (SELECT COUNT(*) FROM pragma_table_info('retained_order_summaries') WHERE name='pricing_mode') AS retained_pricing_mode,
+            (SELECT COUNT(*) FROM orders WHERE pricing_mode <> 'legacy_manual_total' OR pricing_mode IS NULL) AS nonlegacy_orders,
+            (SELECT COUNT(*) FROM orders WHERE pricing_mode = 'itemized_v1') AS itemized_orders,
+            (SELECT COUNT(*) FROM order_items WHERE catalog_price_snapshot IS NOT NULL) AS snapshot_rows,
+            (SELECT COUNT(*) FROM retained_order_summaries WHERE pricing_mode <> 'legacy_manual_total' OR pricing_mode IS NULL) AS nonlegacy_retained" --json)"
+          echo "$result"
+          for field in order_pricing_mode item_catalog_snapshot retained_pricing_mode; do
+            [[ "$(jq -r ".[0].results[0].$field // 0" <<<"$result")" == "1" ]] || { echo "$field missing after migration." >&2; exit 28; }
+          done
+          for field in nonlegacy_orders itemized_orders snapshot_rows nonlegacy_retained; do
+            [[ "$(jq -r ".[0].results[0].$field // -1" <<<"$result")" == "0" ]] || { echo "$field is not zero after migration." >&2; exit 29; }
+          done
+
+          after_raw="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COALESCE(SUM(return_amount),0) FROM orders) AS orders_return,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS item_quantity,
+            (SELECT COALESCE(SUM(unit_price),0) FROM order_items) AS item_unit_price_sum,
+            (SELECT COALESCE(SUM(line_total),0) FROM order_items) AS item_line_total_sum,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM returns WHERE COALESCE(status,'completed') <> 'cancelled') AS active_return_count,
+            (SELECT COALESCE(SUM(amount),0) FROM returns WHERE COALESCE(status,'completed') <> 'cancelled') AS active_return_amount,
+            (SELECT COUNT(*) FROM exchanges WHERE COALESCE(status,'completed') <> 'cancelled') AS active_exchange_count,
+            (SELECT COUNT(*) FROM retained_order_summaries) AS retained_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM retained_order_summaries) AS retained_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM retained_order_summaries) AS retained_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM retained_order_summaries) AS retained_debt,
+            (SELECT COALESCE(SUM(return_amount),0) FROM retained_order_summaries) AS retained_return" --json)"
+          echo "$after_raw"
+          after="$(jq -cS '.[0].results[0]' <<<"$after_raw")"
+          before="$(cat /tmp/stage03-prod-before.json)"
+          [[ "$after" == "$before" ]] || {
+            echo "Production business fingerprint changed during Stage03 schema preparation." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 30
+          }
+          echo "Stage03 Production schema 0073/0074 verified: all pre-existing history remains legacy-classified and business totals are unchanged."

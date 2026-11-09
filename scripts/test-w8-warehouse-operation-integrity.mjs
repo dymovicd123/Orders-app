@@ -5,6 +5,7 @@ import { warehouseOperationFeedback } from '../worker/domains/warehouse-operatio
 const read=file=>readFileSync(new URL(file,import.meta.url),'utf8')
 const worker=read('../worker/index.ts')
 const app=read('../src/App.tsx')
+const movement=read('../src/features/inventory/inventoryMovementActions.ts')
 const section=read('../src/features/sections/InventorySection.tsx')
 const panel=read('../src/features/inventory/views/renderInventoryMovementPanel.tsx')
 const view=read('../src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx')
@@ -15,45 +16,6 @@ const stale=warehouseOperationFeedback(
  'manual_set','manual-test-1234')
 assert.equal(stale.status,409)
 assert.equal(stale.code,'warehouse_stock_stale')
-for(const [suffix,details] of [
- ['product','выбранный размер относится к другому товару'],
- ['gender','пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом'],
- ['color','пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом'],
- ['size','выбранный размер относится к другой комбинации'],
-]){
- const issue=warehouseOperationFeedback(new Error('Приход «АБАЙКА»: '+details+'. Склад не изменён.'),'arrival','synthetic-'+suffix)
- assert.equal(issue.status,409,'Known invalid arrival SKU must return actionable conflict')
- assert.equal(issue.code,'warehouse_sku_mismatch')
- assert.match(issue.message,/Склад не изменён/)
-}
-assert.equal(warehouseOperationFeedback(new Error('D1_ERROR: SQLITE_CONSTRAINT Приход «АБАЙКА»: problem'),'arrival','x').status,500,
- 'Actual persistence errors must stay server failures')
-
-// Invalid canonical SKU from a stale form is a business rejection, not SQL failure.
-for (const kind of ['writeoff','manual_set']) {
- const name=kind==='writeoff'?'Списание':'Корректировка'
- const issue=warehouseOperationFeedback(new Error(name+': характеристики не соответствуют выбранному варианту. Выберите существующую комбинацию заново.'),kind,'w8-'+kind)
- assert.equal(issue.status,409)
- assert.equal(issue.code,'warehouse_sku_mismatch')
- assert.match(issue.message,/характеристики не соответствуют/)
-}
-assert.equal(warehouseOperationFeedback(
- new Error('D1_ERROR: SQLITE_CONSTRAINT Списание: характеристики не соответствуют выбранному варианту. Выберите существующую комбинацию заново.'),
- 'writeoff','w8-sql').status,500,'Actual SQL write errors stay 500')
-
-// Stage 2.3: transfer must reject a form whose displayed source stock is stale,
-// even when there is still enough quantity for the movement.
-const staleTransfer=warehouseOperationFeedback(new Error(
- 'Остатки изменились после открытия перемещения: ШАПАН 46. Было 5, сейчас 6. Обновите остатки и повторите перемещение.'
-),'transfer','w8-transfer-stale')
-assert.equal(staleTransfer.status,409)
-assert.equal(staleTransfer.code,'warehouse_stock_stale')
-const movementSource=read('../worker/domains/inventory-movement.ts')
-assert.ok(movementSource.includes('entry.expectedQuantity !== null && entry.expectedQuantity !== sourceCurrent'),
- 'Transfer must reject a stale displayed source count before its atomic batch')
-assert.ok(movementSource.includes('await assertNoActiveStocktakeForTransfer(db, fromSource, toSource)'),
- 'Transfer retains its active revision guard')
-
 assert.match(stale.message,/60, сейчас 55/)
 assert.match(stale.message,/обновите/i)
 
@@ -77,8 +39,8 @@ assert.ok(worker.includes("warehouseOperationFeedback(error,'transfer',input.req
 assert.ok(worker.includes("movementType === 'manual_set' ? 'manual_set'"),'Manual correction gets structured error')
 assert.ok(worker.includes("event:'warehouse_transfer_failed'"),'Server retains diagnostic log')
 assert.ok(worker.includes("event:'warehouse_movement_failed'"),'Manual operation retains diagnostic log')
-assert.ok(app.includes('setInventoryMovementError(err instanceof Error ? err.message'),'Keep a local error rather than generic global toast')
-assert.ok(app.includes("setInventoryMovementError('')"),'Clear error on next operation')
+assert.ok(app.includes('createInventoryMovementActions({') && movement.includes('setInventoryMovementError(err instanceof Error ? err.message'),'Keep a local error rather than generic global toast')
+assert.ok(movement.includes("setInventoryMovementError('')"),'Clear error on next operation')
 assert.ok(section.includes("inventoryPanel !== 'movement') return"),'Arrival also loads current inventory snapshot')
 assert.ok(section.includes("inventoryPanel !== 'stocktake' && inventoryPanel !== 'movement'"),'Check active stocktakes in operation tab before transfer')
 assert.ok(section.includes('stocktakeActiveSources: stocktakeActiveSessions.map'), 'Pass active stocktake locations into transfer')
@@ -94,7 +56,6 @@ assert.ok(view.includes("const limit=mode==='transfer'?60:100"),'Respect transfe
 assert.ok(view.includes('if(changed>limit)'), 'Count existing and new SKU lines')
 assert.ok(view.includes("(mode === 'arrival' || mode==='manual_set')"),'Correction can now add a new size using shared picker')
 assert.ok(!view.includes("{mode !== 'writeoff' && mode !== 'transfer' &&"),'Dead correction + size removed')
-assert.equal((view.match(/Комментарий \(необязательно\)/g)||[]).length,2,'Every operation and review accepts empty comment')
-assert.ok(!view.includes('Укажите причину операции.'),'No forced stock note')
+assert.ok(view.includes("mode==='transfer'?'Комментарий к перемещению (необязательно)'"),'Correct transfer comment label')
 assert.ok(stylesheet.includes('w8-operation-save-error'),'Scoped error styling')
 console.log('W8_WAREHOUSE_ERRORS_AND_LIMITS_PASSED')

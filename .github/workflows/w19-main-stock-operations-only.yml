@@ -1,0 +1,38 @@
+name: W19 Main Stock and Operations Only
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/**'
+      - 'src/styles/w13-stock-catalog-browse.css'
+      - 'src/styles/w14-simple-stock-controls.css'
+      - 'src/styles/w16-stock-source-attention.css'
+      - 'scripts/test-main-w19-stock-operations.mjs'
+      - '.github/workflows/w19-main-stock-operations-only.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/w19-main-stock-operations-only.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Stock models, quantities and operation controls
+        run: |
+          node --experimental-strip-types scripts/test-main-w19-stock-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build

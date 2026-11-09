@@ -72,9 +72,11 @@ function verifySource() {
     'migrations/0060_v72_storage_database_hygiene.sql',
     'scripts/test-step1904-storage-database-hygiene.mjs',
     'scripts/test-step1905-ui-small-screen-acceptance.mjs',
-    'scripts/session-hotpath-branch2-worker-manifest.json',
-    'scripts/session-hotpath-branch2-frontend-manifest.json',
-    'scripts/test-session-hotpath-branch2.mjs',
+    'scripts/session-hotpath-worker-manifest.json',
+    'scripts/session-hotpath-frontend-manifest.json',
+    'scripts/test-session-hotpath-hotfix.mjs',
+    'scripts/auth-production-port-worker-manifest.json',
+    'scripts/auth-production-port-frontend-manifest.json',
     'scripts/test-step1906a-worker-modularization.mjs',
     'scripts/test-step1906b-frontend-modularization.mjs',
     'scripts/test-step1906c-dead-code-cleanup.mjs',
@@ -87,10 +89,14 @@ function verifySource() {
     'scripts/test-step191e-runtime-limits-atomicity.mjs',
     'scripts/step191f-admin-session-integrity-manifest.json',
     'scripts/test-step191f-admin-session-integrity.mjs',
-    'scripts/test-auth-r3-team-access-ux.mjs',
-    'scripts/test-auth-r5-hardening.mjs',
-    'scripts/auth-r6-password-manager-frontend-manifest.json',
-    'scripts/test-auth-r6-password-manager.mjs',
+    'scripts/test-auth-production-team-access.mjs',
+    'scripts/test-auth-production-hardening.mjs',
+    'scripts/test-auth-production-password-manager.mjs',
+    'scripts/test-auth-r7-login-reliability.mjs',
+    'scripts/test-auth-r8-system-admins.mjs',
+    'scripts/test-auth-r8b-system-admin-management.mjs',
+    'scripts/stocktake-navigation-hotfix-frontend-manifest.json',
+    'scripts/test-stocktake-navigation-hotfix.mjs',
     'scripts/step192a1-warehouse-truth-freshness-manifest.json',
     'scripts/test-step192a1-warehouse-truth-freshness.mjs',
     'scripts/step192a2-catalog-truth-finalizer-manifest.json',
@@ -230,13 +236,14 @@ try {
   run('Catalog selection / retirement integrity', process.execPath, [path.join(root, 'scripts/test-catalog-selection-retirement-integrity.mjs')])
   run('Catalog safe execution/product retirement', process.execPath, [path.join(root, 'scripts/test-catalog-safe-retirement.mjs')])
   run('Catalog safe restore / Arrival recreation', process.execPath, [path.join(root, 'scripts/test-catalog-safe-restore.mjs')])
-  run('Arrival canonical product alias', process.execPath, [path.join(root, 'scripts/test-arrival-canonical-product-alias-r1.mjs')])
+  run('Arrival child audience R1', process.execPath, [path.join(root, 'scripts/test-arrival-child-audience-r1.mjs')])
   run('Catalog retired operational write guards', process.execPath, [path.join(root, 'scripts/test-catalog-retired-operational-write-guards.mjs')])
   run('Catalog retired order/return recovery', process.execPath, [path.join(root, 'scripts/test-catalog-retired-recovery.mjs')])
   run('Catalog local retirement', process.execPath, [path.join(root, 'scripts/test-catalog-local-retirement.mjs')])
   run('Catalog granular retirement history/UI', process.execPath, [path.join(root, 'scripts/test-catalog-granular-retirement-history.mjs')])
   run('Catalog fixed product gender scope', process.execPath, [path.join(root, 'scripts/test-catalog-fixed-gender-scope.mjs')])
   run('Order retired Catalog confirmation', process.execPath, [path.join(root, 'scripts/test-order-retired-confirmation.mjs')])
+  run('Production deploy skipped-build fallback safety', process.execPath, [path.join(root, 'scripts/test-production-deploy-fallback-safety.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])
   run('Stage02 Phase2A stock truth primitives', process.execPath, [path.join(root, 'scripts/test-stage02-phase2a-stock-truth-primitives.mjs')])
@@ -251,59 +258,15 @@ try {
   run('Stage03-C catalog price UI', process.execPath, [path.join(root, 'scripts/test-stage03-c-catalog-price-ui.mjs')])
   run('Stage03-C1 SKU card layout', process.execPath, [path.join(root, 'scripts/test-stage03-c1-sku-card-layout.mjs')])
   run('Stage03-C2 price UI polish', process.execPath, [path.join(root, 'scripts/test-stage03-c2-price-ui-polish.mjs')])
-  run('Stage03-F1 pricing compatibility foundation', process.execPath, [path.join(root, 'scripts/test-stage03-f1-pricing-foundation.mjs')])
-  run('Stage03-F2 pricing read compatibility', process.execPath, [path.join(root, 'scripts/test-stage03-f2-pricing-read-compat.mjs')])
-  run('Stage03-G1 report price isolation', process.execPath, [path.join(root, 'scripts/test-stage03-g1-report-price-isolation.mjs')])
-  run('Stage03-G2 price-only edit isolation', process.execPath, [path.join(root, 'scripts/test-stage03-g2-price-only-edit-isolation.mjs')])
-  run('Stage03-H1 itemized money calculator', process.execPath, [path.join(root, 'scripts/test-stage03-h1-itemized-money-calculator.mjs')])
-  run('Stage03-H2 itemized write plan', process.execPath, [path.join(root, 'scripts/test-stage03-h2-itemized-write-plan.mjs')])
-  run('Stage03-H3 explicit itemized create', process.execPath, [path.join(root, 'scripts/test-stage03-h3-explicit-itemized-create.mjs')])
-  run('Stage03-H4 itemized product revenue', process.execPath, [path.join(root, 'scripts/test-stage03-h4-itemized-product-revenue.mjs')])
-  run('Stage03-H5 Catalog price resolver', process.execPath, [path.join(root, 'scripts/test-stage03-h5-catalog-price-resolver.mjs')])
-  run('Stage03-H6A itemized edit guard', process.execPath, [path.join(root, 'scripts/test-stage03-h6a-itemized-edit-guard.mjs')])
-  run('Stage03-H6B shadow Create pricing', process.execPath, [path.join(root, 'scripts/test-stage03-h6b-shadow-create-pricing.mjs')])
-  run('Stage03-H6C itemized pipeline acceptance', process.execPath, [path.join(root, 'scripts/test-stage03-h6c-itemized-pipeline-acceptance.mjs')])
-  run('Stage03-H6D itemized exchange guard', process.execPath, [path.join(root, 'scripts/test-stage03-h6d-itemized-exchange-guard.mjs')])
-  run('Stage03-H6E post-create finance isolation', process.execPath, [path.join(root, 'scripts/test-stage03-h6e-post-create-finance-isolation.mjs')])
-  run('Stage03-H6F commercial write surface audit', process.execPath, [path.join(root, 'scripts/test-stage03-h6f-commercial-write-surface-audit.mjs')])
-  run('Stage03-H6G itemized Create readiness', process.execPath, [path.join(root, 'scripts/test-stage03-h6g-itemized-create-readiness.mjs')])
-  run('Stage03-H6H retained pricing mode', process.execPath, [path.join(root, 'scripts/test-stage03-h6h-retained-pricing-mode.mjs')])
-  run('Stage03-H6I pre-client readiness matrix', process.execPath, [path.join(root, 'scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs')])
-  run('Stage03-H6J adjacent surfaces isolation', process.execPath, [path.join(root, 'scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs')])
-  run('Stage03-H7A Branch2-only safety baseline', process.execPath, [path.join(root, 'scripts/test-stage03-h7a-branch2-safety-baseline.mjs')])
-  run('Stage03-H7B itemized Create activation', process.execPath, [path.join(root, 'scripts/test-stage03-h7b-itemized-create-activation.mjs')])
-  run('Stage03-H7F final Branch2 pricing acceptance', process.execPath, [path.join(root, 'scripts/test-stage03-h7f-final-branch2-acceptance.mjs')])
-  run('Stage03-H8A itemized metadata edit foundation', process.execPath, [path.join(root, 'scripts/test-stage03-h8a-itemized-metadata-edit-foundation.mjs')])
-  run('Stage03-H8B itemized restricted editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8b-itemized-restricted-editor.mjs')])
-  run('Stage03-H8C itemized sold-price correction', process.execPath, [path.join(root, 'scripts/test-stage03-h8c-itemized-price-correction.mjs')])
-  run('Stage03-H8D itemized content rewrite foundation', process.execPath, [path.join(root, 'scripts/test-stage03-h8d-itemized-content-rewrite-foundation.mjs')])
-  run('Stage03-H8E itemized content editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8e-itemized-content-editor.mjs')])
-  run('Stage03-H8F direct itemized editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8f-direct-itemized-editor.mjs')])
-  run('Stage03-H8G direct Create price', process.execPath, [path.join(root, 'scripts/test-stage03-h8g-direct-create-price.mjs')])
-  run('Stage03-H9A itemized Exchange backend', process.execPath, [path.join(root, 'scripts/test-stage03-h9a-itemized-exchange-backend.mjs')])
-  run('Stage03-H9B itemized Exchange UI', process.execPath, [path.join(root, 'scripts/test-stage03-h9b-itemized-exchange-ui.mjs')])
-  run('Stage03-H9C itemized multi-Exchange', process.execPath, [path.join(root, 'scripts/test-stage03-h9c-itemized-multi-exchange.mjs')])
-  run('Exchange Set V2 domain', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2.mjs')])
-  run('Exchange Set V2 UI', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2-ui.mjs')])
-  run('Stage03-H10 manual Return policy', process.execPath, [path.join(root, 'scripts/test-stage03-h10-manual-return-policy.mjs')])
-  run('Return never-issued physical safety R2', process.execPath, [path.join(root, 'scripts/test-return-unissued-physical-safety-r2.mjs')])
-  run('Return smart UX R3', process.execPath, [path.join(root, 'scripts/test-return-smart-ux-r3.mjs')])
-  run('Return/Exchange source defaults R1', process.execPath, [path.join(root, 'scripts/test-return-exchange-source-defaults-r1.mjs')])
-  run('Arrival child audience R1', process.execPath, [path.join(root, 'scripts/test-arrival-child-audience-r1.mjs')])
-  run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
-  run('Stage03-H12 final end-to-end pricing audit', process.execPath, [path.join(root, 'scripts/test-stage03-h12-final-e2e-audit.mjs')])
-  run('Branch2 main Catalog sync safety', process.execPath, [path.join(root, 'scripts/test-branch2-main-catalog-sync-safety.mjs')])
-  run('Branch2 deploy fallback safety', process.execPath, [path.join(root, 'scripts/test-branch2-deploy-fallback-safety.mjs')])
-  run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
-  run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
-  run('CLIENT-ZAMMLER-C create form', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-c-create-form.mjs')])
-  run('CLIENT-ZAMMLER-E All Orders filter', process.execPath, [path.join(root, 'scripts/test-client-zammler-e-order-list.mjs')])
-  run('CLIENT-ZAMMLER-F Workshop invoice separation', process.execPath, [path.join(root, 'scripts/test-client-zammler-f-workshop-invoice.mjs')])
-  run('Workshop UI R1', process.execPath, [path.join(root, 'scripts/test-workshop-ui-r1.mjs')])
-  run('CLIENT-ZAMMLER-G UI correction', process.execPath, [path.join(root, 'scripts/test-client-zammler-g-ui-polish.mjs')])
-  run('Kaspi schema R1', process.execPath, [path.join(root, 'scripts/test-kaspi-schema-r1.mjs')])
-  run('Kaspi order separation R1', process.execPath, [path.join(root, 'scripts/test-kaspi-order-separation-r1.mjs')])
-  run('Kaspi main parity 20261007', process.execPath, [path.join(root, 'scripts/test-kaspi-main-parity-20261007.mjs')])
+  run('Stage03 Production promotion acceptance', process.execPath, [path.join(root, 'scripts/test-stage03-production-promotion.mjs')])
+  run('Stage03 H9C Production multi-Exchange', process.execPath, [path.join(root, 'scripts/test-stage03-h9c-production-multi-exchange.mjs')])
+  run('Exchange Set V2 Production domain', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2.mjs')])
+  run('Exchange Set V2 Production UI', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2-ui.mjs')])
+  run('Return never-issued physical safety Production', process.execPath, [path.join(root, 'scripts/test-return-unissued-physical-safety-r2.mjs')])
+  run('Return smart UX Production', process.execPath, [path.join(root, 'scripts/test-return-smart-ux-r3.mjs')])
+  run('Return/Exchange source defaults Production', process.execPath, [path.join(root, 'scripts/test-return-exchange-source-defaults-r1.mjs')])
+  run('CLIENT-ZAMMLER Production runtime', process.execPath, [path.join(root, 'scripts/test-client-zammler-production-runtime.mjs')])
+  run('Kaspi Production runtime', process.execPath, [path.join(root, 'scripts/test-kaspi-production-runtime.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
@@ -325,8 +288,10 @@ try {
   run('Step 190.3 read/error/cache safety tests', process.execPath, [path.join(root, 'scripts/test-step1903-read-error-cache-safety.mjs')])
   run('Step 190.4 storage/database hygiene tests', process.execPath, [path.join(root, 'scripts/test-step1904-storage-database-hygiene.mjs')])
   run('Step 190.5 UI / small-screen acceptance tests', process.execPath, [path.join(root, 'scripts/test-step1905-ui-small-screen-acceptance.mjs')])
-  run('Branch2 main runtime sync', process.execPath, [path.join(root, 'scripts/test-branch2-main-runtime-sync-20261005.mjs')])
-  run('Branch2 session hot-path hotfix tests', process.execPath, [path.join(root, 'scripts/test-session-hotpath-branch2.mjs')])
+  run('Workshop main sync 20261007', process.execPath, [path.join(root, 'scripts/test-workshop-main-sync-20261007.mjs')])
+  run('Workshop backlog visibility R1', process.execPath, [path.join(root, 'scripts/test-workshop-backlog-visibility-r1.mjs')])
+  run('Dashboard workshop attention R1', process.execPath, [path.join(root, 'scripts/test-dashboard-workshop-attention-r1.mjs')])
+  run('Session hot-path hotfix tests', process.execPath, [path.join(root, 'scripts/test-session-hotpath-hotfix.mjs')])
   run('Step 190.6A Worker modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906a-worker-modularization.mjs')])
   run('Step 190.6B frontend controller modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906b-frontend-modularization.mjs')])
   run('Step 190.6C dead/dormant/legacy cleanup tests', process.execPath, [path.join(root, 'scripts/test-step1906c-dead-code-cleanup.mjs')])
@@ -334,13 +299,14 @@ try {
   run('Step 190.6E type / API boundary tests', process.execPath, [path.join(root, 'scripts/test-step1906e-type-api-boundaries.mjs')])
   run('Step 191D transfer runtime safety tests', process.execPath, [path.join(root, 'scripts/test-step191d-transfer-runtime-safety.mjs')])
   run('Step 191E D1 runtime limits / atomicity tests', process.execPath, [path.join(root, 'scripts/test-step191e-runtime-limits-atomicity.mjs')])
-  run('Step 191F admin session integrity tests', process.execPath, [path.join(root, 'scripts/test-step191f-admin-session-integrity.mjs')])
-  run('Auth R3 Team access UX tests', process.execPath, [path.join(root, 'scripts/test-auth-r3-team-access-ux.mjs')])
-  run('Auth R5 hardening tests', process.execPath, [path.join(root, 'scripts/test-auth-r5-hardening.mjs')])
-  run('Auth R6 password-manager tests', process.execPath, [path.join(root, 'scripts/test-auth-r6-password-manager.mjs')])
+  run('Step 191F account-session integrity tests', process.execPath, [path.join(root, 'scripts/test-step191f-admin-session-integrity.mjs')])
+  run('Auth Production Team access UX tests', process.execPath, [path.join(root, 'scripts/test-auth-production-team-access.mjs')])
+  run('Auth Production hardening tests', process.execPath, [path.join(root, 'scripts/test-auth-production-hardening.mjs')])
+  run('Auth Production password-manager tests', process.execPath, [path.join(root, 'scripts/test-auth-production-password-manager.mjs')])
   run('Auth R7 login reliability tests', process.execPath, [path.join(root, 'scripts/test-auth-r7-login-reliability.mjs')])
   run('Auth R8 system-admin UX tests', process.execPath, [path.join(root, 'scripts/test-auth-r8-system-admins.mjs')])
   run('Auth R8B system-admin management tests', process.execPath, [path.join(root, 'scripts/test-auth-r8b-system-admin-management.mjs')])
+  run('Stocktake partial-count navigation hotfix', process.execPath, [path.join(root, 'scripts/test-stocktake-navigation-hotfix.mjs')])
   run('Step 192A1 Warehouse truth / freshness tests', process.execPath, [path.join(root, 'scripts/test-step192a1-warehouse-truth-freshness.mjs')])
   run('Step 192A2 catalog truth finalizer tests', process.execPath, [path.join(root, 'scripts/test-step192a2-catalog-truth-finalizer.mjs')])
   run('Step 192B1 Warehouse truth gates / attention tests', process.execPath, [path.join(root, 'scripts/test-step192b1-warehouse-truth-attention.mjs')])

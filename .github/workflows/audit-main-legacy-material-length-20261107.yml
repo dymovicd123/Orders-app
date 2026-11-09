@@ -1,0 +1,64 @@
+name: "Read only Main legacy material and length identity audit"
+on:
+  push:
+    branches: [feature/main-source-first-order-picker-20261106]
+    paths: [.github/workflows/audit-main-legacy-material-length-20261107.yml]
+permissions:
+  contents: read
+jobs:
+  read-only-audit:
+    if: github.ref == 'refs/heads/feature/main-source-first-order-picker-20261106'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - run: npm ci
+      - name: Counts for active catalog variants raw material length and stock-position
+        run: |
+          SQL="$(cat <<'SQL'
+          SELECT
+          CASE WHEN TRIM(COALESCE(v.material,''))='' THEN 'EMPTY' WHEN UPPER(TRIM(v.material))='СТАНДАРТ' THEN 'STANDARD' ELSE 'EXPLICIT' END AS variant_material,
+          CASE WHEN TRIM(COALESCE(v.length,''))='' THEN 'EMPTY' WHEN UPPER(TRIM(v.length))='СТАНДАРТ' THEN 'STANDARD' ELSE 'EXPLICIT' END AS variant_length,
+          CASE WHEN v.stock_position_id IS NULL THEN 'NO_POSITION' ELSE 'POSITION' END AS execution_link,
+          COUNT(*) AS active_variants,
+          COUNT(DISTINCT v.product_id) AS models,
+          SUM(CASE WHEN s.variant_id IS NOT NULL THEN 1 ELSE 0 END) AS stock_rows,
+          SUM(CASE WHEN s.quantity>0 THEN s.quantity ELSE 0 END) AS physical_positive
+          FROM catalog_variants v LEFT JOIN inventory_stock s ON s.variant_id=v.id
+          WHERE v.is_active=1
+          GROUP BY variant_material,variant_length,execution_link
+          ORDER BY active_variants DESC;
+          SQL
+          )"
+          npx wrangler d1 execute orders_db_prod --config wrangler.jsonc --remote --command "$SQL" --json | jq -c '.[0].results'
+      - name: Count legacy blank execution collisions with explicit standard SKU
+        run: |
+          SQL="$(cat <<'SQL'
+          SELECT COUNT(*) AS legacy_variants, SUM(CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END) AS same_identity_standard_siblings
+          FROM catalog_variants v
+          LEFT JOIN catalog_variants a ON a.product_id=v.product_id AND a.id<>v.id AND a.is_active=1
+            AND UPPER(TRIM(COALESCE(NULLIF(a.material,''),'СТАНДАРТ')))=UPPER(TRIM(COALESCE(NULLIF(v.material,''),'СТАНДАРТ')))
+            AND UPPER(TRIM(COALESCE(NULLIF(a.length,''),'СТАНДАРТ')))=UPPER(TRIM(COALESCE(NULLIF(v.length,''),'СТАНДАРТ')))
+            AND COALESCE(a.category,'adult')=COALESCE(v.category,'adult')
+            AND UPPER(TRIM(COALESCE(a.gender,'')))=UPPER(TRIM(COALESCE(v.gender,'')))
+            AND UPPER(TRIM(COALESCE(a.color,'')))=UPPER(TRIM(COALESCE(v.color,'')))
+            AND UPPER(TRIM(COALESCE(a.size_label,'')))=UPPER(TRIM(COALESCE(v.size_label,'')))
+          WHERE v.is_active=1 AND (TRIM(COALESCE(v.material,''))='' OR TRIM(COALESCE(v.length,''))='');
+          SQL
+          )"
+          npx wrangler d1 execute orders_db_prod --config wrangler.jsonc --remote --command "$SQL" --json | jq -c '.[0].results'
+          echo 'READ_ONLY_MAIN_IDENTITY_AUDIT_COMPLETE'

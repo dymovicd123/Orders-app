@@ -1,0 +1,42 @@
+name: Main Stage05 Demand Selective Release
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/warehouse-demand.ts'
+      - 'worker/index.ts'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/InventoryDemandStatistics.tsx'
+      - 'src/features/inventory/views/inventory-demand-statistics.css'
+      - 'src/app/types.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'scripts/test-stage05-warehouse-demand.mjs'
+      - 'scripts/test-stage05-navigation-20261023.mjs'
+      - 'scripts/verify-stage05-main-live.mjs'
+      - '.github/workflows/main-stage05-demand-selective-20261023.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-stage05-demand-selective-20261023.yml'
+permissions:
+  contents: read
+jobs:
+  stage05-build:
+    name: Main Stage05 SQL, access and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Demand SQL with pending and shipped cohorts
+        run: node scripts/test-stage05-warehouse-demand.mjs
+      - name: Clear interaction and no incomplete CSV
+        run: node scripts/test-stage05-navigation-20261023.mjs
+      - name: Manager role permissions remain unchanged
+        run: node --experimental-strip-types scripts/test-main-manager-three-workspaces-20261022.mjs
+      - name: Compile all UI and worker
+        run: npm run build

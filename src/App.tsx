@@ -25,133 +25,62 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, InventoryOperationAttemptsResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
-import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
-import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
-import { ActionConfirmationModal } from './features/orders/ActionConfirmationModal'
-import { ActionTextPromptModal } from './features/orders/ActionTextPromptModal'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
 import type { ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'
 import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
+import { createCashRegisterActions } from './features/finance/cashRegisterActions'
+import { createFinancePaymentMethodActions } from './features/finance/paymentMethodActions'
+import { createTeamEmployeeActions } from './features/team/teamEmployeeActions'
+import { createTeamTimesheetActions } from './features/team/teamTimesheetActions'
+import { createTeamReportActions } from './features/team/teamReportActions'
+import { createPlanActions } from './features/plans/planActions'
+import { createReportExportActions } from './features/export/reportExportActions'
+import { createReferenceActions } from './features/references/referenceActions'
+import { loadManagedAuthUsers, saveManagedAuthUser, disableManagedAuthUser } from './features/auth/managedAccountActions'
+import { AuthGate } from './features/auth/AuthGate'
+import { ArchiveMonthModal } from './features/orders/ArchiveMonthModal'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
+import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
+import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
 import { useApiClient } from './app/controllers/useApiClient'
+import { createLatestRequestGuard } from './app/latestRequestGuard'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
-import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
+import { useReturnExchangeWorkspace } from './app/controllers/useReturnExchangeWorkspace'
+import { useMoneyHistoryWorkspace } from './app/controllers/useMoneyHistoryWorkspace'
+import { evaluateItemizedCreatePricing } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
-import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
-import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
+import { useInventoryMatrixWorkspace } from './features/inventory/useInventoryMatrixWorkspace'
+import { useWarehouseSnapshots } from './features/inventory/useWarehouseSnapshots'
+import { createInventoryStocktakeClient } from './features/inventory/inventoryStocktakeClient'
+import { createInventoryOperationEditorActions } from './features/inventory/inventoryOperationEditor'
+import { createInventoryMovementActions } from './features/inventory/inventoryMovementActions'
+import { createWarehouseRecoveryActions } from './features/inventory/warehouseRecoveryActions'
+import { createWarehouseGovernanceActions } from './features/inventory/warehouseGovernanceActions'
+import { createOrderCreationActions } from './features/orders/orderCreationActions'
+import { createOrderEditorActions } from './features/orders/orderEditorActions'
+import { createOrderEditPersistenceActions } from './features/orders/orderEditPersistenceActions'
+import { createOrderEditSessionActions } from './features/orders/orderEditSessionActions'
+import { createOrderCorrectionsActions } from './features/orders/orderCorrectionsActions'
+import { createOrderShippingHandoverActions, handoverCheckpointDateLabel, handoverSourceLabel, type OrderStockHandoverResponse } from './features/orders/orderShippingHandoverActions'
+import { createReturnExchangeCreationActions } from './features/orders/returnExchangeCreationActions'
+import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
+import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
 import './styles/195-kaspi-orders.css'
 
 
-
-
-type InventoryStocktakeApplyItem = {
-  key: string
-  productId: number
-  variantId: number
-  productName: string
-  category: 'adult' | 'child'
-  gender: string
-  color: string
-  material: string
-  length: string
-  size: string
-  quantity: number
-  expectedQuantity: number
-}
-
-type InventoryStocktakeApplyResult = {
-  ok: boolean
-  appliedKeys: string[]
-  message: string
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-type OrderStockHandoverItemView = {
-  orderItemId: number
-  productName: string
-  itemDetails: string
-  source: InventorySourceKey
-  variantId: number
-  quantity: number
-  reservationId: number | null
-  reservationStatus: string
-  physicalQuantity: number
-  totalReservedQuantity: number
-  checkpointId: number | null
-  checkpointAt: string | null
-  checkpointType: string | null
-  checkpointKind: 'revision' | 'check' | null
-  reviewNeeded: boolean
-  reviewReason: 'late_entry' | 'mixed_order_after_check' | null
-  reviewDecision: string | null
-  reviewedCheckpointId: number | null
-  reviewedCheckpointAt: string | null
-  itemCreatedAt: string | null
-  state: 'already_issued' | 'handover_review' | 'ready_to_issue' | 'needs_attention'
-}
-
-type OrderStockHandoverResponse = {
-  ok: boolean
-  message?: string
-  orderId?: number
-  externalId?: string
-  orderDate?: string
-  orderCreatedAt?: string
-  customerName?: string
-  shippingStatus?: string
-  workshopPending?: boolean
-  workshopItemCount?: number
-  activeWorkshopTaskCount?: number
-  items?: OrderStockHandoverItemView[]
-  state?: OrderStockHandoverResponse
-  order?: OrderRecord
-  refreshRequired?: boolean
-}
-
-type StockResolutionRequiredItemView = {
-  source?: InventorySourceKey
-  variantId?: number
-  productName?: string
-  trackedPhysicalQuantity?: number
-  operationQuantity?: number
-  unexplainedQuantity?: number
-}
-
-type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
-  code?: string
-  operationType?: string
-  items?: Array<OrderStockHandoverItemView | StockResolutionRequiredItemView>
-}
 
 
 type BrowserPasswordCredentialConstructor = new (data: { id: string; password: string; name?: string }) => Credential
@@ -169,21 +98,6 @@ async function offerBrowserPasswordSave(login: string, password: string) {
   }
 }
 
-const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000
-const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000
-let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
-let warehouseAttentionSummaryInFlight: Promise<WarehouseAttentionSummaryResponse | null> | null = null
-let warehouseAttentionRequestToken = 0
-
-function handoverCheckpointDateLabel(value: string | null | undefined) {
-  const raw = String(value || '').trim()
-  if (!raw) return 'последней сверки'
-  const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return raw.slice(0, 10)
-  return date.toLocaleDateString('ru-RU')
-}
-
 function handoverDateTimeLabel(value: string | null | undefined) {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -193,11 +107,6 @@ function handoverDateTimeLabel(value: string | null | undefined) {
   return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function handoverSourceLabel(source: InventorySourceKey | string) {
-  return source === 'boutique' ? 'Бутик' : 'Склад'
-}
-
-async function settleCatalogReviewRefreshes(tasks: Promise<unknown>[]) { return (await Promise.allSettled(tasks)).some((entry) => entry.status === 'rejected') }
 function App() {
   const [health, setHealth] = useState<ApiState | null>(null)
   const [dbState, setDbState] = useState<ApiState | null>(null)
@@ -205,6 +114,7 @@ function App() {
   const [orderPeriodStats, setOrderPeriodStats] = useState<OrderPeriodStats | null>(null)
   const [orderPageOffset, setOrderPageOffset] = useState(0)
   const [orderPageInfo, setOrderPageInfo] = useState({ offset: 0, limit: 100, totalCount: 0, hasMore: false, hasPrevious: false })
+  const orderListReadGuardRef = useRef(createLatestRequestGuard())
   const [clientsData, setClientsData] = useState<ClientsResponse | null>(null)
   const [clientMode, setClientMode] = useState<ClientMode>('all')
   const [clientQuery, setClientQuery] = useState('')
@@ -225,22 +135,11 @@ function App() {
   const [stockHandoverActionItemId, setStockHandoverActionItemId] = useState<number | null>(null)
   const [orderCatalogResolutionOrder, setOrderCatalogResolutionOrder] = useState<OrderRecord | null>(null)
   const [references, setReferences] = useState<ReferenceData | null>(null)
-  const [inventoryData, setInventoryData] = useState<{
-    warehouse: InventoryResponse | null
-    boutique: InventoryResponse | null
-  }>({
-    warehouse: null,
-    boutique: null,
-  })
-  const inventorySnapshotLoadedAt = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })
-  const inventorySnapshotRequestSeq = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })
-  const [inventorySnapshotLoadErrors, setInventorySnapshotLoadErrors] = useState<Record<InventorySourceKey, string>>({ warehouse: '', boutique: '' })
   const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null)
   const [catalogReview, setCatalogReview] = useState<CatalogReviewResponse | null>(null)
   const [catalogReviewBusy, setCatalogReviewBusy] = useState(false)
   const [inventoryLifecycle, setInventoryLifecycle] = useState<InventoryLifecyclePendingResponse | null>(null)
   const [inventoryLifecycleBusy, setInventoryLifecycleBusy] = useState(false)
-  const [warehouseAttention, setWarehouseAttention] = useState<WarehouseAttentionSummaryResponse | null>(null)
   const [dashboardInsights, setDashboardInsights] = useState<DashboardInsightsResponse | null>(null)
   const [workshopFilters, setWorkshopFilters] = useState({
     view: 'active' as WorkshopView,
@@ -257,37 +156,6 @@ function App() {
   const [message, setMessage] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [authChecking, setAuthChecking] = useState(true)
-  const [actionConfirmationMessage, setActionConfirmationMessage] = useState<string | null>(null)
-  const actionConfirmationResolver = useRef<((confirmed: boolean) => void) | null>(null)
-  // A second click cannot queue a second physical/financial approval.
-  const askActionConfirmation = useCallback((text: string) => new Promise<boolean>(resolve => {
-    if (actionConfirmationResolver.current) { resolve(false); return }
-    actionConfirmationResolver.current = resolve
-    setActionConfirmationMessage(text)
-  }), [])
-  const answerActionConfirmation = useCallback((confirmed: boolean) => {
-    const resolve = actionConfirmationResolver.current
-    actionConfirmationResolver.current = null
-    setActionConfirmationMessage(null)
-    resolve?.(confirmed)
-  }, [])
-
-  // Explicit text input for exceptional admin actions. Native browser input stalls
-  // browser automation and hides the reason from the in-app confirmation flow.
-  const [actionTextPrompt, setActionTextPrompt] = useState<{ message: string; defaultValue: string } | null>(null)
-  const actionTextPromptResolver = useRef<((value: string | null) => void) | null>(null)
-  const askActionText = useCallback((message: string, defaultValue = '') => new Promise<string | null>(resolve => {
-    if (actionTextPromptResolver.current) { resolve(null); return }
-    actionTextPromptResolver.current = resolve
-    setActionTextPrompt({ message, defaultValue })
-  }), [])
-  const answerActionText = useCallback((value: string | null) => {
-    const resolve = actionTextPromptResolver.current
-    actionTextPromptResolver.current = null
-    setActionTextPrompt(null)
-    resolve?.(value)
-  }, [])
-
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
@@ -340,6 +208,7 @@ function App() {
     setMessage,
     onAuthInvalid: handleAuthInvalid,
   })
+  const criticalReturnExchangeClient = { apiFetch, prepareCriticalRequest, completeCriticalRequest }
   
   
 
@@ -550,70 +419,16 @@ function App() {
   }, [apiFetch, authUser, passwordChangeDraft])
 
   const loadAuthUsers = useCallback(async () => {
-    if (!isAdmin) return
-    setAuthUsersBusy(true)
-    try {
-      const response = await apiFetch('/api/auth/users')
-      const data = await readJsonResponse<{ ok: boolean; items?: ManagedAuthUser[] }>(response, 'Пользователи')
-      setAuthUsers(data.items || [])
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось загрузить пользователей.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
+    return loadManagedAuthUsers({ isAdmin, apiFetch, setAuthUsersBusy, setAuthUsers, setError, setMessage })
   }, [apiFetch, isAdmin])
 
   const saveAuthUser = useCallback(async () => {
-    if (!isAdmin) return
-    setAuthUsersBusy(true)
-    setError(null)
-    try {
-      const isEdit = Boolean(authUserDraft.id)
-      const duplicateManagerAccount = authUserDraft.managerId
-        ? authUsers.find((user) => user.managerId === authUserDraft.managerId && user.id !== authUserDraft.id)
-        : null
-      if (duplicateManagerAccount) {
-        throw new Error(`У этого сотрудника уже есть аккаунт @${duplicateManagerAccount.login}. Измените его в разделе «Команда».`)
-      }
-      const payload = {
-        login: authUserDraft.login,
-        password: authUserDraft.password || undefined,
-        role: authUserDraft.role,
-        managerId: authUserDraft.managerId || null,
-        displayName: authUserDraft.displayName,
-        isActive: authUserDraft.isActive,
-        mustChangePassword: authUserDraft.mustChangePassword,
-      }
-      const response = await apiFetch(isEdit ? `/api/auth/users/${authUserDraft.id}` : '/api/auth/users', {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      await readJsonResponse(response, 'Пользователь')
-      setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
-      setMessage(isEdit ? 'Аккаунт обновлён.' : 'Аккаунт создан.')
-      await loadAuthUsers()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось сохранить аккаунт.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
+    return saveManagedAuthUser({ isAdmin, apiFetch, authUserDraft, authUsers, setAuthUserDraft, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
   }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
   const disableAuthUser = useCallback(async (id: number) => {
-    if (!isAdmin || !await askActionConfirmation('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
-    setAuthUsersBusy(true)
-    try {
-      const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
-      await readJsonResponse(response, 'Отключение аккаунта')
-      setMessage('Аккаунт отключён.')
-      await loadAuthUsers()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось отключить аккаунт.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
-  }, [apiFetch, isAdmin, loadAuthUsers, askActionConfirmation])
+    return disableManagedAuthUser(id, { isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
+  }, [apiFetch, isAdmin, loadAuthUsers])
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
@@ -702,45 +517,57 @@ function App() {
   const [debtSelectedOrderId, setDebtSelectedOrderId] = useState<number | null>(null)
   const [debtPayments, setDebtPayments] = useState<EditorPayment[]>([createDebtClosePayment()])
   const [debtBusy, setDebtBusy] = useState(false)
-  const [returnSelectedOrderId, setReturnSelectedOrderId] = useState<number | null>(null)
-  const [returnDraft, setReturnDraft] = useState<ReturnDraft>(createReturnDraft())
-  const [returnBusy, setReturnBusy] = useState(false)
-  const [returnHistory, setReturnHistory] = useState<ReturnHistoryEntry[]>([])
-  const [returnHistoryBusy, setReturnHistoryBusy] = useState(false)
-  const [returnHistoryError, setReturnHistoryError] = useState('')
-  const [returnHistoryFilters, setReturnHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
-  const [returnHistoryHasMore, setReturnHistoryHasMore] = useState(false)
-  const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, pendingPhysicalQuantity: 0, count: 0 })
-  const [returnPendingInbox, setReturnPendingInbox] = useState({
-    rows: [] as ReturnHistoryEntry[], pendingQuantity: 0, hasMore: false, busy: false, error: '',
-  })
-  const returnPendingInboxToken = useRef(0)
-  const [exchangeSelectedOrderId, setExchangeSelectedOrderId] = useState<number | null>(null)
-  const [exchangeDraft, setExchangeDraft] = useState<ExchangeDraft>(createExchangeDraft())
-  const [exchangeBusy, setExchangeBusy] = useState(false)
-  const [exchangeHistory, setExchangeHistory] = useState<ExchangeHistoryEntry[]>([])
-  const [exchangeHistoryBusy, setExchangeHistoryBusy] = useState(false)
-  const [exchangeHistoryError, setExchangeHistoryError] = useState('')
-  const [exchangeHistoryFilters, setExchangeHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
-  const [exchangeHistoryHasMore, setExchangeHistoryHasMore] = useState(false)
-  const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, pendingPhysicalQuantity: 0, count: 0 })
-  const [exchangePendingInbox, setExchangePendingInbox] = useState({
-    rows: [] as ExchangeHistoryEntry[], pendingQuantity: 0, hasMore: false, busy: false, error: '',
-  })
-  const exchangePendingInboxToken = useRef(0)
+  const {
+    returnSelectedOrderId,
+    setReturnSelectedOrderId,
+    returnDraft,
+    setReturnDraft,
+    returnBusy,
+    setReturnBusy,
+    returnHistory,
+    returnHistoryBusy,
+    returnHistoryError,
+    returnHistoryFilters,
+    setReturnHistoryFilters,
+    returnHistoryHasMore,
+    returnHistorySummary,
+    returnPendingInbox,
+    exchangeSelectedOrderId,
+    setExchangeSelectedOrderId,
+    exchangeDraft,
+    setExchangeDraft,
+    exchangeBusy,
+    setExchangeBusy,
+    exchangeHistory,
+    exchangeHistoryBusy,
+    exchangeHistoryError,
+    exchangeHistoryFilters,
+    setExchangeHistoryFilters,
+    exchangeHistoryHasMore,
+    exchangeHistorySummary,
+    exchangePendingInbox,
+    loadReturnPendingInbox,
+    loadExchangePendingInbox,
+    loadReturnHistory,
+    loadExchangeHistory,
+  } = useReturnExchangeWorkspace({ apiFetch, reportReadFailure })
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
   const [activityBusy, setActivityBusy] = useState(false)
   const [activityFilters, setActivityFilters] = useState({ q: '', eventType: 'all', orderId: '' })
   const [financeReportFilters, setFinanceReportFilters] = useState({ dateFrom: getPeriodRange('month').dateFrom, dateTo: getPeriodRange('month').dateTo })
   const [financeReportType, setFinanceReportType] = useState<FinanceReportType>('payments')
-  const [moneyHistory, setMoneyHistory] = useState<FinancialHistoryEntry[]>([])
-  const [moneyHistoryBusy, setMoneyHistoryBusy] = useState(false)
-  const [moneyHistoryError, setMoneyHistoryError] = useState('')
-  const [moneyHistoryQuery, setMoneyHistoryQuery] = useState('')
-  const [moneyHistoryType, setMoneyHistoryType] = useState({ flow: 'all' as 'all' | 'in' | 'out', operation: 'all' as 'all' | 'order_payment' | 'debt_close' | 'order_extra' | 'exchange_extra' | 'refund' | 'correction', trace: 'all' as 'all' | 'normal' | 'info' | 'review' | 'legacy' })
-  const [moneyHistoryHasMore, setMoneyHistoryHasMore] = useState(false)
-  const [moneyHistorySummary, setMoneyHistorySummary] = useState({ count: 0, totalIn: 0, totalOut: 0, net: 0 })
-  const moneyHistoryRequestIdRef = useRef(0)
+  const {
+    moneyHistory,
+    moneyHistoryBusy,
+    moneyHistoryError,
+    moneyHistoryQuery,
+    setMoneyHistoryQuery,
+    moneyHistoryType,
+    setMoneyHistoryType,
+    moneyHistoryHasMore,
+    moneyHistorySummary,
+    loadMoneyHistory,
+  } = useMoneyHistoryWorkspace({ apiFetch, financeReportFilters })
   const [financeMode, setFinanceMode] = useState<'summary' | 'payments' | 'debts' | 'returns' | 'methods' | 'cash'>('summary')
   const [cashRegister, setCashRegister] = useState<CashRegisterResponse | null>(null)
   const [cashRegisterBusy, setCashRegisterBusy] = useState(false)
@@ -802,8 +629,6 @@ function App() {
     dateTo: defaultOrderRange.dateTo,
     pageSize: '100',
   })
-  const [createdOrderNotice, setCreatedOrderNotice] = useState<{ id: number; externalId: string; orderDate: string } | null>(null)
-  const [savedOrderView, setSavedOrderView] = useState<{ filters: typeof filters; preset: OrderPeriodPreset } | null>(null)
   const closedArchiveMonth = getClosedArchiveMonth()
   const [archiveDraft, setArchiveDraft] = useState({
     month: closedArchiveMonth.value,
@@ -823,6 +648,40 @@ function App() {
   const debtFormRef = useRef<HTMLElement | null>(null)
   const returnFormRef = useRef<HTMLElement | null>(null)
   const exchangeFormRef = useRef<HTMLElement | null>(null)
+  const {
+    inventoryData,
+    inventorySnapshotLoadErrors,
+    warehouseAttention,
+    loadWarehouseAttention,
+    loadInventoryData,
+    invalidateInventoryStockCaches,
+  } = useWarehouseSnapshots({
+    apiFetch,
+    activeSector,
+    inventoryPanel,
+    inventorySource: inventoryDraft.source,
+    clearCatalogReview: () => setCatalogReview(null),
+  })
+
+  const {
+    loadInventoryReservations,
+    loadInventoryStocktakeSessions,
+    loadInventoryStocktakeSession,
+    createInventoryStocktakeSession,
+    saveInventoryStocktakeCount,
+    addInventoryStocktakeVariant,
+    addInventoryStocktakeCombination,
+    reconcileFoundInventoryStock,
+    loadInventoryCycleCounts,
+    applyInventoryCycleCounts,
+    quickInventoryStocktakeBatch,
+    quickInventoryStocktake,
+    completeInventoryStocktakeSession,
+    cancelInventoryStocktakeSession,
+    loadInventoryHistory,
+    loadInventoryCheckHistory,
+  } = createInventoryStocktakeClient(apiFetch)
+
   const editorFormRef = useRef<HTMLElement | null>(null)
 
   function managerColorFor(name?: string | null, id?: number | null, explicitColor?: string | null) {
@@ -839,8 +698,6 @@ function App() {
 
 
   useEffect(() => {
-    // Role comes from the authenticated session. Never honor a manager's
-    // deep link into administrative workspaces, including browser back/forward.
     if (!authUser || authUser.mustChangePassword) return
     const syncSectorFromHash = () => {
       const rawHash = window.location.hash.replace('#', '').toLowerCase()
@@ -857,8 +714,6 @@ function App() {
           if (isCatalogLink) setInventoryPanel('catalog')
           if (isSettingsLink) setInventoryPanel('settings')
         } else if (isCatalogLink || isSettingsLink) {
-          // Warehouse is a manager workspace, but Catalog and technical
-          // settings inside it remain administrator-only.
           setInventoryPanel('overview')
           window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#inventory`)
         }
@@ -1337,68 +1192,421 @@ function App() {
     setExchangeDraft,
     variantsForProduct,
   })
-  const inventoryMatrixActiveGroupKey = inventoryMatrixGroupKey(inventoryMatrix)
-  const inventoryMatrixCurrentGroupItems = useMemo(() => inventoryDraft.items.filter((item) => (
-    item.touched
-    && item.productName
-    && inventoryMatrixGroupKey(item) === inventoryMatrixActiveGroupKey
-  )), [inventoryDraft.items, inventoryMatrixActiveGroupKey])
-  const inventoryMatrixBatchGroups = useMemo(() => {
-    const groups = new Map<string, {
-      key: string
-      productId: string
-      productName: string
-      category: 'adult' | 'child'
-      gender: string
-      material: string
-      length: string
-      colors: string[]
-      sizes: string[]
-      rows: number
-      totalQuantity: number
-    }>()
+  const {
+    inventoryMatrixActiveGroupKey,
+    inventoryMatrixBatchGroups,
+    inventoryMatrixSummary,
+    clearInventoryMatrixValues,
+    startNextInventoryMatrixProduct,
+    openInventoryMatrixBatchGroup,
+    removeInventoryMatrixBatchGroup,
+    updateInventoryMatrixProductInput,
+    updateInventoryMatrixCategory,
+    updateInventoryMatrixGender,
+    updateInventoryMatrixMaterial,
+    updateInventoryMatrixLength,
+    buildInventoryMatrix,
+    addInventoryMatrixColor,
+    addInventoryMatrixSize,
+    inventoryMatrixDraftItem,
+    setInventoryMatrixCell,
+    handleInventoryMatrixKeyDown,
+  } = useInventoryMatrixWorkspace({
+    inventoryDraft,
+    setInventoryDraft,
+    inventoryMatrix,
+    setInventoryMatrix,
+    inventoryMatrixColorToAdd,
+    setInventoryMatrixColorToAdd,
+    inventoryMatrixSizeToAdd,
+    setInventoryMatrixSizeToAdd,
+    inventoryOperationSourceRows,
+    catalogData,
+    variantsForProduct,
+    getInventoryRowCategory,
+    inventoryMatrixCellMap,
+    inventoryMatrixColors,
+    suggestionValues,
+    setInventoryOperationSearch,
+    setInventoryOperationProductKey,
+    setError,
+    setMessage,
+  })
 
-    for (const item of inventoryDraft.items) {
-      if (!item.touched || !item.productName) continue
-      if (inventoryDraft.movementType !== 'manual_set' && Number(item.quantity || 0) <= 0) continue
-      const key = inventoryMatrixGroupKey(item)
-      const existing = groups.get(key) || {
-        key,
-        productId: String(item.productId || ''),
-        productName: item.productName,
-        category: item.category,
-        gender: item.gender,
-        material: item.material,
-        length: item.length,
-        colors: [],
-        sizes: [],
-        rows: 0,
-        totalQuantity: 0,
-      }
-      existing.rows += 1
-      existing.totalQuantity += Number(item.quantity || 0)
-      if (item.color && !existing.colors.includes(item.color)) existing.colors.push(item.color)
-      if (item.size && !existing.sizes.includes(item.size)) existing.sizes.push(item.size)
-      groups.set(key, existing)
-    }
+  const {
+    selectInventoryOperationVariant,
+    updateInventoryDirectProductInput,
+    updateInventoryOperationVariantField,
+    setInventoryVariantOperationQuantity,
+    startInventoryTransferFromStockRow,
+    removeInventoryVariantOperationItem,
+  } = createInventoryOperationEditorActions({
+    inventoryDraft,
+    setInventoryDraft,
+    inventoryOperationVariant,
+    setInventoryOperationVariant,
+    inventoryOperationAllProductGroups,
+    selectedInventoryOperationGroup,
+    matchedInventoryOperationVariant,
+    getInventoryRowCategory,
+    setInventoryOperationProductKey,
+    setInventoryOperationSearch,
+    setInventoryOperationActiveVariantId,
+    setInventoryExistingVariantOpen,
+    setInventoryExistingVariantSearch,
+    resetInventoryOperationSelection,
+    setInventoryTransferRequestId,
+    makeCashRequestId,
+    openInventoryPanel,
+  })
 
-    return Array.from(groups.values()).map((group) => ({
-      ...group,
-      colors: [...group.colors].sort((left, right) => left.localeCompare(right, 'ru')),
-      sizes: sortSizeLikeValues(group.sizes),
-    }))
-  }, [inventoryDraft.items, inventoryDraft.movementType])
-  const inventoryMatrixSummary = useMemo(() => {
-    const edited = inventoryMatrixCurrentGroupItems
-    const currentTotal = Array.from(inventoryMatrixCellMap.values()).reduce((sum, cell) => sum + cell.current, 0)
-    if (inventoryDraft.movementType === 'manual_set') {
-      const delta = edited.reduce((sum, item) => sum + Number(item.quantity || 0) - Number(item.expectedQuantity || 0), 0)
-      return { edited: edited.length, entered: edited.reduce((sum, item) => sum + Number(item.quantity || 0), 0), currentTotal, afterTotal: currentTotal + delta, delta }
-    }
-    const entered = edited.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-    return { edited: edited.length, entered, currentTotal, afterTotal: currentTotal + entered, delta: entered }
-  }, [inventoryMatrixCurrentGroupItems, inventoryDraft.movementType, inventoryMatrixCellMap])
+  const {
+    applyInventoryStocktakeChanges,
+    saveInventoryMovement,
+  } = createInventoryMovementActions({
+    inventoryMovementBusy,
+    setInventoryMovementBusy,
+    setInventoryMovementError,
+    setError,
+    setMessage,
+    inventoryDraft,
+    setInventoryDraft,
+    flattenInventoryArrivalPositions,
+    inventoryOperationSourceRows,
+    getInventoryRowCategory,
+    inventoryTransferRequestId,
+    inventoryManualRequestId,
+    apiFetch,
+    loadInventoryData,
+    loadCatalogData,
+    setInventoryTransferRequestId,
+    setInventoryManualRequestId,
+    makeCashRequestId,
+    setInventoryArrivalPositions,
+    setInventoryArrivalVariantOpen,
+    resetInventoryOperationSelection,
+    setInventoryMatrix,
+    setInventoryMatrixColorToAdd,
+    setInventoryMatrixSizeToAdd,
+    setArrivalRecoveryPrompt,
+    setArrivalRecoveryError,
+    arrivalRecoveryContinueRef,
+    askStockResolution,
+  })
 
+  const {
+    loadCatalogReview,
+    reconcileCatalogReview,
+    loadCatalogReviewContext,
+    resolveCatalogReviewFacts,
+    excludeCatalogReviewItem,
+    loadInventoryLifecycle,
+    loadInventoryLifecycleContext,
+    resolveInventoryLifecycleFacts,
+    reconcileKnownInventoryLifecycle,
+    resolveCatalogReviewItem,
+  } = createWarehouseRecoveryActions({
+    canManageWarehouse,
+    catalogReview,
+    catalogReviewBusy,
+    setCatalogReview,
+    setCatalogReviewBusy,
+    inventoryLifecycle,
+    inventoryLifecycleBusy,
+    setInventoryLifecycle,
+    setInventoryLifecycleBusy,
+    apiFetch,
+    setError,
+    setMessage,
+    loadInventoryData,
+    loadCatalogData,
+    loadReferencesData,
+    loadWarehouseAttention,
+  })
+
+  const {
+    loadInventoryAudit,
+    resolveInventoryAuditIssue,
+    loadInventoryControlSettings,
+    toggleInventoryAutoWriteoff,
+    applyPendingInventoryWriteoffs,
+    reverseInventoryMovement,
+  } = createWarehouseGovernanceActions({
+    canManageWarehouse,
+    inventoryAuditBusy,
+    setInventoryAuditBusy,
+    setInventoryAudit,
+    inventoryControlBusy,
+    setInventoryControlBusy,
+    inventoryControlSettings,
+    setInventoryControlSettings,
+    reversingInventoryMovementId,
+    setReversingInventoryMovementId,
+    apiFetch,
+    setError,
+    setMessage,
+    loadInventoryData,
+  })
+
+  const {
+    updateCreateDraft,
+    updateCreateItem,
+    addCreateItem,
+    removeCreateItem,
+    updateCreatePayment,
+    addCreatePayment,
+    removeCreatePayment,
+    createOrderDraftWithDefaultManager,
+    resetCreateOrderDraft,
+    createOrderFromDraft,
+  } = createOrderCreationActions({
+    createDraft,
+    setCreateDraft,
+    catalogData,
+    orderPanel,
+    authUser,
+    references,
+    activeSector,
+    getSizeOptions,
+    setOrderBusy,
+    setError,
+    setMessage,
+    setOrderPanel,
+    setSelectedOrderId,
+    setEditorDraft,
+    setEditorOpen,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    invalidateFinanceReadCaches,
+    invalidateInventoryStockCaches,
+    upsertOrderInState,
+    refreshOrderList: () => { void loadDashboard(false, filters, 0) },
+    refreshWorkshop: () => { void loadWorkshopData() },
+    refreshOrderFinance: () => { void loadOrdersFinanceSummary(filters, true) },
+  })
+
+  const {
+    updateEditorDraft,
+    updateEditorItem,
+    updateEditorPayment,
+    addEditorPayment,
+    removeEditorPayment,
+    saveEditorPayment,
+    addEditorItem,
+    removeEditorItem,
+    correctRecordedPaymentMethod,
+  } = createOrderEditorActions({
+    editorDraft,
+    selectedOrder,
+    savingOrder,
+    catalogData,
+    getSizeOptions,
+    isAdmin,
+    setEditorDraft,
+    setSavingOrder,
+    setError,
+    setMessage,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    upsertOrderInState,
+    setSelectedOrderId,
+    setEditorOrderOverride,
+    invalidateFinanceReadCaches,
+    refreshDashboard: () => { void loadDashboard(false) },
+    refreshFinanceReports: refreshFinanceReportsIfVisible,
+  })
+
+  const {
+    closeOrderEditor,
+    expandOrderItems,
+    handleEditOrder,
+  } = createOrderEditSessionActions({
+    isAdmin,
+    editorReturnSector,
+    setEditorReturnSector,
+    setEditorOpen,
+    setEditorOrderOverride,
+    setSelectedOrderId,
+    setActiveSector,
+    setOrderPanel,
+    setMessage,
+    setError,
+    setExpandedOrderItemCounts,
+    setEditorDraft,
+    apiFetch,
+    getOrderOperationalProjection,
+    upsertOrderInState,
+    loadCatalogData,
+    loadInventoryData,
+  })
+
+  const {
+    correctOrderMetadata,
+    correctRecordedOrderItemPrice,
+    correctRecordedOrderItemPrices,
+    loadRetiredExchangePriceOptions,
+    correctRetiredExchangePrice,
+  } = createOrderCorrectionsActions({
+    setSavingOrder,
+    setError,
+    setMessage,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    upsertOrderInState,
+    refreshDashboard: () => { void loadDashboard() },
+  })
+
+  const {
+    openOrderStockHandover,
+    openOrderStockHandoverById,
+    closeOrderStockHandover,
+    runOrderStockHandoverAction,
+    markOrderSentToClient,
+    correctMistakenOrderShipping,
+  } = createOrderShippingHandoverActions({
+    orders,
+    stockHandoverOrder,
+    stockHandoverActionItemId,
+    savingOrder,
+    setStockHandoverOrder,
+    setStockHandoverData,
+    setStockHandoverBusy,
+    setStockHandoverActionItemId,
+    setError,
+    setMessage,
+    setSavingOrder,
+    setSelectedOrderId,
+    setOrderCatalogResolutionOrder,
+    apiFetch,
+    askStockResolution,
+    getOrderOperationalProjection,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    upsertOrderInState,
+    invalidateInventoryStockCaches,
+    invalidateFinanceReadCaches,
+    refreshDashboard: (force?: boolean) => { void loadDashboard(force) },
+    refreshWorkshop: () => { void loadWorkshopData() },
+  })
+
+  const { saveReturn, saveExchange } = createReturnExchangeCreationActions({
+    returnSelectedOrder,
+    returnDraft,
+    exchangeSelectedOrder,
+    exchangeDraft,
+    getOrderSourceAvailability,
+    isAdmin,
+    setReturnBusy,
+    setExchangeBusy,
+    setError,
+    setMessage,
+    setReturnSelectedOrderId,
+    setReturnDraft,
+    setExchangeSelectedOrderId,
+    setExchangeDraft,
+    setSelectedOrderId,
+    setOrderPanel,
+    apiFetch,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    upsertOrderInState,
+    loadReturnHistory,
+    loadExchangeHistory,
+    refreshActivityLogIfVisible,
+    refreshFinanceReportsIfVisible,
+    loadDashboard,
+    loadInventoryData,
+    loadInventoryLifecycle,
+    loadWorkshopData,
+  })
+
+  const {
+    receiveReturnedItemAction,
+    cancelReturnEntry,
+    correctExchangeFinancialEntry,
+    cancelExchangeEntry,
+  } = createReturnExchangeAftercareActions({
+    apiFetch,
+    askStockResolution,
+    criticalReturnExchangeClient,
+    setReturnBusy,
+    setExchangeBusy,
+    setError,
+    setMessage,
+    setReturnedItemResolutionEventId,
+    isAdmin,
+    cashRegister,
+    setReturnSelectedOrderId,
+    setReturnDraft,
+    setExchangeSelectedOrderId,
+    setSelectedOrderId,
+    upsertOrderInState,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    invalidateInventoryStockCaches,
+    invalidateFinanceReadCaches,
+    loadReturnHistory,
+    loadExchangeHistory,
+    refreshActivityLogIfVisible,
+    refreshFinanceReportsIfVisible,
+    loadDashboard,
+    loadWorkshopData,
+    loadInventoryData,
+    loadInventoryLifecycle,
+    loadCashRegister,
+  })
+
+  const {
+    loadExchangeCancellationPreview,
+    loadOrderExchangeCancellationPlan,
+    cancelOrderExchangeChain,
+    loadOrderReturnCancellationChoices,
+    cancelOrderReturnChoice,
+  } = createOrderDependentCancellationActions({
+    apiFetch,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    setSavingOrder,
+    setError,
+    setMessage,
+    upsertOrderInState,
+    invalidateInventoryStockCaches,
+    invalidateFinanceReadCaches,
+    loadExchangeHistory,
+    loadReturnHistory,
+    loadDashboard,
+    loadWorkshopData,
+    refreshFinanceReportsIfVisible,
+    loadInventoryLifecycle,
+  })
+
+  const { persistOrder } = createOrderEditPersistenceActions({
+    isAdmin,
+    selectedOrder,
+    activeSector,
+    orderPanel,
+    setSavingOrder,
+    setError,
+    setMessage,
+    getOrderOperationalProjection,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    setEditorDraft,
+    setEditorOrderOverride,
+    setSelectedOrderId,
+    setEditorOpen,
+    invalidateFinanceReadCaches,
+    invalidateInventoryStockCaches,
+    upsertOrderInState,
+    closeOrderEditor,
+    refreshDashboard: () => { void loadDashboard(false) },
+    refreshWorkshop: () => { void loadWorkshopData() },
+    refreshOrderFinance: () => { void loadOrdersFinanceSummary(filters, true) },
+  })
 
   useEffect(() => {
     if (!selectedOrderId) return
@@ -1500,9 +1708,6 @@ function App() {
       if (canManageWarehouse && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
     if ((activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange'))) {
-      // Manager choices and business dictionaries are required by these forms.
-      // Orders-list loading may not have completed yet after sign-in or reload.
-      void loadReferencesData()
       // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
       // on every panel transition. The server still performs the authoritative stock/CAS validation
       // on every write, and committed inventory mutations invalidate this snapshot explicitly.
@@ -1592,14 +1797,43 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [activeSector, authReady, financeMode, financeReportFilters.dateFrom, financeReportFilters.dateTo, moneyHistoryQuery, moneyHistoryType.flow, moneyHistoryType.operation, moneyHistoryType.trace])
 
-  async function loadReferencesData(force = false) {
-    if (references && !force) return references
-    const response = await apiFetch('/api/reference-data')
-    if (!response.ok) return null
-    const referenceData = await readJsonResponse<ReferenceData>(response, 'Справочники')
-    setReferences(referenceData)
-    return referenceData
-  }
+  const {
+    loadReferencesData: loadReferencesDataAction,
+    loadReferenceKindCounts: loadReferenceKindCountsAction,
+    loadReferenceItems: loadReferenceItemsAction,
+    saveReferenceEntry,
+    removeReferenceEntry,
+    resetReferenceDraft,
+    selectReferenceKind,
+  } = createReferenceActions({
+    isAdmin,
+    canManageWarehouse,
+    references,
+    referenceKind,
+    referenceDraft,
+    referenceItems,
+    referenceItemsCache,
+    referenceKindCounts,
+    referenceBusy,
+    referenceRequestIdRef,
+    setReferences,
+    setReferenceItems,
+    setReferenceItemsCache,
+    setReferenceKindCounts,
+    setReferenceBusy,
+    setReferenceDraft,
+    setReferenceKind,
+    setReferenceSearch,
+    setReferenceStatusFilter,
+    setError,
+    setMessage,
+    apiFetch,
+  })
+
+  // Effects above retain their original hoisted loader names.
+  function loadReferencesData(force = false) { return loadReferencesDataAction(force) }
+  function loadReferenceKindCounts(kinds: ReferenceKind[], force = false) { return loadReferenceKindCountsAction(kinds, force) }
+  function loadReferenceItems(kind = referenceKind, force = false) { return loadReferenceItemsAction(kind, force) }
 
   async function loadClients(append = false, offsetOverride?: number) {
     const requestId = ++clientRequestIdRef.current
@@ -1691,198 +1925,7 @@ function App() {
     }
   }
 
-  async function loadReferenceKindCounts(kinds: ReferenceKind[], force = false) {
-    const requested = Array.from(new Set(kinds)).filter(Boolean)
-    if (!requested.length) return {}
-    if (!force && requested.every((kind) => referenceKindCounts[kind])) {
-      return referenceKindCounts
-    }
-    const response = await apiFetch(`/api/reference-values/counts?kinds=${encodeURIComponent(requested.join(','))}`)
-    if (!response.ok) return null
-    const data = await readJsonResponse<{ ok: boolean; counts?: Partial<Record<ReferenceKind, { total: number; active: number; inactive: number }>> }>(response, 'Счётчики справочников')
-    const counts = data.counts || {}
-    setReferenceKindCounts((current) => ({ ...current, ...counts }))
-    return counts
-  }
 
-  async function loadReferenceItems(kind = referenceKind, force = false) {
-    const cached = referenceItemsCache[kind]
-    if (cached && !force) {
-      setReferenceItems(cached)
-      return cached
-    }
-    if (referenceBusy && !force) return referenceItems
-    const requestId = ++referenceRequestIdRef.current
-    setReferenceBusy(true)
-    try {
-      const response = await apiFetch(`/api/reference-values?kind=${encodeURIComponent(kind)}`)
-      if (!response.ok) return null
-      const data = await readJsonResponse<{ ok: boolean; items?: ReferenceListItem[] }>(response, 'Справочник')
-      const items = Array.isArray(data.items) ? data.items : []
-      if (requestId !== referenceRequestIdRef.current) {
-        return items
-      }
-      setReferenceItems(items)
-      setReferenceItemsCache((current) => ({ ...current, [kind]: items }))
-      const activeCount = items.filter((item) => item.isActive).length
-      setReferenceKindCounts((current) => ({
-        ...current,
-        [kind]: { total: items.length, active: activeCount, inactive: Math.max(0, items.length - activeCount) },
-      }))
-      return items
-    } finally {
-      if (requestId === referenceRequestIdRef.current) {
-        setReferenceBusy(false)
-      }
-    }
-  }
-
-  async function loadWarehouseAttention(details = false, force = false) {
-    const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')
-    if (!shouldLoadDetails && !force) {
-      const cached = warehouseAttentionSummaryCache
-      if (cached && Date.now() - cached.loadedAt < WAREHOUSE_ATTENTION_SUMMARY_TTL_MS) {
-        setWarehouseAttention((current) => current?.items ? current : cached.data)
-        return cached.data
-      }
-      if (warehouseAttentionSummaryInFlight) {
-        return await warehouseAttentionSummaryInFlight
-      }
-    }
-    const requestToken = ++warehouseAttentionRequestToken
-    const request = (async () => {
-      const response = await apiFetch(`/api/inventory/attention${shouldLoadDetails ? '?details=1&limit=30' : ''}`)
-      if (!response.ok) return null
-      return await readJsonResponse<WarehouseAttentionSummaryResponse>(response, 'Склад')
-    })()
-    if (!shouldLoadDetails) warehouseAttentionSummaryInFlight = request
-    try {
-      const data = await request
-      if (!data || requestToken !== warehouseAttentionRequestToken) return data
-      setWarehouseAttention(data)
-      if (shouldLoadDetails) {
-        // R7.7: a detailed Attention response already carries the exact summary counters.
-        // Reuse those counters for the next passive badge/overview read instead of immediately
-        // rebuilding the same live Warehouse truth graph.
-        warehouseAttentionSummaryCache = {
-          data: { ok: data.ok, total: data.total, counts: data.counts },
-          loadedAt: Date.now(),
-        }
-      } else {
-        warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
-      }
-      return data
-    } finally {
-      if (!shouldLoadDetails && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
-    }
-  }
-
-  async function loadInventoryData(
-    source: 'warehouse' | 'boutique' = inventoryDraft.source,
-    force = false,
-    query = '',
-    includeMovements = false,
-  ) {
-    const cached = inventoryData[source]
-    const cachedHasMovements = cached?.movementsIncluded !== false
-    const snapshotAgeMs = Date.now() - inventorySnapshotLoadedAt.current[source]
-    if (
-      cached
-      && !force
-      && !query.trim()
-      && snapshotAgeMs >= 0
-      && snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS
-      && (!includeMovements || cachedHasMovements)
-    ) {
-      return cached
-    }
-
-    const fullSnapshot = !query.trim()
-    const requestSeq = fullSnapshot
-      ? ++inventorySnapshotRequestSeq.current[source]
-      : inventorySnapshotRequestSeq.current[source]
-    const rejectSnapshot = (message: string) => {
-      // Never present a previously loaded count as though a newer full
-      // refresh succeeded. Earlier failed requests must not erase a later
-      // successful one.
-      if (fullSnapshot && inventorySnapshotRequestSeq.current[source] === requestSeq) {
-        inventorySnapshotLoadedAt.current[source] = 0
-        setInventoryData((current) => ({ ...current, [source]: null }))
-        setInventorySnapshotLoadErrors((current) => ({ ...current, [source]: message }))
-      }
-      return null
-    }
-
-    let data: InventoryResponse | null = null
-    try {
-      data = await loadCompleteInventorySnapshot(async (cursor, firstPageWithMovements) => {
-        const params = new URLSearchParams({
-          source,
-          limit: '1000',
-          cursor: String(cursor),
-          q: query.trim(),
-          includeMovements: firstPageWithMovements ? '1' : '0',
-        })
-        const response = await apiFetch(`/api/inventory?${params.toString()}`)
-        if (response.headers.get('X-Orders-App-Stale') === '1') {
-          throw new Error('Свежие остатки недоступны. Получен старый кеш — он не принят за актуальный склад.')
-        }
-        if (!response.ok) return null
-        return readJsonResponse<InventoryResponse>(response, 'Склад')
-      }, includeMovements)
-    } catch (error) {
-      console.error('Полные остатки не загружены:', error)
-      return rejectSnapshot(error instanceof Error ? error.message : 'Не удалось получить достоверные остатки.')
-    }
-    if (!data) return rejectSnapshot('Сервер не отдал полный список остатков. Данные не обновлены.')
-    // A filtered query is only a search result. It must never replace the
-    // authoritative all-items snapshot used by the entire Warehouse screen.
-    if (!fullSnapshot) return data
-    if (inventorySnapshotRequestSeq.current[source] !== requestSeq) return null
-    // No interim state update: all downstream stocktake/arrival/catalog editors
-    // must see one complete, LIVE source snapshot, never partial/stale pages.
-    if (fullSnapshot) {
-      inventorySnapshotLoadedAt.current[source] = Date.now()
-      setInventorySnapshotLoadErrors((current) => ({ ...current, [source]: '' }))
-    }
-    setInventoryData((current) => {
-      const previous = current[source]
-      if (!includeMovements && previous && previous.movementsIncluded !== false) {
-        return {
-          ...current,
-          [source]: {
-            ...data,
-            movements: previous.movements,
-            movementsIncluded: false,
-          },
-        }
-      }
-      return { ...current, [source]: data }
-    })
-    return data
-  }
-
-  // Post-commit stock truth, not an activity-log event. Discard stale cached
-  // counters and any older in-flight summary. No extra D1 reads while working
-  // in Orders; the Warehouse fetches fresh truth on the next visit.
-  function invalidateWarehouseAttentionAfterCommit() {
-    warehouseAttentionRequestToken += 1
-    warehouseAttentionSummaryCache = null
-    warehouseAttentionSummaryInFlight = null
-    setWarehouseAttention(null)
-  }
-
-  function invalidateInventoryStockCaches(includeCatalogReview = false) {
-    setInventoryData({ warehouse: null, boutique: null })
-    inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }
-    inventorySnapshotRequestSeq.current = { warehouse: inventorySnapshotRequestSeq.current.warehouse + 1, boutique: inventorySnapshotRequestSeq.current.boutique + 1 }
-    setInventorySnapshotLoadErrors({ warehouse: '', boutique: '' })
-    if (includeCatalogReview) setCatalogReview(null)
-    // W3.1A: mutations invalidate Warehouse Attention truth, but do not spend a D1 read
-    // unless the user actually opens/refreshes the recovery surface. Its own effect/action
-    // remains the single owner of detailed refreshes (W2.1 race invariant).
-    invalidateWarehouseAttentionAfterCommit()
-  }
 
   async function loadCatalogData(force = false) {
     if (catalogData && !force) return catalogData
@@ -1895,613 +1938,12 @@ function App() {
 
 
 
-  async function loadCatalogReview(force = false, orderId = 0) {
-    if (!canManageWarehouse) return null
-    if (!orderId && catalogReview?.mode !== 'order' && catalogReview && !force) return catalogReview
-    setCatalogReviewBusy(true)
-    try {
-      // Opening the review page is read-only. An orderId is used only when an old hidden
-      // exception becomes operational because the user is trying to finish that exact order.
-      const params = new URLSearchParams({ limit: '24' })
-      if (orderId > 0) params.set('orderId', String(orderId))
-      const response = await apiFetch(`/api/catalog/review?${params.toString()}`)
-      if (!response.ok) return null
-      const data = await readJsonResponse<CatalogReviewResponse>(response, 'Неразобранные товары')
-      setCatalogReview(data)
-      return data
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function reconcileCatalogReview(limit = 20) {
-    if (!canManageWarehouse || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/reconcile?limit=${Math.max(1, Math.min(20, limit))}`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Безопасное распознавание каталога')
-      if (!response.ok) throw new Error(result?.message || 'Не удалось разобрать очевидные позиции.')
-      const nextRefresh = loadCatalogReview(true)
-      const refreshIncomplete = await settleCatalogReviewRefreshes([nextRefresh, ...(Number(result?.resolvedGroups || 0) > 0 ? [loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false), loadCatalogData(true)] : [])])
-      const next = await nextRefresh.catch(() => catalogReview)
-      const successMessage = Number(result?.resolvedGroups || 0) > 0 ? `Автоматически разобрано: ${result.resolvedGroups}.` : 'Очевидных безопасных совпадений больше нет.'
-      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
-      return { ...result, review: next }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось разобрать очевидные позиции.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadCatalogReviewContext(orderItemId: number) {
-    const response = await apiFetch(`/api/catalog/review/${orderItemId}/context`)
-    const data = await readJsonResponse<CatalogResolutionContext>(response, 'Разбор позиции')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось определить, что именно требует уточнения.')
-    return data
-  }
-
-  async function resolveCatalogReviewFacts(orderItemId: number, input: CatalogResolutionInput) {
-    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/resolve-facts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось разобрать позицию.')
-      const createdReference = Array.isArray(input.createFields) && input.createFields.length > 0
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-        createdReference ? loadReferencesData(true) : Promise.resolve(null), loadWarehouseAttention(false, true),
-      ])
-      setMessage(refreshIncomplete ? `${result?.message || 'Позиция разобрана.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция разобрана.'))
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось разобрать позицию.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function excludeCatalogReviewItem(orderItemId: number) {
-    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/exclude`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось оставить позицию вне каталога.')
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-      ])
-      setMessage(refreshIncomplete ? `${result?.message || 'Позиция оставлена только в заказе.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция оставлена только в заказе.'))
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось оставить позицию вне каталога.')
-      return null
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadInventoryLifecycle(force = false) {
-    if (!canManageWarehouse) {
-      setInventoryLifecycle(null)
-      return null
-    }
-    if (inventoryLifecycle && !force) return inventoryLifecycle
-    setInventoryLifecycleBusy(true)
-    try {
-      const response = await apiFetch('/api/inventory/lifecycle/pending?limit=60')
-      if (!response.ok) return null
-      const data = await readJsonResponse<InventoryLifecyclePendingResponse>(response, 'Ожидающие складские движения')
-      setInventoryLifecycle(data)
-      return data
-    } finally {
-      setInventoryLifecycleBusy(false)
-    }
-  }
-
-  async function loadInventoryLifecycleContext(eventId: number) {
-    const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/context`)
-    const data = await readJsonResponse<CatalogResolutionContext>(response, 'Физическая позиция')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось определить, что именно нужно уточнить.')
-    return data
-  }
-
-  async function resolveInventoryLifecycleFacts(eventId: number, input: CatalogResolutionInput) {
-    if (!canManageWarehouse || !eventId || inventoryLifecycleBusy) return null
-    setInventoryLifecycleBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/resolve-facts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Физическая позиция')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось применить складское движение.')
-      const createdReference = Array.isArray(input.createFields) && input.createFields.length > 0
-      await Promise.all([
-        loadInventoryLifecycle(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadCatalogData(true),
-        createdReference ? loadReferencesData(true) : Promise.resolve(null),
-      ])
-      setMessage(result?.message || 'Физическая позиция подтверждена и склад обновлён.')
-      return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось применить складское движение.')
-      return null
-    } finally {
-      setInventoryLifecycleBusy(false)
-    }
-  }
-
-  async function reconcileKnownInventoryLifecycle(eventId: number) {
-    if (!eventId) return null
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/reconcile-known`, { method: 'POST' })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Приёмка известной позиции')
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось завершить приёмку.')
-      const [attentionData] = await Promise.all([
-        loadWarehouseAttention(true),
-        canManageWarehouse ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      setMessage(result?.message || 'Приёмка завершена.')
-      return { ...result, warehouseAttention: attentionData }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось завершить приёмку.')
-      return null
-    }
-  }
-
-  async function loadInventoryReservations(source: InventorySourceKey, variantId = 0, productId = 0): Promise<InventoryReservationsResponse> {
-    if (!variantId && !productId) return { ok: true, source, variantId: 0, productId: 0, totalQuantity: 0, reservations: [] }
-    const params = new URLSearchParams({ source })
-    if (variantId) params.set('variantId', String(variantId))
-    if (productId) params.set('productId', String(productId))
-    const response = await apiFetch(`/api/inventory/reservations?${params.toString()}`)
-    const data = await readJsonResponse<InventoryReservationsResponse>(response, 'Заказы по резерву')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить заказы, которые держат товар.')
-    return data
-  }
-
-  async function loadInventoryStocktakeSessions(source: InventorySourceKey | '' = '') {
-    const params = new URLSearchParams()
-    if (source) params.set('source', source)
-    const response = await apiFetch(`/api/inventory/stocktakes${params.toString() ? `?${params.toString()}` : ''}`)
-    const data = await readJsonResponse<InventoryStocktakeSessionsResponse>(response, 'Активные ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить активные ревизии.')
-    return data
-  }
-
-  async function loadInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}`)
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Ревизия')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить ревизию.')
-    return data
-  }
-
-  async function createInventoryStocktakeSession(source: InventorySourceKey, productIds: number[] = []) {
-    const response = await apiFetch('/api/inventory/stocktakes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, productIds }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Начало ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось начать ревизию.')
-    return data
-  }
-
-  async function saveInventoryStocktakeCount(sessionId: string, itemId: number, countedQuantity: number | null) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items/${itemId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ countedQuantity }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Сохранение пересчёта')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось сохранить количество.')
-    return data
-  }
-
-  async function addInventoryStocktakeVariant(sessionId: string, variantId: number) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Добавление товара в ревизию')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось добавить товар в ревизию.')
-    return data
-  }
-
-
-  async function addInventoryStocktakeCombination(sessionId: string, input: {
-    productId: number
-    material: string
-    length: string
-    category: 'adult' | 'child'
-    gender: string
-    color: string
-    size?: string
-    sizes?: string[]
-    createReferenceFields?: string[]
-    deferUnknown?: boolean
-  }) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items/combination`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Добавление комбинации в ревизию')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось добавить комбинацию товара в ревизию.')
-    return data
-  }
-
-  async function reconcileFoundInventoryStock(stockId: number) {
-    if (!stockId) return null
-    const response = await apiFetch(`/api/inventory/found-stock/${stockId}/reconcile`, { method: 'POST' })
-    const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Уточнение найденной позиции')
-    if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось определить найденную позицию.')
-    return data
-  }
-
-  async function loadInventoryCycleCounts(source: InventorySourceKey, limit = 12) {
-    const params = new URLSearchParams({ source, limit: String(limit) })
-    const response = await apiFetch(`/api/inventory/cycle-counts?${params.toString()}`)
-    const data = await readJsonResponse<InventoryCycleCountSuggestionsResponse>(response, 'Короткие сверки')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось подобрать позиции для короткой сверки.')
-    return data
-  }
-
-  async function applyInventoryCycleCounts(input: { source: InventorySourceKey; items: Array<{ variantId: number; expectedQuantity: number; countedQuantity: number }> }) {
-    const response = await apiFetch('/api/inventory/cycle-counts/apply', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Короткая сверка')
-    if (!response.ok && data?.code !== 'changed' && data?.code !== 'stocktake_active') throw new Error(data?.message || 'Не удалось сохранить короткую сверку.')
-    return data
-  }
-
-  async function quickInventoryStocktakeBatch(input: { source: InventorySourceKey; items: Array<{ variantId: number; expectedQuantity: number; countedQuantity: number }> }) {
-    const response = await apiFetch('/api/inventory/stocktakes/quick-batch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Быстрая сверка')
-    if (!response.ok && data?.code !== 'changed' && data?.code !== 'stocktake_active') throw new Error(data?.message || 'Не удалось сверить выбранные позиции.')
-    return data
-  }
-
-  async function quickInventoryStocktake(input: { source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }) {
-    const response = await apiFetch('/api/inventory/stocktakes/quick', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Точечная сверка')
-    if (!response.ok && data?.code !== 'changed') throw new Error(data?.message || 'Не удалось сверить количество.')
-    return data
-  }
-
-  async function completeInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Завершение ревизии')
-    if (!response.ok && data?.code !== 'recount_required' && data?.code !== 'unfilled') {
-      throw new Error(data?.message || 'Не удалось завершить ревизию.')
-    }
-    return data
-  }
-
-  async function cancelInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Отмена ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось отменить ревизию.')
-    return data
-  }
-
-  async function resolveCatalogReviewItem(orderItemId: number, variantId: number) {
-    if (!canManageWarehouse || !orderItemId || !variantId || catalogReviewBusy) return false
-    setCatalogReviewBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/catalog/review/${orderItemId}/resolve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variantId }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; linked?: number; reserved?: number; fulfilled?: number }>(response, 'Привязка товара')
-      if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать позицию с каталогом.')
-      const refreshIncomplete = await settleCatalogReviewRefreshes([
-        loadCatalogReview(true), loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
-      ])
-      const successMessage = result.message || `Позиция связана с каталогом${Number(result.linked || 0) > 1 ? `; одинаковых записей обработано: ${result.linked}` : ''}.`
-      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось связать позицию с каталогом.')
-      return false
-    } finally {
-      setCatalogReviewBusy(false)
-    }
-  }
-
-  async function loadInventoryAudit() {
-    setInventoryAuditBusy(true)
-    try {
-      const response = await apiFetch('/api/inventory/audit')
-      if (!response.ok) return null
-      const data = await readJsonResponse<InventoryAuditResponse>(response, 'Проверка автосписания')
-      setInventoryAudit(data)
-      return data
-    } finally {
-      setInventoryAuditBusy(false)
-    }
-  }
-
-  async function resolveInventoryAuditIssue(row: InventoryAuditResponse['missing'][number] | InventoryAuditResponse['resolved'][number], resolved = true) {
-    if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return
-    if (resolved) {
-      const question = 'Подтверждайте расхождение только после фактической сверки этой позиции. Система НЕ изменит остаток автоматически — она запомнит, что исторический разрыв проверен сотрудником. Продолжить?'
-      if (!await askActionConfirmation(question)) return
-    }
-    setInventoryAuditBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/audit/resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          issueKey: row.issueKey,
-          resolved,
-          comment: resolved ? 'Фактический остаток проверен сотрудником после сверки.' : 'Проблема возвращена в активную проверку.',
-        }),
-      })
-      if (!response.ok) throw new Error('Не удалось сохранить результат сверки.')
-      const data = await readJsonResponse<InventoryAuditResponse>(response, 'Результат сверки склада')
-      setInventoryAudit(data)
-      setMessage(resolved ? 'Расхождение отмечено как проверенное. Остаток автоматически не изменялся.' : 'Расхождение снова требует проверки.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить результат сверки.')
-    } finally {
-      setInventoryAuditBusy(false)
-    }
-  }
-
-  async function loadInventoryControlSettings() {
-    const response = await apiFetch('/api/inventory/settings')
-    if (!response.ok) return null
-    const data = await readJsonResponse<InventoryControlSettings>(response, 'Настройки склада')
-    setInventoryControlSettings(data)
-    return data
-  }
-
-  async function toggleInventoryAutoWriteoff() {
-    if (!canManageWarehouse || inventoryControlBusy) return
-    const nextEnabled = !(inventoryControlSettings?.autoWriteoffEnabled ?? true)
-    const question = nextEnabled
-      ? 'Включить автосписание? Новые заказы со склада и бутика снова будут сразу менять остатки.'
-      : 'Выключить автосписание? Новые заказы сохранятся, но остатки не изменятся, пока администратор не запустит отложенное списание.'
-    if (!await askActionConfirmation(question)) return
-    setInventoryControlBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoWriteoffEnabled: nextEnabled }),
-      })
-      const data = await readJsonResponse<InventoryControlSettings>(response, 'Настройки склада')
-      setInventoryControlSettings(data)
-      setMessage(nextEnabled ? 'Автосписание включено.' : 'Автосписание выключено. Новые заказы не меняют остатки.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось изменить автосписание.')
-    } finally {
-      setInventoryControlBusy(false)
-    }
-  }
-
-  async function applyPendingInventoryWriteoffs() {
-    if (!canManageWarehouse || inventoryControlBusy) return
-    const pending = inventoryControlSettings?.pendingWriteoffCount || 0
-    if (!pending) {
-      setMessage('Отложенных списаний нет.')
-      return
-    }
-    if (!await askActionConfirmation(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
-    setInventoryControlBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch('/api/inventory/pending-writeoffs/apply', { method: 'POST' })
-      const data = await readJsonResponse<{ ok: boolean; applied: number; reconciled?: number; pendingWriteoffCount: number }>(response, 'Отложенное списание')
-      setInventoryControlSettings((current) => current ? { ...current, pendingWriteoffCount: data.pendingWriteoffCount } : current)
-      await Promise.all([
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      const reconciled = Number(data.reconciled || 0)
-      setMessage(`Списано позиций: ${data.applied}.${reconciled ? ` Уже учтено ранее и безопасно синхронизировано: ${reconciled}.` : ''} Осталось: ${data.pendingWriteoffCount}.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось выполнить отложенное списание.')
-    } finally {
-      setInventoryControlBusy(false)
-    }
-  }
-
-  async function reverseInventoryMovement(movement: InventoryMovementRecord) {
-    if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return
-    const label = `${movement.productName} · ${movement.quantityDelta >= 0 ? '+' : ''}${movement.quantityDelta}`
-    if (!await askActionConfirmation(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
-    setReversingInventoryMovementId(movement.id)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/inventory/movements/${movement.id}/reverse?returnInventory=0`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment: 'Отменено из журнала склада' }),
-      })
-      const data = await readJsonResponse<{ ok: boolean; reversedRows: number }>(response, 'Отмена складской операции')
-      await Promise.all([
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadInventoryControlSettings(),
-      ])
-      setMessage(`Операция отменена. Восстановлено движений: ${data.reversedRows}.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось отменить складскую операцию.')
-    } finally {
-      setReversingInventoryMovementId(null)
-    }
-  }
-
   async function loadWorkshopData(
     nextFilters = workshopFilters,
     options: { force?: boolean; refreshCounts?: boolean } = { force: true, refreshCounts: true },
   ) {
     const data = await loadWorkshopRead(nextFilters, workshopSortDirection, options)
     if (data) setSelectedWorkshopTaskIds((current) => current.filter((id) => data.tasks.some((task) => task.id === id)))
-    return data
-  }
-
-  // These independent oldest-first queues are NOT controlled by history q/date/status.
-  // Staff must see pending physical items even after searching for an unrelated
-  // order or when a September operation falls outside the newest 50 records.
-  async function loadReturnPendingInbox(append = false) {
-    const token = ++returnPendingInboxToken.current
-    setReturnPendingInbox(current => ({ ...current, busy: true, error: '' }))
-    try {
-      const params = new URLSearchParams({ pendingOnly: '1', limit: '50',
-        offset: String(append ? returnPendingInbox.rows.length : 0) })
-      const response = await apiFetch(`/api/returns?${params.toString()}`)
-      const data = await readJsonResponse<ReturnHistoryResponse>(response, 'Ожидающие возвраты')
-      if (!response.ok) throw new Error('Не удалось обновить очередь приёмки возвратов.')
-      if (token !== returnPendingInboxToken.current) return
-      setReturnPendingInbox(current => ({
-        rows: append ? [...current.rows, ...(data.returns || [])] : (data.returns || []),
-        pendingQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
-        hasMore: Boolean(data.hasMore), busy: false, error: '',
-      }))
-    } catch (err) {
-      if (token !== returnPendingInboxToken.current) return
-      setReturnPendingInbox(current => ({ ...current, busy: false,
-        error: err instanceof Error ? err.message : 'Не удалось проверить ожидающие возвраты.' }))
-    }
-  }
-  async function loadExchangePendingInbox(append = false) {
-    const token = ++exchangePendingInboxToken.current
-    setExchangePendingInbox(current => ({ ...current, busy: true, error: '' }))
-    try {
-      const params = new URLSearchParams({ pendingOnly: '1', limit: '50',
-        offset: String(append ? exchangePendingInbox.rows.length : 0) })
-      const response = await apiFetch(`/api/exchanges?${params.toString()}`)
-      const data = await readJsonResponse<ExchangeHistoryResponse>(response, 'Ожидающие обмены')
-      if (!response.ok) throw new Error('Не удалось обновить очередь приёмки обменов.')
-      if (token !== exchangePendingInboxToken.current) return
-      setExchangePendingInbox(current => ({
-        rows: append ? [...current.rows, ...(data.exchanges || [])] : (data.exchanges || []),
-        pendingQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
-        hasMore: Boolean(data.hasMore), busy: false, error: '',
-      }))
-    } catch (err) {
-      if (token !== exchangePendingInboxToken.current) return
-      setExchangePendingInbox(current => ({ ...current, busy: false,
-        error: err instanceof Error ? err.message : 'Не удалось проверить ожидающие обмены.' }))
-    }
-  }
-
-  async function loadReturnHistory(options: { append?: boolean; filters?: typeof returnHistoryFilters } = {}) {
-    const nextFilters = options.filters || returnHistoryFilters
-    const append = Boolean(options.append)
-    setReturnHistoryBusy(true)
-    setReturnHistoryError('')
-    try {
-      const params = new URLSearchParams({ limit: '50', offset: append ? String(returnHistory.length) : '0' })
-      if (nextFilters.q.trim()) params.set('q', nextFilters.q.trim())
-      if (nextFilters.dateFrom) params.set('dateFrom', nextFilters.dateFrom)
-      if (nextFilters.dateTo) params.set('dateTo', nextFilters.dateTo)
-      if (nextFilters.status !== 'all') params.set('status', nextFilters.status)
-      const response = await apiFetch(`/api/returns?${params.toString()}`)
-      const data = await readJsonResponse<ReturnHistoryResponse>(response, 'История возвратов')
-      if (!response.ok) throw new Error('Не удалось загрузить историю возвратов.')
-      const rows = Array.isArray(data.returns) ? data.returns : []
-      setReturnHistory((current) => append ? [...current, ...rows] : rows)
-      setReturnHistoryHasMore(Boolean(data.hasMore))
-      setReturnHistorySummary({
-        activeCount: Number(data.summary?.activeCount || 0),
-        cancelledCount: Number(data.summary?.cancelledCount || 0),
-        activeAmount: Number(data.summary?.activeAmount || 0),
-        pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
-        count: Number(data.count || 0),
-      })
-      if (!append) void loadReturnPendingInbox()
-      return rows
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось загрузить историю возвратов.'
-      setReturnHistoryError(message)
-      reportReadFailure(err, 'История возвратов', returnHistory.length > 0)
-      return null
-    } finally {
-      setReturnHistoryBusy(false)
-    }
-  }
-
-  async function loadExchangeHistory(options: { append?: boolean; filters?: typeof exchangeHistoryFilters } = {}) {
-    const nextFilters = options.filters || exchangeHistoryFilters
-    const append = Boolean(options.append)
-    setExchangeHistoryBusy(true)
-    setExchangeHistoryError('')
-    try {
-      const params = new URLSearchParams({ limit: '50', offset: append ? String(exchangeHistory.length) : '0' })
-      if (nextFilters.q.trim()) params.set('q', nextFilters.q.trim())
-      if (nextFilters.dateFrom) params.set('dateFrom', nextFilters.dateFrom)
-      if (nextFilters.dateTo) params.set('dateTo', nextFilters.dateTo)
-      if (nextFilters.status !== 'all') params.set('status', nextFilters.status)
-      const response = await apiFetch(`/api/exchanges?${params.toString()}`)
-      const data = await readJsonResponse<ExchangeHistoryResponse>(response, 'История обменов')
-      if (!response.ok) throw new Error('Не удалось загрузить историю обменов.')
-      const rows = Array.isArray(data.exchanges) ? data.exchanges : []
-      setExchangeHistory((current) => append ? [...current, ...rows] : rows)
-      setExchangeHistoryHasMore(Boolean(data.hasMore))
-      setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0), count: Number(data.count || 0) })
-      if (!append) void loadExchangePendingInbox()
-      return rows
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось загрузить историю обменов.'
-      setExchangeHistoryError(message)
-      return null
-    } finally {
-      setExchangeHistoryBusy(false)
-    }
-  }
-
-  async function loadInventoryHistory(input: { source?: string; variantId?: number; q?: string; beforeId?: number; limit?: number } = {}) {
-    const params = new URLSearchParams({ limit: String(input.limit || 50) })
-    if (input.source) params.set('source', input.source)
-    if (input.variantId) params.set('variantId', String(input.variantId))
-    if (input.q?.trim()) params.set('q', input.q.trim())
-    if (input.beforeId) params.set('beforeId', String(input.beforeId))
-    const response = await apiFetch(`/api/inventory/history?${params.toString()}`)
-    const data = await readJsonResponse<InventoryHistoryResponse>(response, 'История склада')
-    if (!response.ok) throw new Error('Не удалось загрузить историю склада.')
-    return data
-  }
-
-  async function loadInventoryOperationAttempts(input: { source: string; variantId: number; beforeId?: number }) {
-    const params = new URLSearchParams({ source: input.source, variantId: String(input.variantId) })
-    if (input.beforeId) params.set('beforeId', String(input.beforeId))
-    const response = await apiFetch(`/api/inventory/operation-attempts?${params.toString()}`)
-    const data = await readJsonResponse<InventoryOperationAttemptsResponse>(response, 'Попытки складских операций')
-    if (!response.ok) throw new Error('Не удалось загрузить журнал попыток. Это не означает, что попыток не было.')
-    return data
-  }
-
-  async function loadInventoryCheckHistory(input: { source?: string; variantId?: number; limit?: number; beforeId?: number } = {}) {
-    const params = new URLSearchParams({ limit: String(input.limit || 30) })
-    if (input.source) params.set('source', input.source)
-    if (input.variantId) params.set('variantId', String(input.variantId))
-    if (input.beforeId) params.set('beforeId', String(input.beforeId))
-    const response = await apiFetch(`/api/inventory/check-history?${params.toString()}`)
-    const data = await readJsonResponse<InventoryCheckHistoryResponse>(response, 'Ревизии и сверки')
-    if (!response.ok) throw new Error('Не удалось загрузить ревизии и сверки.')
     return data
   }
 
@@ -2544,52 +1986,6 @@ function App() {
     return loadFinanceReportsForRange(nextFilters, { ...options, scope, reportType: activeSector === 'reports' ? financeReportType : undefined })
   }
 
-  async function loadMoneyHistory(options: { append?: boolean } = {}) {
-    const append = Boolean(options.append)
-    if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return null
-    const requestId = ++moneyHistoryRequestIdRef.current
-    const offset = append ? moneyHistory.length : 0
-    const currentMonthStart = `${formatLocalDateInput().slice(0, 7)}-01`
-    const includeLegacy = financeReportFilters.dateFrom < currentMonthStart
-    const effectiveTrace = !includeLegacy && moneyHistoryType.trace === 'legacy' ? 'all' : moneyHistoryType.trace
-    setMoneyHistoryBusy(true)
-    setMoneyHistoryError('')
-    try {
-      const params = new URLSearchParams({
-        dateFrom: financeReportFilters.dateFrom,
-        dateTo: financeReportFilters.dateTo,
-        q: moneyHistoryQuery.trim(),
-        flow: moneyHistoryType.flow,
-        operation: moneyHistoryType.operation,
-        trace: effectiveTrace,
-        includeLegacy: includeLegacy ? '1' : '0',
-        limit: '50',
-        offset: String(offset),
-      })
-      const response = await apiFetch(`/api/finance/money-history?${params.toString()}`)
-      const data = await readJsonResponse<FinancialHistoryResponse & { message?: string }>(response, 'История денег')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить историю денег.')
-      if (requestId !== moneyHistoryRequestIdRef.current) return data
-      setMoneyHistory((current) => append ? [...current, ...(data.events || [])] : (data.events || []))
-      setMoneyHistoryHasMore(Boolean(data.hasMore))
-      setMoneyHistorySummary({
-        count: Number(data.count || 0),
-        totalIn: Number(data.summary?.totalIn || 0),
-        totalOut: Number(data.summary?.totalOut || 0),
-        net: Number(data.summary?.net || 0),
-      })
-      return data
-    } catch (err) {
-      if (requestId === moneyHistoryRequestIdRef.current) {
-        setMoneyHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю денег.')
-        if (!append) setMoneyHistory([])
-      }
-      return null
-    } finally {
-      if (requestId === moneyHistoryRequestIdRef.current) setMoneyHistoryBusy(false)
-    }
-  }
-
   function refreshFinanceReportsIfVisible() {
     invalidateFinanceReadCaches()
     if (activeSector === 'finance' || activeSector === 'reports') {
@@ -2608,809 +2004,180 @@ function App() {
     return `${prefix}-${cryptoId}`
   }
 
-  async function runCashMutation<T>(action: () => Promise<T>) {
-    if (cashMutationLockRef.current) return null
-    cashMutationLockRef.current = true
-    setCashRegisterBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      return await action()
-    } finally {
-      cashMutationLockRef.current = false
-      setCashRegisterBusy(false)
-    }
-  }
-
-  async function loadCashRegister() {
-    setCashRegisterBusy(true)
-    try {
-      const response = await apiFetch('/api/finance/cash-register')
-      const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Инкассация')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить кассу.')
-      setCashRegister(data)
-      if (data.initialized) setCashReconcileAmount(Number(data.currentBalance || 0))
-      return data
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить инкассацию.')
-      return null
-    } finally {
-      setCashRegisterBusy(false)
-    }
-  }
-
-  async function loadCashRegisterCycles(append = false) {
-    setCashRegisterCyclesBusy(true)
-    try {
-      const offset = append ? cashRegisterCycles.length : 0
-      const response = await apiFetch(`/api/finance/cash-register/cycles?limit=12&offset=${offset}`)
-      const data = await readJsonResponse<CashRegisterCyclesResponse & { message?: string }>(response, 'Прошлые циклы кассы')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить прошлые циклы кассы.')
-      const nextCycles = Array.isArray(data.cycles) ? data.cycles : []
-      setCashRegisterCycles((current) => append ? [...current, ...nextCycles] : nextCycles)
-      setCashRegisterCyclesHasMore(Boolean(data.hasMore))
-      return nextCycles
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить прошлые циклы кассы.')
-      return []
-    } finally {
-      setCashRegisterCyclesBusy(false)
-    }
-  }
-
-  async function setupCashRegister() {
-    const amount = Math.max(0, Math.trunc(Number(cashSetupAmount || 0)))
-    if (!await askActionConfirmation(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`)) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Настройка инкассации')
-        if (!response.ok) throw new Error(data.message || 'Не удалось установить начальный остаток.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setMessage('Начальный остаток сохранён. Автоучёт пока выключен.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось установить начальный остаток.')
-      }
-    })
-  }
-
-  async function setCashAutoTracking(enabled: boolean) {
-    const prompt = enabled
-      ? 'Включить автоучёт? Новые наличные оплаты будут увеличивать кассу, а возвраты наличными — уменьшать.'
-      : 'Остановить автоучёт? Журнал, ручные операции и сверка остатка останутся доступны, но новые операции по заказам временно не будут менять кассу автоматически.'
-    if (!await askActionConfirmation(prompt)) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/auto-tracking', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Автоучёт наличных')
-        if (!response.ok) throw new Error(data.message || 'Не удалось изменить состояние автоучёта.')
-        setCashRegister(data)
-        setMessage(enabled ? 'Автоучёт наличных включён.' : 'Автоучёт остановлен. Ручной учёт и журнал продолжают работать.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось изменить состояние автоучёта.')
-      }
-    })
-  }
-
-  async function activateCashRegister() {
-    return setCashAutoTracking(true)
-  }
-
-  async function saveCashRegisterMovement() {
-    const amount = Math.max(0, Math.trunc(Number(cashMovementDraft.amount || 0)))
-    const comment = cashMovementDraft.comment.trim()
-    if (amount <= 0) {
-      setError('Укажите сумму больше нуля.')
-      return
-    }
-    if (!comment) {
-      setError('Комментарий обязателен: укажите, куда ушли или откуда пришли наличные.')
-      return
-    }
-    if (cashMovementDraft.direction === 'out' && cashRegister && amount > cashRegister.currentBalance) {
-      setError(`По учёту в кассе только ${formatMoney(cashRegister.currentBalance)}.`)
-      return
-    }
-    const historicalBusinessDate = isAdmin ? cashMovementDraft.businessDate.trim() : ''
-    if (historicalBusinessDate && !/^\d{4}-\d{2}-\d{2}$/.test(historicalBusinessDate)) {
-      setError('Укажите корректную дату пропущенной операции.')
-      return
-    }
-    if (historicalBusinessDate) {
-      const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
-      if (!await askActionConfirmation(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
-    } else if (cashMovementDraft.direction === 'out' && !await askActionConfirmation(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
-    const requestId = makeCashRequestId('manual')
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/movements', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId, ...(historicalBusinessDate ? { businessDate: historicalBusinessDate } : {}) }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Ручное движение наличных')
-        if (!response.ok) throw new Error(data.message || 'Не удалось сохранить движение наличных.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '', businessDate: '' }))
-        setMessage(historicalBusinessDate
-          ? `Пропущенная операция добавлена за ${formatDateShort(historicalBusinessDate)}. Время внесения сохранено отдельно.`
-          : cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось сохранить движение наличных.')
-      }
-    })
-  }
-
-  async function reconcileCashRegister() {
-    if (!cashRegister?.initialized) return
-    const amount = Math.max(0, Math.trunc(Number(cashReconcileAmount || 0)))
-    const comment = cashReconcileComment.trim()
-    if (!comment) {
-      setError('Для сверки укажите причину изменения остатка.')
-      return
-    }
-    if (amount === cashRegister.currentBalance) {
-      setMessage('Фактический остаток уже совпадает с учётом.')
-      return
-    }
-    if (!await askActionConfirmation(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`)) return
-    const requestId = makeCashRequestId('reconcile')
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/reconcile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount, comment, requestId }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Сверка кассы')
-        if (!response.ok) throw new Error(data.message || 'Не удалось скорректировать остаток.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setCashReconcileComment('')
-        setMessage('Фактический остаток кассы обновлён. Разница сохранена в журнале.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось скорректировать остаток.')
-      }
-    })
-  }
-
-  async function reverseCashRegisterMovement(entryId: number) {
-    if (!await askActionConfirmation('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.')) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch(`/api/finance/cash-register/movements/${entryId}/reverse`, { method: 'POST' })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Отмена ручной операции')
-        if (!response.ok) throw new Error(data.message || 'Не удалось отменить ручную операцию.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setMessage('Ручная операция отменена обратной записью.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось отменить ручную операцию.')
-      }
-    })
-  }
-
-  async function resetCashRegisterCycle() {
-    if (!isAdmin) {
-      setError('Начать новый цикл учёта может только администратор.')
-      return
-    }
-    const comment = (await askActionText('Причина сброса текущего кассового журнала', 'Перезапуск учёта наличных после сверки'))?.trim() || ''
-    if (!comment) return
-    if (!await askActionConfirmation('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/reset-cycle', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comment }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Сброс кассы')
-        if (!response.ok) throw new Error(data.message || 'Не удалось начать новый цикл кассы.')
-        setCashRegister(data)
-        setCashReconcileAmount(0)
-        setCashReconcileComment('')
-        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '' }))
-        setMessage('Начат новый цикл кассы с 0 ₸. Старый журнал сохранён в базе. Автоучёт выключен.')
-        if (cashRegisterCyclesOpen) void loadCashRegisterCycles()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось начать новый цикл кассы.')
-      }
-    })
-  }
-
-  async function loadFinancePaymentMethods(force = false) {
-    if (financePaymentMethods.length && !force) return financePaymentMethods
-    setFinanceMethodsBusy(true)
-    try {
-      const response = await apiFetch('/api/reference-values?kind=paymentMethods')
-      const data = await readJsonResponse<{ ok?: boolean; items?: ReferenceListItem[] }>(response, 'Способы оплаты')
-      if (!response.ok) throw new Error('Не удалось загрузить способы оплаты.')
-      const rows = Array.isArray(data.items) ? data.items : []
-      setFinancePaymentMethods(rows)
-      return rows
-    } catch (err) {
-      reportReadFailure(err, 'Способы оплаты', financePaymentMethods.length > 0)
-      return []
-    } finally {
-      setFinanceMethodsBusy(false)
-    }
-  }
-
-  async function saveFinancePaymentMethod() {
-    if (!isAdmin) {
-      setError('Изменение способов оплаты доступно только администратору.')
-      return null
-    }
-    const value = normalizeSuggestion(financeMethodDraft.value)
-    if (!value) {
-      setError('Введите способ оплаты.')
-      return null
-    }
-
-    const isEdit = financeMethodDraft.id > 0
-    const response = await apiFetch(isEdit ? `/api/reference-values/${financeMethodDraft.id}` : '/api/reference-values', {
-      method: isEdit ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'paymentMethods',
-        value,
-        sortOrder: Number(financeMethodDraft.sortOrder || 0),
-        isActive: true,
-      }),
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || 'Не удалось сохранить способ оплаты.')
-    }
-
-    setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    await Promise.all([loadFinancePaymentMethods(true), loadReferencesData(true)])
-    setMessage('Способ оплаты обновлён. Формы заказов, долгов и обменов будут брать список отсюда.')
-    return readJsonResponse(response, 'Способ оплаты')
-  }
-
-  async function removeFinancePaymentMethod(id: number) {
-    if (!isAdmin) {
-      setError('Удаление способа оплаты доступно только администратору.')
-      return
-    }
-    if (!id) return
-    const response = await apiFetch(`/api/reference-values/${id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'paymentMethods' }),
-    })
-    if (!response.ok) throw new Error('Не удалось отключить способ оплаты.')
-    if (financeMethodDraft.id === id) {
-      setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    }
-    await Promise.all([loadFinancePaymentMethods(true), loadReferencesData(true)])
-    setMessage('Способ оплаты отключён.')
-  }
-
-  async function loadTeamEmployees() {
-    setTeamBusy(true)
-    try {
-      const response = await apiFetch('/api/team')
-      const data = await readJsonResponse<{ ok?: boolean; employees?: TeamEmployee[] }>(response, 'Команда')
-      if (!response.ok) throw new Error('Не удалось загрузить команду.')
-      setTeamEmployees(Array.isArray(data.employees) ? data.employees : [])
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Команда', teamEmployees.length > 0)
-      return null
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function saveTeamEmployee() {
-    if (!isAdmin) {
-      setError('Изменение команды доступно только администратору.')
-      return
-    }
-
-    const hasLinkedAccount = Boolean(teamDraft.id && authUsers.some((user) => user.managerId === teamDraft.id))
-    const shouldCreateAccount = teamDraft.createAccount !== false && !hasLinkedAccount
-    const requestedLogin = (teamDraft.login || '').trim().toLowerCase()
-    if (shouldCreateAccount) {
-      if (requestedLogin.length < 3) {
-        setError('Для входа укажите логин минимум из 3 символов.')
-        return
-      }
-      if ((teamDraft.password || '').length < 8) {
-        setError('Для нового сотрудника задайте временный пароль минимум из 8 символов.')
-        return
-      }
-    }
-
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(teamDraft),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; employeeId?: number }>(response, 'Сотрудник')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить сотрудника.')
-      const employeeId = Number(data.employeeId || teamDraft.id || 0)
-
-      if (shouldCreateAccount && employeeId) {
-        const accountResponse = await apiFetch('/api/auth/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            login: requestedLogin,
-            password: teamDraft.password,
-            role: String(teamDraft.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager',
-            managerId: employeeId,
-            displayName: teamDraft.name,
-            isActive: true,
-            mustChangePassword: teamDraft.mustChangePassword !== false,
-          }),
-        })
-        const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника')
-        if (!accountResponse.ok) {
-          await Promise.all([loadTeamEmployees(), loadAuthUsers(), loadReferencesData(true)])
-          setTeamDraft((draft) => ({ ...draft, id: employeeId, login: requestedLogin, createAccount: true }))
-          setError(`Сотрудник создан, но вход не настроен: ${accountData.message || 'не удалось создать аккаунт'}. Исправьте логин или пароль здесь и сохраните ещё раз.`)
-          return
-        }
-      }
-
-      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setTeamFormOpen(false)
-      setMessage(shouldCreateAccount ? `Сотрудник сохранён. Вход @${requestedLogin} создан.` : 'Сотрудник сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function saveTeamEmployeeColor(employee: TeamEmployee, colorKey: string) {
-    if (!isAdmin || !employee?.id) return
-    const normalizedColor = resolveManagerDisplayColor(colorKey, employee.id)
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: employee.id,
-          name: employee.name,
-          role: employee.role || 'Менеджер',
-          phone: employee.phone || '',
-          colorKey: normalizedColor,
-          hiredAt: employee.hiredAt || formatLocalDateInput(),
-          comment: employee.comment || '',
-          isActive: employee.isActive,
-        }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Цвет сотрудника')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить цвет сотрудника.')
-      setTeamEmployees((current) => current.map((item) => item.id === employee.id ? { ...item, colorKey: normalizedColor } : item))
-      if (teamDraft.id === employee.id) setTeamDraft((draft) => ({ ...draft, colorKey: normalizedColor }))
-      setTeamColorEditorId(null)
-      void loadReferencesData(true)
-      setMessage(`Цвет сотрудника ${employee.name} обновлён.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения цвета сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function setTeamEmployeeEmploymentStatus(employee: TeamEmployee, isActive: boolean) {
-    if (!isAdmin) {
-      setError('Изменение статуса сотрудника доступно только администратору.')
-      return
-    }
-    if (!employee?.id) return
-    const confirmation = isActive
-      ? `Вернуть сотрудника ${employee.name} в активную команду? Он снова появится в новых заказах и назначениях.`
-      : `Отметить сотрудника ${employee.name} как уволенного? Старые заказы, планы, выплаты и отчёты сохранятся.`
-    if (!await askActionConfirmation(confirmation)) return
-
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/team/employees/${employee.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Статус сотрудника')
-      if (teamDraft.id === employee.id) {
-        setTeamDraft((draft) => ({ ...draft, isActive }))
-      }
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setMessage(data.message || (isActive ? 'Сотрудник возвращён в команду. Доступ в систему включите отдельно, если он нужен.' : 'Сотрудник отмечен как уволенный. Его вход в систему отключён.'))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось изменить статус сотрудника.')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function removeTeamEmployee(employee: TeamEmployee) {
-    if (!isAdmin) {
-      setError('Удаление сотрудников доступно только администратору.')
-      return
-    }
-    if (!employee?.id) return
-    if (!await askActionConfirmation(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`)) return
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/team/employees/${employee.id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Удаление сотрудника')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить сотрудника.')
-      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setMessage(data.message || 'Сотрудник удалён из команды.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  function getTimesheetMonthDays(monthValue = timesheetMonth) {
-    const [yearText, monthText] = monthValue.split('-')
-    const year = Number(yearText)
-    const month = Number(monthText)
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
-    return Array.from({ length: lastDay }, (_, index) => `${yearText}-${monthText}-${String(index + 1).padStart(2, '0')}`)
-  }
-
-
-  function shiftTimesheetMonth(offset: number) {
-    const [yearText, monthText] = timesheetMonth.split('-')
-    const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1 + offset, 1))
-    setTimesheetMonth(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
-    setTimesheetSelectedDays([])
-  }
-
-  function setTimesheetCurrentMonth() {
-    setTimesheetMonth(formatLocalDateInput().slice(0, 7))
-    setTimesheetSelectedDays([])
-  }
-
-  function getTimesheetCalendarSlots() {
-    const days = getTimesheetMonthDays()
-    const first = days[0]
-    const firstOffset = first ? ((new Date(`${first}T00:00:00`).getDay() + 6) % 7) : 0
-    return [...Array.from({ length: firstOffset }, () => ''), ...days]
-  }
-
-  function getTimesheetWeekdayLabel(date: string) {
-    const labels = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
-    return labels[new Date(`${date}T00:00:00`).getDay()] || ''
-  }
-
-  function getTimesheetEntriesForDate(date: string) {
-    return (timesheetData?.entries || []).filter((entry) => entry.date === date)
-  }
-
-  function editManagerPlan(row: ManagerPlanRecord) {
-    setManagerPlanDraft({
-      id: row.id,
-      periodStart: row.periodStart,
-      periodEnd: row.periodEnd,
-      managerId: Number(row.managerId || 0),
-      managerName: row.manager,
-      plannedAmount: row.plannedAmount,
-      salaryBase: row.salaryBase || 100000,
-      comment: row.comment || '',
-    })
-  }
-
-  function editDepartmentPlan(row: DepartmentPlanRecord) {
-    setDepartmentPlanDraft({
-      id: row.id,
-      periodStart: row.periodStart,
-      periodEnd: row.periodEnd,
-      plannedAmount: row.plannedAmount,
-      comment: row.comment || '',
-    })
-  }
-
-  async function deleteManagerPlan(id: number) {
-    if (!isAdmin || !id || !await askActionConfirmation(`Удалить план менеджера #${id}?\n\nПроверьте запись. Действие удалит план из рабочего списка, не изменяя заказы и физические остатки.`)) return
-    setPlanBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/plans/${id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План менеджера')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить план менеджера.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setMessage('План менеджера удалён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления плана')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  async function deleteDepartmentPlan(id: number) {
-    if (!isAdmin || !id || !await askActionConfirmation(`Удалить план отдела #${id}?\n\nПроверьте период и сумму плана. Действие не изменяет заказы и физические остатки.`)) return
-    setPlanBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/department-plans/${id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План отдела')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить план отдела.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setMessage('План отдела удалён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления плана отдела')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  async function loadTeamTimesheet(monthValue = timesheetMonth) {
-    setTimesheetBusy(true)
-    try {
-      const response = await apiFetch(`/api/team/timesheet?month=${encodeURIComponent(monthValue)}`)
-      const data = await readJsonResponse<TeamTimesheetResponse>(response, 'Табель')
-      if (!response.ok) throw new Error('Не удалось загрузить табель.')
-      setTimesheetData(data)
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Табель', Boolean(timesheetData))
-      return null
-    } finally {
-      setTimesheetBusy(false)
-    }
-  }
-
-  async function saveTeamTimesheet(clear = false) {
-    if (!isAdmin) {
-      setError('Изменение табеля доступно только администратору.')
-      return
-    }
-
-    setTimesheetBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/timesheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dates: timesheetSelectedDays,
-          managerIds: timesheetSelectedManagers,
-          workUntil: timesheetWorkUntil,
-          comment: timesheetComment,
-          clear,
-        }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Табель')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить табель.')
-      await Promise.all([loadTeamTimesheet(), loadTeamSalaryReport(), refreshActivityLogIfVisible()])
-      setMessage(clear ? 'Выбранные назначения табеля очищены.' : 'Табель сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения табеля')
-    } finally {
-      setTimesheetBusy(false)
-    }
-  }
-
-  async function loadTeamSalaryReport(nextFilters = teamSalaryFilters) {
-    setTeamBusy(true)
-    try {
-      const params = new URLSearchParams({ startDate: nextFilters.dateFrom, endDate: nextFilters.dateTo })
-      const response = await apiFetch(`/api/team/salary?${params.toString()}`)
-      const data = await readJsonResponse<TeamSalaryResponse>(response, 'Зарплата команды')
-      if (!response.ok) throw new Error('Не удалось загрузить зарплату команды.')
-      setTeamSalaryReport(data)
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Отчёт по зарплате', Boolean(teamSalaryReport))
-      return null
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-
-  async function loadTeamActivityReport(nextFilters = teamActivityFilters, options: { append?: boolean } = {}) {
-    const append = Boolean(options.append)
-    setTeamActivityBusy(true)
-    setTeamActivityLoadFailed(false)
-    try {
-      const offset = append ? Number(teamActivityReport?.rows?.length || 0) : 0
-      const params = new URLSearchParams({
-        startDate: nextFilters.dateFrom,
-        endDate: nextFilters.dateTo,
-        q: nextFilters.q.trim(),
-        actionType: nextFilters.actionType,
-        limit: '50',
-        offset: String(offset),
-      })
-      const response = await apiFetch(`/api/team/activity?${params.toString()}`)
-      const data = await readJsonResponse<TeamActivityResponse>(response, 'Работа с заказами')
-      if (!response.ok) throw new Error('Не удалось загрузить работу с заказами.')
-      setTeamActivityReport((current) => append && current
-        ? { ...data, rows: [...(current.rows || []), ...(data.rows || [])] }
-        : data)
-      setTeamActivityLoadFailed(false)
-      return data
-    } catch (err) {
-      setTeamActivityLoadFailed(true)
-      reportReadFailure(err, 'Работа с заказами', Boolean(teamActivityReport))
-      return null
-    } finally {
-      setTeamActivityBusy(false)
-    }
-  }
-
-  function setTimesheetDaysPreset(kind: 'all' | 'weekdays' | 'weekends' | 'odd' | 'even' | 'clear') {
-    const days = getTimesheetMonthDays()
-    if (kind === 'clear') {
-      setTimesheetSelectedDays([])
-      return
-    }
-    const filtered = days.filter((date) => {
-      const dayNumber = Number(date.slice(-2))
-      const dayOfWeek = new Date(`${date}T00:00:00`).getDay()
-      if (kind === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5
-      if (kind === 'weekends') return dayOfWeek === 0 || dayOfWeek === 6
-      if (kind === 'odd') return dayNumber % 2 === 1
-      if (kind === 'even') return dayNumber % 2 === 0
-      return true
-    })
-    setTimesheetSelectedDays(filtered)
-  }
-
-  function toggleTimesheetDay(date: string) {
-    setTimesheetSelectedDays((current) => current.includes(date) ? current.filter((entry) => entry !== date) : [...current, date])
-  }
-
-  function toggleTimesheetManager(id: number) {
-    setTimesheetSelectedManagers((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])
-  }
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-
-  function getExportElementHtml(elementId: string) {
-    const element = document.getElementById(elementId)
-    if (!element) {
-      setError('Сначала сформируй отчёт, потом скачивай его.')
-      return ''
-    }
-    return element.innerHTML
-  }
-
-  function downloadWordDocument(filename: string, title: string, bodyHtml: string) {
-    const blob = new Blob(['\ufeff', makeExportHtml(title, bodyHtml)], { type: 'application/msword;charset=utf-8' })
-    downloadBlobFile(blob, `${filename}.doc`)
-  }
-
-  function exportElementWord(elementId: string, filename: string, title: string) {
-    const bodyHtml = getExportElementHtml(elementId)
-    if (!bodyHtml) return
-    downloadWordDocument(filename, title, bodyHtml)
-  }
-
-  function printHtmlDocument(title: string, bodyHtml: string) {
-    const iframe = document.createElement('iframe')
-    iframe.title = title
-    iframe.style.position = 'fixed'
-    iframe.style.right = '0'
-    iframe.style.bottom = '0'
-    iframe.style.width = '0'
-    iframe.style.height = '0'
-    iframe.style.border = '0'
-    iframe.style.visibility = 'hidden'
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentWindow?.document
-    if (!doc) {
-      iframe.remove()
-      setError('Не удалось подготовить печать. Попробуйте ещё раз.')
-      return
-    }
-
-    doc.open()
-    doc.write(makeExportHtml(title, bodyHtml))
-    doc.close()
-
-    const doPrint = () => {
-      try {
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
-        window.setTimeout(() => iframe.remove(), 1200)
-      } catch {
-        iframe.remove()
-        setError('Не удалось открыть печать. Проверьте настройки браузера.')
-      }
-    }
-
-    window.setTimeout(doPrint, 80)
-  }
-
-  function printElementPdf(elementId: string, title: string) {
-    const bodyHtml = getExportElementHtml(elementId)
-    if (!bodyHtml) return
-    printHtmlDocument(title, bodyHtml)
-  }
-
-    function exportPlanReportWord() {
-    exportElementWord('planReportExport', `plan-report-${planFilters.dateFrom}-${planFilters.dateTo}`, 'План и зарплата')
-  }
-
-  function printPlanReportPdf() {
-    printElementPdf('planReportExport', 'План и зарплата')
-  }
-
-  function printInventoryStocktakePdf() {
-    printElementPdf('inventoryStocktakePrint', 'Ревизия остатков')
-  }
-
-
-  function exportTeamPlanReportWord() {
-    exportElementWord('teamPlanReportExport', `team-plan-report-${planFilters.dateFrom}-${planFilters.dateTo}`, 'Выполнение плана команды')
-  }
-
-  function printTeamPlanReportPdf() {
-    printElementPdf('teamPlanReportExport', 'Выполнение плана команды')
-  }
-
-  function getSelectedFinanceReportExportTitle() {
-    if (financeReportType === 'payments') return 'Отчёт по способам оплаты'
-    if (financeReportType === 'managers') return 'Отчёт менеджеров'
-    if (financeReportType === 'products') return 'Отчёт по товарам'
-    if (financeReportType === 'cities') return 'Отчёт по городам'
-    if (financeReportType === 'returns') return 'Отчёт по возвратам'
-    if (financeReportType === 'debts') return 'Отчёт по закрытым долгам'
-    if (financeReportType === 'leads') return 'Отчёт по лидам'
-    if (financeReportType === 'callCentre') return 'Отчёт Call Centre'
-    return 'Отчёт'
-  }
-
-  function exportSelectedFinanceReportWord() {
-    exportElementWord('selectedFinanceReportExport', `report-${financeReportType}-${financeReportFilters.dateFrom}-${financeReportFilters.dateTo}`, getSelectedFinanceReportExportTitle())
-  }
-
-  function printSelectedFinanceReportPdf() {
-    printElementPdf('selectedFinanceReportExport', getSelectedFinanceReportExportTitle())
-  }
-
+  const {
+    loadCashRegister: loadCashRegisterAction,
+    loadCashRegisterCycles,
+    setupCashRegister,
+    setCashAutoTracking,
+    activateCashRegister,
+    saveCashRegisterMovement,
+    reconcileCashRegister,
+    reverseCashRegisterMovement,
+    resetCashRegisterCycle,
+  } = createCashRegisterActions({
+    isAdmin,
+    cashRegister,
+    cashRegisterCycles,
+    cashRegisterCyclesOpen,
+    cashSetupAmount,
+    cashMovementDraft,
+    cashReconcileAmount,
+    cashReconcileComment,
+    cashMutationLockRef,
+    setCashRegister,
+    setCashRegisterBusy,
+    setCashRegisterCycles,
+    setCashRegisterCyclesBusy,
+    setCashRegisterCyclesHasMore,
+    setCashMovementDraft,
+    setCashReconcileAmount,
+    setCashReconcileComment,
+    setError,
+    setMessage,
+    apiFetch,
+    makeCashRequestId,
+  })
+
+  // Preserve the original hoisted function contract for earlier workspace setup.
+  function loadCashRegister() { return loadCashRegisterAction() }
+
+  const { loadFinancePaymentMethods, saveFinancePaymentMethod, removeFinancePaymentMethod } = createFinancePaymentMethodActions({
+    isAdmin,
+    financePaymentMethods,
+    financeMethodDraft,
+    setFinancePaymentMethods,
+    setFinanceMethodsBusy,
+    setFinanceMethodDraft,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadReferencesData,
+  })
+
+  const {
+    loadTeamEmployees: loadTeamEmployeesAction,
+    saveTeamEmployee,
+    saveTeamEmployeeColor,
+    setTeamEmployeeEmploymentStatus,
+    removeTeamEmployee,
+  } = createTeamEmployeeActions({
+    isAdmin,
+    teamDraft,
+    teamEmployees,
+    authUsers,
+    setTeamBusy,
+    setTeamEmployees,
+    setTeamDraft,
+    setTeamFormOpen,
+    setTeamColorEditorId,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadAuthUsers,
+    loadReferencesData,
+  })
+
+  // These loaders are also referenced by the earlier sector effects.
+  function loadTeamEmployees() { return loadTeamEmployeesAction() }
+
+  const {
+    shiftTimesheetMonth,
+    setTimesheetCurrentMonth,
+    getTimesheetCalendarSlots,
+    getTimesheetWeekdayLabel,
+    getTimesheetEntriesForDate,
+    loadTeamTimesheet: loadTeamTimesheetAction,
+    saveTeamTimesheet,
+    setTimesheetDaysPreset,
+    toggleTimesheetDay,
+    toggleTimesheetManager,
+  } = createTeamTimesheetActions({
+    isAdmin,
+    timesheetMonth,
+    timesheetData,
+    timesheetSelectedDays,
+    timesheetSelectedManagers,
+    timesheetWorkUntil,
+    timesheetComment,
+    setTimesheetMonth,
+    setTimesheetSelectedDays,
+    setTimesheetSelectedManagers,
+    setTimesheetData,
+    setTimesheetBusy,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadTeamSalaryReport,
+    refreshActivityLogIfVisible,
+  })
+
+  function loadTeamTimesheet(monthValue = timesheetMonth) { return loadTeamTimesheetAction(monthValue) }
+
+  const {
+    editManagerPlan,
+    editDepartmentPlan,
+    deleteManagerPlan,
+    deleteDepartmentPlan,
+    loadPlans: loadPlansAction,
+    saveManagerPlan,
+    saveDepartmentPlan,
+  } = createPlanActions({
+    isAdmin,
+    planFilters,
+    planReport,
+    managerPlanDraft,
+    departmentPlanDraft,
+    setManagerPlanDraft,
+    setDepartmentPlanDraft,
+    setPlanBusy,
+    setPlanReport,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    refreshFinanceReportsIfVisible,
+  })
+
+  // Earlier sector effects retain the former hoisted loader entrypoint.
+  function loadPlans(nextFilters = planFilters) { return loadPlansAction(nextFilters) }
+
+  const { loadTeamSalaryReport: loadTeamSalaryReportAction, loadTeamActivityReport: loadTeamActivityReportAction } = createTeamReportActions({
+    teamSalaryFilters,
+    teamSalaryReport,
+    teamActivityFilters,
+    teamActivityReport,
+    setTeamBusy,
+    setTeamSalaryReport,
+    setTeamActivityBusy,
+    setTeamActivityLoadFailed,
+    setTeamActivityReport,
+    apiFetch,
+    reportReadFailure,
+  })
+
+  function loadTeamSalaryReport(nextFilters = teamSalaryFilters) { return loadTeamSalaryReportAction(nextFilters) }
+  function loadTeamActivityReport(nextFilters = teamActivityFilters, options: { append?: boolean } = {}) { return loadTeamActivityReportAction(nextFilters, options) }
+
+  const {
+    printHtmlDocument,
+    exportPlanReportWord,
+    printPlanReportPdf,
+    printInventoryStocktakePdf,
+    exportTeamPlanReportWord,
+    printTeamPlanReportPdf,
+    exportSelectedFinanceReportWord,
+    printSelectedFinanceReportPdf,
+  } = createReportExportActions({
+    planDateFrom: planFilters.dateFrom,
+    planDateTo: planFilters.dateTo,
+    financeReportType,
+    financeDateFrom: financeReportFilters.dateFrom,
+    financeDateTo: financeReportFilters.dateTo,
+    setError,
+  })
 
   async function loadLeadRecords(nextFilters = leadFilters) {
     setLeadBusy(true)
@@ -3504,7 +2271,7 @@ function App() {
   }
 
   async function deleteLeadRecord(id: number) {
-    if (!id || !await askActionConfirmation(`Удалить запись лидов #${id}?\n\nЗапись исчезнет из отчётов по лидам. Отмена ничего не изменит.`)) return
+    if (!id || !confirm('Удалить запись лидов?')) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -3538,7 +2305,7 @@ function App() {
   }
 
   async function deleteCallCentreRecord(id: number) {
-    if (!id || !await askActionConfirmation(`Удалить запись Call Centre #${id}?\n\nЗапись исчезнет из отчётов Call Centre. Отмена ничего не изменит.`)) return
+    if (!id || !confirm('Удалить запись Call Centre?')) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -3554,437 +2321,35 @@ function App() {
     }
   }
 
-  async function loadPlans(nextFilters = planFilters) {
-    setPlanBusy(true)
-    try {
-      const params = new URLSearchParams({ startDate: nextFilters.dateFrom, endDate: nextFilters.dateTo })
-      const response = await apiFetch(`/api/plans?${params.toString()}`)
-      const data = await readJsonResponse<{ ok?: boolean; managerPlans?: ManagerPlanRecord[]; departmentPlans?: DepartmentPlanRecord[] }>(response, 'План')
-      if (!response.ok) throw new Error('Не удалось загрузить планы.')
-      setPlanReport({ managerPlans: data.managerPlans || [], departmentPlans: data.departmentPlans || [] })
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Планы', Boolean(planReport))
-      return null
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  async function saveManagerPlan() {
-    if (!isAdmin) {
-      setError('Изменение плана доступно только администратору.')
-      return
-    }
-
-    setPlanBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...managerPlanDraft, salaryBase: managerPlanDraft.salaryBase || 100000, bonusHitPercent: 5, bonusMissPercent: 3 }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План менеджера')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить план менеджера.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setManagerPlanDraft({ id: 0, periodStart: managerPlanDraft.periodStart, periodEnd: managerPlanDraft.periodEnd, managerId: 0, managerName: '', plannedAmount: 0, salaryBase: 100000, comment: '' })
-      setMessage(managerPlanDraft.id ? 'План менеджера обновлён.' : 'План менеджера сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения плана')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  async function saveDepartmentPlan() {
-    if (!isAdmin) {
-      setError('Изменение плана отдела доступно только администратору.')
-      return
-    }
-
-    setPlanBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/department-plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(departmentPlanDraft),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План отдела')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить план отдела.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setDepartmentPlanDraft({ id: 0, periodStart: departmentPlanDraft.periodStart, periodEnd: departmentPlanDraft.periodEnd, plannedAmount: 0, comment: '' })
-      setMessage(departmentPlanDraft.id ? 'План отдела обновлён.' : 'План отдела сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения плана отдела')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  function applyWorkshopPeriodPreset(preset: WorkshopPeriodPreset) {
-    const range = preset === 'all' ? { dateFrom: '', dateTo: '' } : getPeriodRange(preset)
-    setWorkshopFilters((current) => ({
-      ...current, period: preset,
-      dateFrom: preset === 'custom' ? current.dateFrom : range.dateFrom,
-      dateTo: preset === 'custom' ? current.dateTo : range.dateTo,
-    }))
-  }
 
 
+  const { applyWorkshopPeriodPreset, markWorkshopTaskDone, restoreWorkshopTaskActive } = createWorkshopTaskActions({
+    workshopFilters,
+    setWorkshopFilters,
+    setWorkshopBusy,
+    setError,
+    setMessage,
+    apiFetch,
+    loadWorkshopData,
+    applyWorkshopTaskStatusChange,
+    upsertOrderInState,
+    loadDashboard,
+  })
 
-  async function markWorkshopTaskDone(task: WorkshopTaskRecord) {
-    setWorkshopBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/workshop/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
-      if (!response.ok) {
-        throw new Error(result.message || 'Не удалось отметить позицию готовой.')
-      }
-      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
-      else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)
-      if (result.order) upsertOrderInState(result.order)
-      else if (result.refreshRequired) void loadDashboard(false)
-      const orderAlreadySent = String(result.order?.shipping_status || task.shippingStatus || '').trim().toLowerCase() === 'sent'
-      setMessage(orderAlreadySent
-        ? `Позиция цеха по заказу ${task.externalOrderId} готова. Сам заказ уже был отмечен отправленным ранее.`
-        : `Позиция цеха по заказу ${task.externalOrderId} готова. Это не отправка клиенту: заказ остаётся «Не отправлен».`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
-    } finally {
-      setWorkshopBusy(false)
-    }
-  }
+  const { copyWorkshopInvoiceText, exportWorkshopInvoiceWord, downloadWorkshopInvoicePdf, printWorkshopInvoice } = createWorkshopInvoiceActions({
+    invoiceRows: workshopInvoiceRows,
+    invoiceIsKaspi: workshopInvoiceIsKaspi,
+    invoiceTaskCount: workshopScopeTasks.length,
+    invoiceDateFrom: workshopFilters.dateFrom,
+    invoiceDateTo: workshopFilters.dateTo,
+    getWorkshopInvoiceDeadlineLabel,
+    getWorkshopInvoiceImportanceLabel,
+    printHtmlDocument,
+    setError,
+    setMessage,
+  })
 
-  async function restoreWorkshopTaskActive(task: WorkshopTaskRecord) {
-    setWorkshopBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/workshop/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'active', orderItemId: task.orderItemId || null }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
-      if (!response.ok) {
-        throw new Error(result.message || 'Не удалось вернуть позицию в актуальные.')
-      }
-      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
-      else applyWorkshopTaskStatusChange(task, 'active', result.previousStatus || task.status)
-      if (result.order) upsertOrderInState(result.order)
-      else if (result.refreshRequired) void loadDashboard(false)
-      setMessage(`Позиция цеха по заказу ${task.externalOrderId} возвращена в актуальные.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
-    } finally {
-      setWorkshopBusy(false)
-    }
-  }
 
-  function workshopInvoiceDocumentTitle() {
-    return workshopInvoiceIsKaspi ? 'Накладная КАСПИ МАГАЗИН' : 'Накладная цеха'
-  }
-
-  function workshopInvoiceTimingHeader() {
-    return workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'
-  }
-
-  function workshopInvoiceTimingLabel(row: WorkshopInvoiceRow) {
-    return workshopInvoiceIsKaspi ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)
-  }
-
-  function workshopInvoiceFileStem() {
-    return workshopInvoiceIsKaspi ? 'workshop-kaspi-invoice' : 'workshop-invoice'
-  }
-
-  function buildWorkshopInvoiceText() {
-    const lines = [
-      workshopInvoiceDocumentTitle(),
-      `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)}`,
-      `Позиций в накладной: ${workshopScopeTasks.length}`,
-      '',
-      `Изделие | Характеристики | Кол-во | ${workshopInvoiceTimingHeader()} | Комментарий | Заказ`,
-      ...workshopInvoiceRows.map((row) => [
-        row.productName,
-        row.characteristics || '—',
-        `${row.quantity} шт.`,
-        workshopInvoiceTimingLabel(row),
-        row.comment || '—',
-        row.orderRef || '—',
-      ].join(' | ')),
-    ]
-    return lines.join('\n')
-  }
-
-  async function copyWorkshopInvoiceText() {
-    const text = buildWorkshopInvoiceText()
-    try {
-      await navigator.clipboard.writeText(text)
-      setMessage(`${workshopInvoiceDocumentTitle()} скопирована в буфер обмена.`)
-    } catch {
-      setError('Не удалось скопировать накладную. Используйте скачивание Word или PDF.')
-    }
-  }
-
-  function buildWorkshopInvoiceHtmlTable(rows: WorkshopInvoiceRow[] = workshopInvoiceRows, pageLabel = '') {
-    const detailRows = rows.map((row) => `
-      <tr class="${row.priority === 0 ? 'urgent' : row.priority === 1 ? 'commented' : ''}">
-        <td>${htmlEscape(row.productName)}</td>
-        <td>${htmlEscape(row.characteristics || '—')}</td>
-        <td>${row.quantity}</td>
-        <td>${htmlEscape(workshopInvoiceTimingLabel(row))}</td>
-        <td>${htmlEscape(row.comment || '—')}</td>
-        <td>${htmlEscape(row.orderRef || '—')}</td>
-      </tr>`).join('')
-
-    return `
-      <style>@page{size:A4 landscape;margin:8mm;}</style>
-      <p class="note"><strong>Период:</strong> ${htmlEscape(formatDateShort(workshopFilters.dateFrom))} — ${htmlEscape(formatDateShort(workshopFilters.dateTo))} · позиций в накладной ${workshopScopeTasks.length}${pageLabel ? ` · ${htmlEscape(pageLabel)}` : ''}</p>
-      <table class="data-table strict-report-table">
-        <thead><tr><th>Изделие</th><th>Характеристики</th><th>Кол-во</th><th>${htmlEscape(workshopInvoiceTimingHeader())}</th><th>Комментарий</th><th>Заказ</th></tr></thead>
-        <tbody>${detailRows || '<tr><td colspan="6">Нет позиций</td></tr>'}</tbody>
-      </table>`
-  }
-
-  async function exportWorkshopInvoiceWord() {
-    if (!workshopInvoiceRows.length) return
-    try {
-      setError(null)
-      const {
-        AlignmentType,
-        Document,
-        HeadingLevel,
-        PageOrientation,
-        Packer,
-        Paragraph,
-        Table,
-        TableCell,
-        TableRow,
-        TextRun,
-        WidthType,
-      } = await import('docx')
-
-      const makeCell = (text: string, bold = false) => new TableCell({
-        children: [new Paragraph({
-          children: [new TextRun({ text, bold, size: 18 })],
-          spacing: { after: 0 },
-        })],
-      })
-      const rows = [
-        new TableRow({
-          tableHeader: true,
-          children: ['Изделие', 'Характеристики', 'Кол-во', workshopInvoiceTimingHeader(), 'Комментарий', 'Заказ'].map((text) => makeCell(text, true)),
-        }),
-        ...workshopInvoiceRows.map((row) => new TableRow({
-          children: [
-            makeCell(row.productName),
-            makeCell(row.characteristics || '—'),
-            makeCell(String(row.quantity)),
-            makeCell(workshopInvoiceTimingLabel(row)),
-            makeCell(row.comment || '—'),
-            makeCell(row.orderRef || '—'),
-          ],
-        })),
-      ]
-      const documentFile = new Document({
-        sections: [{
-          properties: {
-            page: {
-              size: { orientation: PageOrientation.LANDSCAPE },
-              margin: { top: 500, right: 500, bottom: 500, left: 500 },
-            },
-          },
-          children: [
-            new Paragraph({
-              text: workshopInvoiceDocumentTitle(),
-              heading: HeadingLevel.HEADING_1,
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 120 },
-            }),
-            new Paragraph({
-              text: `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)} · позиций в накладной ${workshopScopeTasks.length}`,
-              spacing: { after: 160 },
-            }),
-            new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }),
-          ],
-        }],
-      })
-      const blob = await Packer.toBlob(documentFile)
-      downloadBlobFile(blob, `${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.docx`)
-      setMessage(`${workshopInvoiceDocumentTitle()} Word скачана в формате DOCX.`)
-    } catch (err) {
-      setError(err instanceof Error ? `Не удалось создать Word: ${err.message}` : 'Не удалось создать файл Word.')
-    }
-  }
-
-  async function downloadWorkshopInvoicePdf() {
-    if (!workshopInvoiceRows.length) return
-    try {
-      setError(null)
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-      const rowsPerPage = 18
-      const chunks: WorkshopInvoiceRow[][] = []
-      for (let index = 0; index < workshopInvoiceRows.length; index += rowsPerPage) {
-        chunks.push(workshopInvoiceRows.slice(index, index + rowsPerPage))
-      }
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
-
-      for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
-        const iframe = document.createElement('iframe')
-        iframe.title = `${workshopInvoiceDocumentTitle()} — страница ${pageIndex + 1}`
-        iframe.style.position = 'fixed'
-        iframe.style.left = '-20000px'
-        iframe.style.top = '0'
-        iframe.style.width = '1200px'
-        iframe.style.height = '900px'
-        iframe.style.border = '0'
-        document.body.appendChild(iframe)
-        try {
-          const doc = iframe.contentWindow?.document
-          if (!doc) throw new Error('браузер не подготовил страницу документа')
-          doc.open()
-          doc.write(makeExportHtml(workshopInvoiceDocumentTitle(), buildWorkshopInvoiceHtmlTable(chunks[pageIndex], `страница ${pageIndex + 1} из ${chunks.length}`)))
-          doc.close()
-          await new Promise((resolve) => window.setTimeout(resolve, 80))
-          const fullHeight = Math.max(700, doc.documentElement.scrollHeight + 24)
-          iframe.style.height = `${fullHeight}px`
-          const canvas = await html2canvas(doc.body, {
-            backgroundColor: '#ffffff',
-            logging: false,
-            scale: 1.6,
-            useCORS: true,
-            windowWidth: 1200,
-            windowHeight: fullHeight,
-          })
-          if (pageIndex > 0) pdf.addPage('a4', 'landscape')
-          const pageWidth = pdf.internal.pageSize.getWidth()
-          const pageHeight = pdf.internal.pageSize.getHeight()
-          const margin = 6
-          const availableWidth = pageWidth - margin * 2
-          const availableHeight = pageHeight - margin * 2
-          const ratio = Math.min(availableWidth / canvas.width, availableHeight / canvas.height)
-          const imageWidth = canvas.width * ratio
-          const imageHeight = canvas.height * ratio
-          pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imageWidth, imageHeight, undefined, 'FAST')
-        } finally {
-          iframe.remove()
-        }
-      }
-
-      pdf.save(`${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.pdf`)
-      setMessage(`${workshopInvoiceDocumentTitle()} PDF скачана.`)
-    } catch (err) {
-      setError(err instanceof Error ? `Не удалось создать PDF: ${err.message}` : 'Не удалось создать PDF.')
-    }
-  }
-
-  function printWorkshopInvoice() {
-    const html = buildWorkshopInvoiceHtmlTable().replace(/<script/gi, '&lt;script')
-    printHtmlDocument(workshopInvoiceDocumentTitle(), html)
-  }
-
-  async function saveReferenceEntry() {
-    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
-      setError('Изменение этого справочника доступно только администратору.')
-      return
-    }
-
-    const value = normalizeSuggestion(referenceDraft.value)
-    if (!value) {
-      setError('Введите значение для справочника.')
-      return null
-    }
-
-    setError(null)
-    const payload = {
-      kind: referenceKind,
-      value,
-      sortOrder: Number(referenceDraft.sortOrder || 0),
-      isActive: Boolean(referenceDraft.isActive),
-    }
-
-    const isEdit = referenceDraft.id > 0
-    const response = await apiFetch(
-      isEdit ? `/api/reference-values/${referenceDraft.id}` : '/api/reference-values',
-      {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
-    )
-
-    if (!response.ok) {
-      const result = await readJsonResponse<{ message?: string }>(response, 'Справочник')
-      throw new Error(result.message || 'Не удалось сохранить справочник.')
-    }
-
-    const outcome = await readJsonResponse<{ ok?: boolean; value?: string; reused?: boolean; restored?: boolean }>(response, 'Справочник')
-    setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    await Promise.all([
-      loadReferencesData(true),
-      loadReferenceItems(referenceKind, true),
-      loadReferenceKindCounts([referenceKind], true),
-    ])
-    setMessage(outcome.reused
-      ? `Значение «${outcome.value || value}» уже существует — используем его, дубль не создавали.`
-      : outcome.restored
-        ? `Значение «${outcome.value || value}» восстановлено в справочнике.`
-        : 'Справочник обновлён.')
-    return outcome
-  }
-
-  async function removeReferenceEntry(id: number) {
-    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
-      setError('Удаление значений этого справочника доступно только администратору.')
-      return
-    }
-
-    if (!id) return
-    const response = await apiFetch(`/api/reference-values/${id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: referenceKind }),
-    })
-    if (!response.ok) {
-      const problem = await readJsonResponse<{ message?: string }>(response, 'Справочник')
-      throw new Error(problem.message || 'Не удалось отключить значение.')
-    }
-    if (referenceDraft.id === id) {
-      setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    }
-    await Promise.all([
-      loadReferencesData(true),
-      loadReferenceItems(referenceKind, true),
-      loadReferenceKindCounts([referenceKind], true),
-    ])
-    setMessage('Значение отключено.')
-  }
-
-  function resetReferenceDraft() {
-    setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-  }
-
-  function selectReferenceKind(kind: ReferenceKind) {
-    setReferenceKind(kind)
-    setReferenceItems(referenceItemsCache[kind] || [])
-    setReferenceSearch('')
-    setReferenceStatusFilter('all')
-    resetReferenceDraft()
-    void loadReferenceItems(kind, !referenceItemsCache[kind])
-  }
 
   async function loadAllOpenDebtOrders(append = false) {
     setDebtLoadBusy(true)
@@ -4040,6 +2405,8 @@ function App() {
   }
 
   async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
+    const requestId = orderListReadGuardRef.current.begin()
+    const isCurrentRead = () => orderListReadGuardRef.current.isCurrent(requestId)
     const activeFilters = overrideFilters
     const searchQuery = activeFilters.q.trim()
     if (searchQuery && Array.from(searchQuery).length < 3) {
@@ -4089,6 +2456,8 @@ function App() {
       const ordersResponse = await apiFetch(`/api/orders?${params.toString()}`)
       const ordersData = await readJsonResponse<OrderListResponse>(ordersResponse, 'Заказы')
       if (!ordersResponse.ok) throw new Error(`Orders load failed: ${ordersResponse.status}`)
+      // A prior filter/page read must never overwrite a newer shipment refresh.
+      if (!isCurrentRead()) return null
 
       const nextOrders = Array.isArray(ordersData.orders) ? ordersData.orders : []
       setOrders(nextOrders)
@@ -4135,6 +2504,8 @@ function App() {
         loadReferencesData(forceReferences),
       ])
 
+      // Even optional health/reference responses must not replace newer list feedback.
+      if (!isCurrentRead()) return null
       const healthResult = optionalResults[0] as PromiseSettledResult<ApiState>
       const dashboardResult = optionalResults[1] as PromiseSettledResult<DashboardInsightsResponse | null>
       const referencesResult = optionalResults[2] as PromiseSettledResult<unknown>
@@ -4166,7 +2537,9 @@ function App() {
 
       // Orders including Kaspi use the same paginated read and period summary.
       // Do not add a duplicate D1 summary read during each page fetch.
+      return ordersData
     } catch (err) {
+      if (!isCurrentRead()) return null
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
       if (hasPreviousData && isTransientApiError(err)) {
         setError(null)
@@ -4178,7 +2551,7 @@ function App() {
         setError(`Не удалось загрузить список заказов: ${messageText}`)
       }
     } finally {
-      setBusy(false)
+      if (isCurrentRead()) setBusy(false)
     }
   }
 
@@ -4222,183 +2595,6 @@ function App() {
     })
   }
 
-  async function showCreatedOrder() {
-    if (!createdOrderNotice) return
-    if (!savedOrderView) setSavedOrderView({ filters: { ...filters }, preset: orderPeriodPreset })
-    const nextFilters = {
-      ...filters,
-      q: createdOrderNotice.externalId,
-      status: 'all',
-      shippingStatus: 'all',
-      deliveryType: 'all',
-      source: 'all',
-      manager: '',
-      managerId: 0,
-      archiveMode: 'all' as ArchiveMode,
-      dateFrom: createdOrderNotice.orderDate,
-      dateTo: createdOrderNotice.orderDate,
-      pageSize: '100',
-    }
-    setOrderPeriodPreset('custom')
-    setFilters(nextFilters)
-    setOrderPageOffset(0)
-    setSelectedOrderId(createdOrderNotice.id)
-    await loadDashboard(false, nextFilters, 0)
-  }
-
-  async function restoreOrderFiltersAfterCreated() {
-    if (!savedOrderView) return
-    const prior = savedOrderView
-    setFilters(prior.filters)
-    setOrderPeriodPreset(prior.preset)
-    setSavedOrderView(null)
-    setCreatedOrderNotice(null)
-    setOrderPageOffset(0)
-    await loadDashboard(false, prior.filters, 0)
-  }
-
-  function updateCreateDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
-    setCreateDraft((current) => {
-      if (key === 'orderDate') {
-        const orderDate = String(value || '').trim()
-        return {
-          ...current,
-          [key]: value,
-          payments: current.payments.map((payment) => (
-            payment.paymentKind === 'primary'
-              ? { ...payment, paymentDate: orderDate || payment.paymentDate }
-              : payment
-          )),
-        }
-      }
-      if (key === 'orderPaymentMethod') {
-        const method = String(value || '').trim()
-        const previousMethod = String(current.orderPaymentMethod || '').trim()
-        // A payment method is an ordinary payment method, including КАСПИ МАГАЗИН.
-        // Do not erase an amount that a manager already entered.
-        const payments = current.payments.map((payment, index) => {
-          if (index !== 0) return payment
-          const currentMethod = String(payment.method || '').trim()
-          const followsOrderMethod = !currentMethod ||
-            (previousMethod && normalizeSuggestion(currentMethod) === normalizeSuggestion(previousMethod))
-          return followsOrderMethod ? { ...payment, method } : payment
-        })
-        return { ...current, orderPaymentMethod: method, payments }
-      }
-      return { ...current, [key]: value }
-    })
-  }
-
-  function updateCreateItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
-    setCreateDraft((current) => {
-      const nextItems = current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const normalizedValue = field === 'audienceType' ? normalizeAudienceTypeValue(value) : value
-        const nextItem = { ...item, [field]: normalizedValue } as EditorItem
-
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-          nextItem.priceNeedsConfirmation = false
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
-
-        if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
-          nextItem.stockObservationEnabled = false
-          nextItem.observedPhysicalQuantity = null
-          nextItem.shortageAcknowledged = false
-          nextItem.shortageDecision = null
-          nextItem.serverShortage = undefined
-        }
-        if (field === 'quantity') {
-          nextItem.shortageAcknowledged = false
-          nextItem.shortageDecision = null
-          nextItem.serverShortage = undefined
-        }
-        if (orderPanel === 'zammler' && field === 'sourceType' && value === 'workshop') {
-          nextItem.workshopUrgent = true
-          nextItem.workshopDueDate = nextItem.workshopDueDate || current.orderDate
-          nextItem.workshopDueTime = nextItem.workshopDueTime || '20:00'
-        }
-        if (field === 'audienceType') {
-          nextItem.audienceType = normalizeAudienceTypeValue(value)
-        }
-        if (field === 'audienceType') {
-          const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
-          if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
-            nextItem.size = ''
-          }
-        }
-        if (['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
-          }
-        }
-        return nextItem
-      })
-      return { ...current, items: nextItems }
-    })
-  }
-
-  function addCreateItem() {
-    setCreateDraft((current) => ({
-      ...current,
-      items: [...current.items, { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false }],
-    }))
-  }
-
-  function removeCreateItem(index: number) {
-    setCreateDraft((current) => {
-      const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
-    })
-  }
-
-  function updateCreatePayment(index: number, field: keyof EditorPayment, value: string | number) {
-    setCreateDraft((current) => {
-      const nextPayments = current.payments.map((payment, paymentIndex) => (
-        paymentIndex === index ? { ...payment, [field]: value } : payment
-      ))
-      if (field === 'method') {
-        const method = String(value || '').trim()
-        const shouldSeedOrderMethod = index === 0 && !String(current.orderPaymentMethod || '').trim()
-        return {
-          ...current,
-          orderPaymentMethod: shouldSeedOrderMethod ? method : current.orderPaymentMethod,
-          payments: nextPayments,
-        }
-      }
-      return { ...current, payments: nextPayments }
-    })
-  }
-
-  function addCreatePayment() {
-    setCreateDraft((current) => ({ ...current, payments: [...current.payments, createEmptyEditorPayment(current.orderDate)] }))
-  }
-
-  function removeCreatePayment(index: number) {
-    setCreateDraft((current) => {
-      const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)
-      const fallback = createEmptyEditorPayment(current.orderDate)
-      const payments = nextPayments.length ? nextPayments : [fallback]
-      return { ...current, payments }
-    })
-  }
-
   const createPricing = useMemo(
     () => evaluateItemizedCreatePricing(createDraft.items, createDraft.payments),
     [createDraft.items, createDraft.payments],
@@ -4409,613 +2605,9 @@ function App() {
     debtAmount: createPricing.debtAmount ?? 0,
   }), [createPricing])
 
-  function createOrderDraftWithDefaultManager() {
-    const draft = createEmptyOrderDraft()
-    if (authUser?.role === 'manager' && Number(authUser.managerId || 0) > 0) {
-      return {
-        ...draft,
-        managerId: Number(authUser.managerId || 0),
-        managerName: authUser.managerName || '',
-      }
-    }
-    return draft
-  }
-
-  function resetCreateOrderDraft() {
-    setCreateDraft(createOrderDraftWithDefaultManager())
-  }
-
   useEffect(() => {
     if (orderPanel === 'create') setCreateDraft(createOrderDraftWithDefaultManager())
   }, [orderPanel])
-
-  async function createOrderFromDraft(retiredCatalogRecreateKeys: string[] = []) {
-    setOrderBusy(true)
-    setError(null)
-    setMessage(null)
-
-    try {
-      if (!Number(createDraft.managerId || 0)) {
-        throw new Error('Выберите менеджера перед сохранением заказа.')
-      }
-      const orderPaymentMethod = String(createDraft.orderPaymentMethod || '').trim()
-        || String(createDraft.payments.find((payment) => String(payment.method || '').trim())?.method || '').trim()
-      const pricingReadiness = evaluateItemizedCreatePricing(createDraft.items, createDraft.payments)
-      if (pricingReadiness.status !== 'ready') {
-        const blocker = pricingReadiness.blockers[0]
-        const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-        const payment = blocker?.paymentIndex !== undefined ? blocker.paymentIndex + 1 : 0
-        if (blocker?.code === 'empty_items') throw new Error('Добавьте хотя бы один товар в заказ.')
-        if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-        if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-        if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-        if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-        if (blocker?.code === 'invalid_payment') throw new Error(`Проверьте оплату ${payment}: положительная сумма требует способ оплаты, сумма должна быть целым числом от 0.`)
-        if (blocker?.code === 'overpayment') throw new Error(`Сумма оплат (${pricingReadiness.receivedAmount}) больше итога заказа (${pricingReadiness.totalAmount ?? 0}). Исправьте оплаты или цены позиций.`)
-        throw new Error('Проверьте цены позиций и оплаты перед сохранением заказа.')
-      }
-      const pricedLineByInputIndex = new Map(pricingReadiness.lines.map((line) => [line.itemIndex, line]))
-
-      const payload = {
-        orderDate: createDraft.orderDate,
-        managerId: createDraft.managerId || undefined,
-        managerName: createDraft.managerName,
-        customerPhone: createDraft.customerPhone,
-        customerName: createDraft.customerName,
-        city: createDraft.city,
-        deliveryType: createDraft.deliveryType,
-        orderPaymentMethod,
-        sourceType: deriveOrderSourceType(createDraft.items),
-        pricingMode: 'itemized_v1' as const,
-        ...(retiredCatalogRecreateKeys.length ? { retiredCatalogRecreateKeys } : {}),
-        workshopStatus: createDraft.workshopStatus,
-        orderStatus: createDraft.orderStatus,
-        comment: createDraft.comment,
-        items: createDraft.items.map((item) => ({
-          productName: item.productName,
-          audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-          gender: item.gender || null,
-          color: item.color,
-          material: item.material,
-          length: item.length,
-          size: item.size,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-          sourceType: item.sourceType,
-          workshopComment: item.workshopComment,
-          workshopUrgent: Boolean(item.workshopUrgent),
-          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
-          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-        })),
-        payments: createDraft.payments.map((payment, index) => ({
-          paymentDate: payment.paymentDate,
-          method: payment.method,
-          amount: payment.amount,
-          paymentKind: resolvePaymentKind(payment, index),
-          comment: payment.comment,
-        })),
-      }
-
-      const criticalKey = 'order-create'
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-
-      type CreateOrderShortage = {
-        inputIndexes?: number[]
-        physicalQuantity?: number
-        reservedQuantity?: number
-        requestedQuantity?: number
-        shortage?: number
-        inventorySource?: 'warehouse' | 'boutique'
-        variantId?: number
-      }
-      type CreateOrderRetiredCatalogItem = {
-        inputIndex?: number
-        confirmationKey?: string
-        productName?: string
-        material?: string
-        length?: string
-        color?: string
-        size?: string
-      }
-      const result = await readJsonResponse<{
-        orderId?: number
-        externalId?: string
-        totalAmount?: number
-        receivedAmount?: number
-        debtAmount?: number
-        pricingMode?: 'legacy_manual_total' | 'itemized_v1'
-        code?: string
-        shortages?: CreateOrderShortage[]
-        retiredItems?: CreateOrderRetiredCatalogItem[]
-        stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; pendingShortage?: boolean; shortageAfter?: number }>
-        message?: string
-      }>(response, 'Создание заказа', { allowHttpError: true })
-      if (!response.ok && result.code === 'order_retired_catalog_confirmation_required' && Array.isArray(result.retiredItems) && result.retiredItems.length) {
-        completeCriticalRequest(criticalKey, critical.requestId)
-        if (retiredCatalogRecreateKeys.length) {
-          throw new Error('Каталог изменился во время подтверждения. Обновите форму заказа и повторите сохранение.')
-        }
-        const confirmationKeys = [...new Set(result.retiredItems.map((item) => String(item.confirmationKey || '').trim()).filter(Boolean))]
-        if (!confirmationKeys.length) {
-          throw new Error(result.message || 'Не удалось безопасно подтвердить восстановление удалённой позиции.')
-        }
-        const names = [...new Set(result.retiredItems.map((item) => String(item.productName || '').trim()).filter(Boolean))]
-        const label = names.length ? names.map((name) => `«${name}»`).join(', ') : 'выбранная позиция'
-        const confirmed = await askActionConfirmation(
-          `${label} раньше была удалена из рабочего каталога. Вернуть её как новую рабочую позицию?\n\nСтарые заказы и история не изменятся. Старые остатки и резервы не вернутся; новая рабочая позиция начнёт с нуля.`,
-        )
-        if (!confirmed) {
-          setMessage('Заказ не сохранён. Удалённая позиция осталась вне рабочего каталога.')
-          return
-        }
-        await createOrderFromDraft(confirmationKeys)
-        return
-      }
-      if (!response.ok) {
-        throw new Error(result.message || `Create failed: ${response.status}`)
-      }
-      // The server has durably completed the idempotent operation. Clear the browser retry token
-      // before any non-critical UI/state work so a render/state error cannot keep a successful Save pending.
-      completeCriticalRequest(criticalKey, critical.requestId)
-
-      const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
-      const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
-      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
-      const createdOrderId = Number(result.orderId || 0)
-      const createdExternalId = String(result.externalId || '').trim()
-      if (!Number.isInteger(createdOrderId) || createdOrderId <= 0 || !createdExternalId) {
-        invalidateFinanceReadCaches()
-        invalidateInventoryStockCaches(true)
-        if (pendingReservations.length) {
-          setMessage('Заказ сохранён, но резерв не закреплён: свободное количество изменилось. Проверьте остатки и разберите резерв этого заказа до отправки. Обновляю список заказов.')
-        } else if (concurrentShortages.length) {
-          setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки». Обновляю список заказов.')
-        } else if (postSaveShortages.length) {
-          setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Остатки». Обновляю список заказов.')
-        } else {
-          setMessage('Заказ сохранён. Обновляю список заказов.')
-        }
-        setOrderPanel('list')
-        resetCreateOrderDraft()
-        void loadDashboard(false, filters, 0)
-        void loadWorkshopData()
-        return
-      }
-
-      const createdOrder: OrderRecord = {
-        id: createdOrderId,
-        external_id: createdExternalId,
-        order_date: createDraft.orderDate,
-        manager_id: createDraft.managerId || null,
-        manager_name: createDraft.managerName || null,
-        manager_color: (references?.managerOptions || []).find((manager) => manager.id === createDraft.managerId)?.colorKey || null,
-        customer_phone: createDraft.customerPhone || null,
-        customer_name: createDraft.customerName || null,
-        city: createDraft.city || null,
-        delivery_type: createDraft.deliveryType || null,
-        order_payment_method: orderPaymentMethod || null,
-        source_type: deriveOrderSourceType(createDraft.items),
-        pricing_mode: 'itemized_v1',
-        workshop_status: createDraft.workshopStatus,
-        order_status: createDraft.orderStatus,
-        total_amount: Number(result.totalAmount || 0),
-        received_amount: Number(result.receivedAmount || 0),
-        debt_amount: Number(result.debtAmount || 0),
-        return_amount: 0,
-        comment: createDraft.comment || null,
-        items: createDraft.items
-          .map((item, inputIndex) => ({ item, inputIndex }))
-          .filter(({ item }) => String(item.productName || '').trim())
-          .map(({ item, inputIndex }) => {
-            const pricedLine = pricedLineByInputIndex.get(inputIndex)
-            return {
-              productName: item.productName,
-              audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-              gender: item.gender || null,
-              color: item.color || null,
-              material: item.material || null,
-              length: item.length || null,
-              size: item.size || null,
-              quantity: pricedLine?.quantity ?? item.quantity ?? 1,
-              unitPrice: pricedLine?.unitPrice ?? Number(item.unitPrice || 0),
-              catalogPriceSnapshot: pricedLine?.catalogPriceSnapshot ?? item.catalogPriceSnapshot ?? null,
-              lineTotal: pricedLine?.lineTotal ?? 0,
-              sourceType: item.sourceType || 'warehouse',
-              workshopComment: item.workshopComment || null,
-              workshopUrgent: Boolean(item.workshopUrgent),
-              workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
-              workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
-              isWorkshop: item.sourceType === 'workshop',
-            }
-          }),
-        payments: createDraft.payments
-          .map((payment, index) => ({
-            paymentDate: payment.paymentDate,
-            method: payment.method,
-            amount: payment.amount,
-            paymentKind: resolvePaymentKind(payment, index),
-            comment: payment.comment || null,
-          }))
-          .filter((payment) => String(payment.method || '').trim() && Number(payment.amount || 0) > 0),
-        returns: [],
-      }
-
-      invalidateFinanceReadCaches()
-      // Step 188A: order creation changes reservations. Do not keep a stale stock cache
-      // that would later make Warehouse or the next availability hint show the pre-order number.
-      invalidateInventoryStockCaches(true)
-      if (pendingReservations.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки; физические остатки не менялись.`)
-      } else if (concurrentShortages.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
-      } else if (postSaveShortages.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
-      } else {
-        setMessage(`Заказ ${createdOrder.external_id} создан, сумма ${formatMoney(createdOrder.total_amount)} тенге.`)
-      }
-      upsertOrderInState(createdOrder)
-      setCreatedOrderNotice({ id: createdOrder.id, externalId: createdOrder.external_id, orderDate: createdOrder.order_date })
-      setSavedOrderView(null)
-      if (createdOrder.items.some((item) => item.isWorkshop || item.sourceType === 'workshop')) {
-        void loadWorkshopData()
-      }
-      setSelectedOrderId(createdOrder.id)
-      setEditorDraft(createEditorDraft(createdOrder))
-      setEditorOpen(false)
-      setOrderPanel('list')
-      resetCreateOrderDraft()
-      if (activeSector === 'orders') {
-        void loadOrdersFinanceSummary(filters, true)
-        void loadWarehouseAttention(false, true)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setOrderBusy(false)
-    }
-  }
-
-  function preferredInventoryMatrixValue(values: string[], fallback = '') {
-    if (!values.length) return fallback
-    return values.find((value) => normalizeSuggestion(value) === 'СТАНДАРТ') ?? values[0] ?? fallback
-  }
-
-  function inventoryMatrixGroupKey(value: Pick<InventoryMatrixDraft, 'productId' | 'productName' | 'category' | 'gender' | 'material' | 'length'> | InventoryDraftItem) {
-    const productKey = String(value.productId || '').trim()
-      ? `id:${String(value.productId).trim()}`
-      : `name:${normalizeSuggestion(value.productName)}`
-    return [
-      productKey,
-      value.category,
-      normalizeSuggestion(value.gender),
-      normalizeSuggestion(value.material),
-      normalizeSuggestion(value.length),
-    ].join('¦')
-  }
-
-  function clearInventoryMatrixValues() {
-    const activeKey = inventoryMatrixGroupKey(inventoryMatrix)
-    if (!inventoryMatrix.productName.trim()) return
-    setInventoryDraft((current) => {
-      const nextItems = current.items.filter((item) => !item.touched || inventoryMatrixGroupKey(item) !== activeKey)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-    })
-  }
-
-  function startNextInventoryMatrixProduct() {
-    if (!inventoryMatrixCurrentGroupItems.length) {
-      setError('Сначала укажите количество хотя бы в одной клетке текущего товара.')
-      return
-    }
-    setError(null)
-    setMessage(inventoryDraft.movementType === 'arrival'
-      ? `«${inventoryMatrix.productName}» добавлен в текущий приход. Теперь выберите следующий товар.`
-      : `«${inventoryMatrix.productName}» добавлен в текущую операцию. Теперь выберите следующую группу.`)
-    setInventoryOperationSearch('')
-    setInventoryOperationProductKey('')
-    setInventoryMatrix(createEmptyInventoryMatrixDraft())
-    setInventoryMatrixColorToAdd('')
-    setInventoryMatrixSizeToAdd('')
-  }
-
-  function openInventoryMatrixBatchGroup(groupKey: string) {
-    const group = inventoryMatrixBatchGroups.find((entry) => entry.key === groupKey)
-    if (!group) return
-    setError(null)
-    setInventoryOperationSearch(group.productName)
-    setInventoryOperationProductKey(group.productId ? `id:${group.productId}` : `name:${normalizeSuggestion(group.productName)}`)
-    setInventoryMatrix({
-      productId: group.productId,
-      productName: group.productName,
-      category: group.category,
-      gender: group.gender,
-      material: group.material,
-      length: group.length,
-      extraColors: group.colors,
-      extraSizes: group.sizes,
-      ready: true,
-    })
-    setInventoryMatrixColorToAdd('')
-    setInventoryMatrixSizeToAdd('')
-  }
-
-  function removeInventoryMatrixBatchGroup(groupKey: string) {
-    setInventoryDraft((current) => {
-      const nextItems = current.items.filter((item) => !item.touched || inventoryMatrixGroupKey(item) !== groupKey)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-    })
-    if (inventoryMatrixActiveGroupKey === groupKey) {
-      setInventoryOperationSearch('')
-      setInventoryOperationProductKey('')
-      setInventoryMatrix(createEmptyInventoryMatrixDraft())
-      setInventoryMatrixColorToAdd('')
-      setInventoryMatrixSizeToAdd('')
-    }
-  }
-
-  function configureInventoryMatrixProduct(productId: string | number, productName: string, stockRows?: InventoryStockRecord[]) {
-    const variants = productId ? variantsForProduct(productId) : []
-    const sourceRows = stockRows || []
-    const source = sourceRows.length ? sourceRows : variants
-
-    const combinations = new Map<string, {
-      category: 'adult' | 'child'
-      gender: string
-      material: string
-      length: string
-      count: number
-      standardScore: number
-    }>()
-
-    for (const row of source) {
-      const category = 'inventorySource' in row ? getInventoryRowCategory(row) : getCatalogVariantCategory(row)
-      const gender = String(row.gender || '').trim()
-      const material = String(row.material || '').trim()
-      const length = String(row.length || '').trim()
-      const key = [category, normalizeSuggestion(gender), normalizeSuggestion(material), normalizeSuggestion(length)].join('¦')
-      const existing = combinations.get(key)
-      if (existing) {
-        existing.count += 1
-      } else {
-        combinations.set(key, {
-          category,
-          gender,
-          material,
-          length,
-          count: 1,
-          standardScore: (normalizeSuggestion(material) === 'СТАНДАРТ' ? 1 : 0) + (normalizeSuggestion(length) === 'СТАНДАРТ' ? 1 : 0),
-        })
-      }
-    }
-
-    const preferred = [...combinations.values()].sort((left, right) => (
-      right.count - left.count
-      || right.standardScore - left.standardScore
-      || left.category.localeCompare(right.category)
-      || left.gender.localeCompare(right.gender, 'ru')
-      || left.material.localeCompare(right.material, 'ru')
-      || left.length.localeCompare(right.length, 'ru', { numeric: true })
-    ))[0]
-
-    const category = preferred?.category || 'adult'
-    const gender = preferred?.gender || (category === 'child' ? 'ДЕТСКИЙ' : '')
-    const material = preferred?.material || preferredInventoryMatrixValue(suggestionValues.materials, 'СТАНДАРТ')
-    const length = preferred?.length || preferredInventoryMatrixValue(suggestionValues.lengths, 'СТАНДАРТ')
-
-    setInventoryMatrix({
-      productId: String(productId || ''),
-      productName,
-      category,
-      gender,
-      material,
-      length,
-      extraColors: [],
-      extraSizes: [],
-      ready: false,
-    })
-    setInventoryMatrixColorToAdd('')
-    setInventoryMatrixSizeToAdd('')
-    clearInventoryMatrixValues()
-  }
-
-  function updateInventoryMatrixProductInput(value: string) {
-    setInventoryOperationSearch(value)
-    const normalized = normalizeSuggestion(value)
-
-    if (!normalized) {
-      setInventoryOperationProductKey('')
-      setInventoryMatrix(createEmptyInventoryMatrixDraft())
-      clearInventoryMatrixValues()
-      return
-    }
-
-    if (inventoryDraft.movementType === 'arrival') {
-      const product = (catalogData?.products || []).find((entry) => entry.isActive && normalizeSuggestion(entry.name) === normalized)
-      if (product) {
-        if (String(inventoryMatrix.productId) !== String(product.id)) {
-          configureInventoryMatrixProduct(product.id, product.name)
-        }
-        return
-      }
-
-      setInventoryOperationProductKey('')
-      setInventoryMatrix((current) => {
-        const switchedFromCatalog = Boolean(current.productId)
-        return {
-          ...current,
-          productId: '',
-          productName: value,
-          category: switchedFromCatalog ? 'adult' : current.category,
-          gender: switchedFromCatalog ? '' : current.gender,
-          material: switchedFromCatalog
-            ? preferredInventoryMatrixValue(suggestionValues.materials, 'СТАНДАРТ')
-            : (current.material || preferredInventoryMatrixValue(suggestionValues.materials, 'СТАНДАРТ')),
-          length: switchedFromCatalog
-            ? preferredInventoryMatrixValue(suggestionValues.lengths, 'СТАНДАРТ')
-            : (current.length || preferredInventoryMatrixValue(suggestionValues.lengths, 'СТАНДАРТ')),
-          extraColors: [],
-          extraSizes: [],
-          ready: false,
-        }
-      })
-      clearInventoryMatrixValues()
-      return
-    }
-
-    const stockRows = inventoryOperationSourceRows.filter((row) => normalizeSuggestion(row.productName) === normalized)
-    if (stockRows.length) {
-      const first = stockRows[0]
-      const key = first.productId ? `id:${first.productId}` : `name:${normalized}`
-      setInventoryOperationProductKey(key)
-      if (String(inventoryMatrix.productId) !== String(first.productId || '') || normalizeSuggestion(inventoryMatrix.productName) !== normalized) {
-        configureInventoryMatrixProduct(first.productId || '', first.productName, stockRows)
-      }
-      return
-    }
-
-    // An exact catalog product may have no row on the selected point yet. It is still
-    // a valid choice: the matrix can create the missing combination instead of blocking it.
-    const catalogProduct = (catalogData?.products || []).find((entry) => entry.isActive && normalizeSuggestion(entry.name) === normalized)
-    if (catalogProduct) {
-      setInventoryOperationProductKey(`id:${catalogProduct.id}`)
-      configureInventoryMatrixProduct(catalogProduct.id, catalogProduct.name)
-      return
-    }
-
-    setInventoryOperationProductKey('')
-    setInventoryMatrix((current) => ({
-      ...current,
-      productId: '',
-      productName: value,
-      ready: false,
-      extraColors: [],
-      extraSizes: [],
-    }))
-    clearInventoryMatrixValues()
-  }
-
-  function updateInventoryMatrixCategory(category: 'adult' | 'child') {
-    setInventoryMatrix((current) => ({
-      ...current,
-      category,
-      gender: category === 'child' && !current.gender ? 'ДЕТСКИЙ' : current.gender,
-      extraColors: [],
-      extraSizes: [],
-      ready: false,
-    }))
-    clearInventoryMatrixValues()
-  }
-
-  function updateInventoryMatrixGender(gender: string) {
-    setInventoryMatrix((current) => ({ ...current, gender, extraColors: [], extraSizes: [], ready: false }))
-    clearInventoryMatrixValues()
-  }
-
-  function updateInventoryMatrixMaterial(material: string) {
-    setInventoryMatrix((current) => ({ ...current, material, extraColors: [], extraSizes: [], ready: false }))
-    clearInventoryMatrixValues()
-  }
-
-  function updateInventoryMatrixLength(length: string) {
-    setInventoryMatrix((current) => ({ ...current, length, extraColors: [], extraSizes: [], ready: false }))
-    clearInventoryMatrixValues()
-  }
-
-  function buildInventoryMatrix() {
-    const cleanProductName = inventoryMatrix.productName.trim()
-    if (!cleanProductName) {
-      setError('Сначала выберите или введите товар.')
-      return
-    }
-    if (!inventoryMatrix.productId && inventoryMatrix.category === 'adult' && !inventoryMatrix.gender) {
-      setError('Для нового взрослого товара выберите пол.')
-      return
-    }
-    const finalProductName = inventoryDraft.movementType === 'arrival' && !inventoryMatrix.productId
-      ? cleanProductName.toUpperCase()
-      : cleanProductName
-    setError(null)
-    setInventoryOperationSearch(finalProductName)
-    setInventoryMatrix((current) => ({ ...current, productName: finalProductName, ready: true }))
-    clearInventoryMatrixValues()
-  }
-
-  function addInventoryMatrixColor(rawValue?: string) {
-    const value = String(rawValue ?? inventoryMatrixColorToAdd).trim().toUpperCase()
-    if (!value) return
-    setInventoryMatrix((current) => ({ ...current, extraColors: Array.from(new Set([...current.extraColors, value])), ready: true }))
-    setInventoryMatrixColorToAdd('')
-  }
-
-  function addInventoryMatrixSize(rawValue?: string) {
-    const value = String(rawValue ?? inventoryMatrixSizeToAdd).trim().toUpperCase()
-    if (!value) return
-    setInventoryMatrix((current) => ({ ...current, extraSizes: Array.from(new Set([...current.extraSizes, value])), ready: true }))
-    setInventoryMatrixSizeToAdd('')
-  }
-
-  function inventoryMatrixDraftItem(size: string, color: string) {
-    const key = inventoryMatrixCellKey(size, color)
-    return inventoryDraft.items.find((item) => (
-      item.touched
-      && inventoryMatrixGroupKey(item) === inventoryMatrixActiveGroupKey
-      && inventoryMatrixCellKey(item.size, item.color) === key
-    ))
-  }
-
-  function setInventoryMatrixCell(size: string, color: string, rawValue: string) {
-    const key = inventoryMatrixCellKey(size, color)
-    const existingCell = inventoryMatrixCellMap.get(key)
-    const touched = rawValue !== ''
-    const parsed = touched ? Math.max(0, Math.trunc(Number(rawValue || 0))) : 0
-    const shouldKeep = touched && (inventoryDraft.movementType === 'manual_set' || parsed > 0)
-
-    setInventoryDraft((current) => {
-      const nextItems = current.items.filter((item) => !(
-        item.touched
-        && inventoryMatrixGroupKey(item) === inventoryMatrixActiveGroupKey
-        && inventoryMatrixCellKey(item.size, item.color) === key
-      ))
-      if (shouldKeep) {
-        nextItems.push({
-          productId: inventoryMatrix.productId,
-          variantId: existingCell?.variantId ? String(existingCell.variantId) : '',
-          productName: inventoryMatrix.productName,
-          category: inventoryMatrix.category,
-          gender: inventoryMatrix.gender,
-          color,
-          material: inventoryMatrix.material,
-          length: inventoryMatrix.length,
-          size,
-          quantity: parsed,
-          touched: true,
-          expectedQuantity: existingCell?.current ?? 0,
-        })
-      }
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-    })
-  }
-
-  function handleInventoryMatrixKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (!['Enter', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(event.key)) return
-    const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('.inventory-matrix-input:not(:disabled)'))
-    const index = inputs.indexOf(event.currentTarget)
-    if (index < 0) return
-    const columns = Math.max(1, inventoryMatrixColors.length)
-    const offset = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : 1
-    const next = inputs[index + offset]
-    if (next) {
-      event.preventDefault()
-      next.focus()
-      next.select()
-    }
-  }
 
   function resetInventoryOperationSelection() {
     setInventoryOperationSearch('')
@@ -5137,488 +2729,6 @@ function App() {
     setMessage(`Открыта форма обмена по заказу ${order.external_id}.`)
   }
 
-  function inventoryOperationVariantFromRow(row: InventoryStockRecord): InventoryOperationVariantDraft {
-    return {
-      category: getInventoryRowCategory(row),
-      gender: row.gender || '',
-      color: row.color || '',
-      material: row.material || '',
-      length: row.length || '',
-      size: row.size || '',
-    }
-  }
-
-  function selectInventoryOperationVariant(row: InventoryStockRecord) {
-    const group = inventoryOperationAllProductGroups.find((entry) => entry.rows.some((candidate) => Number(candidate.variantId || 0) === Number(row.variantId || 0)))
-    if (group) {
-      setInventoryOperationProductKey(group.key)
-      setInventoryOperationSearch(group.productName)
-    }
-    setInventoryOperationVariant(inventoryOperationVariantFromRow(row))
-    setInventoryOperationActiveVariantId(String(row.variantId || ''))
-    setInventoryExistingVariantOpen(false)
-    setInventoryExistingVariantSearch('')
-  }
-
-  function selectInventoryOperationProduct(key: string, preferredVariantId?: string | number) {
-    const group = inventoryOperationAllProductGroups.find((entry) => entry.key === key)
-    if (!group) {
-      resetInventoryOperationSelection()
-      return
-    }
-    const preferred = preferredVariantId
-      ? group.rows.find((row) => String(row.variantId || '') === String(preferredVariantId))
-      : null
-    const row = preferred || group.rows[0] || null
-    setInventoryOperationProductKey(group.key)
-    setInventoryOperationSearch(group.productName)
-    setInventoryExistingVariantOpen(false)
-    setInventoryExistingVariantSearch('')
-    if (row) {
-      setInventoryOperationVariant(inventoryOperationVariantFromRow(row))
-      setInventoryOperationActiveVariantId(String(row.variantId || ''))
-    } else {
-      setInventoryOperationVariant(createEmptyInventoryOperationVariantDraft())
-      setInventoryOperationActiveVariantId('')
-    }
-  }
-
-  function updateInventoryDirectProductInput(value: string) {
-    setInventoryOperationSearch(value)
-    const normalized = normalizeSearchText(value)
-    const exact = inventoryOperationAllProductGroups.find((group) => normalizeSearchText(group.productName) === normalized)
-    if (exact) {
-      selectInventoryOperationProduct(exact.key)
-      return
-    }
-    setInventoryOperationProductKey('')
-    setInventoryOperationVariant(createEmptyInventoryOperationVariantDraft())
-    setInventoryOperationActiveVariantId('')
-    setInventoryExistingVariantOpen(false)
-    setInventoryExistingVariantSearch('')
-  }
-
-  function updateInventoryOperationVariantField(field: keyof InventoryOperationVariantDraft, value: string) {
-    const nextVariant = { ...inventoryOperationVariant, [field]: field === 'category' ? (value === 'child' ? 'child' : 'adult') : value } as InventoryOperationVariantDraft
-    const previousRow = matchedInventoryOperationVariant
-    const previousQuantity = previousRow ? Number(draftItemForVariant(previousRow.variantId)?.quantity || 0) : 0
-    const same = (left: unknown, right: unknown) => normalizeSearchText(left) === normalizeSearchText(right)
-    const nextRow = selectedInventoryOperationGroup?.rows.find((row) => (
-      getInventoryRowCategory(row) === nextVariant.category
-      && same(row.gender, nextVariant.gender)
-      && same(row.color, nextVariant.color)
-      && same(row.material, nextVariant.material)
-      && same(row.length, nextVariant.length)
-      && same(row.size, nextVariant.size)
-    )) || null
-
-    setInventoryOperationVariant(nextVariant)
-    setInventoryOperationActiveVariantId(nextRow ? String(nextRow.variantId || '') : '')
-
-    if (previousRow && String(previousRow.variantId || '') !== String(nextRow?.variantId || '') && previousQuantity > 0) {
-      setInventoryDraft((current) => {
-        const remaining = current.items.filter((item) => String(item.variantId || '') !== String(previousRow.variantId || ''))
-        if (!nextRow) return { ...current, items: remaining.length ? remaining : [createEmptyInventoryItem()] }
-        const existingTargetQuantity = Number(remaining.find((item) => String(item.variantId || '') === String(nextRow.variantId || ''))?.quantity || 0)
-        const safeQuantity = Math.min(previousQuantity + existingTargetQuantity, Math.max(0, Number(nextRow.quantity || 0)))
-        const withoutTarget = remaining.filter((item) => String(item.variantId || '') !== String(nextRow.variantId || ''))
-        const nextItems = safeQuantity > 0 ? [...withoutTarget, createInventoryItemFromStockRow(nextRow, safeQuantity)] : withoutTarget
-        return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-      })
-    }
-  }
-
-  function createInventoryItemFromStockRow(row: InventoryStockRecord, quantity: number): InventoryDraftItem {
-    return {
-      productId: row.productId ? String(row.productId) : '',
-      variantId: String(row.variantId || ''),
-      productName: row.productName || '',
-      category: getInventoryRowCategory(row),
-      gender: row.gender || '',
-      color: row.color || '',
-      material: row.material || '',
-      length: row.length || '',
-      size: row.size || '',
-      quantity,
-      expectedQuantity: Number(row.quantity || 0),
-      observedPhysicalQuantity: null,
-    }
-  }
-
-  function draftItemForVariant(variantId: string | number) {
-    const id = String(variantId || '')
-    return inventoryDraft.items.find((item) => String(item.variantId || '') === id)
-  }
-
-  function setInventoryVariantOperationQuantity(row: InventoryStockRecord, quantity: number) {
-    const physical = Math.max(0, Number(row.quantity || 0))
-    const requested = Math.max(0, Math.trunc(Number(quantity || 0)))
-    const nextQuantity = inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'arrival' ? requested : Math.min(physical, requested)
-    const variantId = String(row.variantId || '')
-    if (!variantId) return
-    setInventoryDraft((current) => {
-      const withoutEmpty = current.items.filter((item) => item.variantId || item.productName)
-      const exists = withoutEmpty.some((item) => String(item.variantId || '') === variantId)
-      let nextItems = exists
-        ? withoutEmpty.map((item) => String(item.variantId || '') === variantId
-          ? {
-              ...item,
-              quantity: nextQuantity,
-              observedPhysicalQuantity: current.movementType === 'manual_set' ? item.observedPhysicalQuantity : null,
-            }
-          : item)
-        : [...withoutEmpty, createInventoryItemFromStockRow(row, nextQuantity)]
-      nextItems = nextItems.filter((item) => item.quantity > 0 || String(item.variantId || '') !== variantId)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-    })
-  }
-
-  function startInventoryTransferFromStockRow(source: InventorySourceKey, row: InventoryStockRecord) {
-    if (!row.variantId || Number(row.quantity || 0) <= 0) return
-    const targetSource: InventorySourceKey = source === 'warehouse' ? 'boutique' : 'warehouse'
-    setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
-    setInventoryDraft({
-      source,
-      targetSource,
-      movementType: 'transfer',
-      comment: '',
-      items: [createInventoryItemFromStockRow(row, 0)],
-    })
-    setInventoryOperationSearch(row.productName || '')
-    const key = row.productId ? `id:${row.productId}` : `name:${normalizeSuggestion(row.productName)}`
-    setInventoryOperationProductKey(key)
-    setInventoryOperationVariant(inventoryOperationVariantFromRow(row))
-    setInventoryOperationActiveVariantId(String(row.variantId || ''))
-    setInventoryExistingVariantOpen(false)
-    setInventoryExistingVariantSearch('')
-    openInventoryPanel('movement')
-    window.requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLInputElement>(`[data-transfer-variant="${row.variantId}"] input[type="number"]`)
-      input?.focus()
-      input?.select()
-    })
-  }
-
-  function removeInventoryVariantOperationItem(variantId: string | number) {
-    const id = String(variantId || '')
-    setInventoryDraft((current) => {
-      const nextItems = current.items.filter((item) => String(item.variantId || '') !== id)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
-    })
-  }
-
-
-
-  async function applyInventoryStocktakeChanges(
-    source: InventorySourceKey,
-    items: InventoryStocktakeApplyItem[],
-    sessionId: string,
-  ): Promise<InventoryStocktakeApplyResult> {
-    const cleanItems = items.filter((item) => item.key && Number.isFinite(item.quantity) && Number.isFinite(item.expectedQuantity))
-    if (!cleanItems.length) {
-      return { ok: true, appliedKeys: [], message: 'Расхождений для применения нет.' }
-    }
-
-    setError(null)
-    setMessage(null)
-    const appliedKeys: string[] = []
-    const chunkSize = 6
-    const reference = `Ревизия ${sourceLabel(source)} · ${sessionId}`
-
-    for (let index = 0; index < cleanItems.length; index += chunkSize) {
-      const chunk = cleanItems.slice(index, index + chunkSize)
-      try {
-        const response = await apiFetch('/api/inventory/movements?returnInventory=0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestId: makeCashRequestId(`stocktake-${sessionId}-${index}`),
-            inventorySource: source,
-            movementType: 'manual_set',
-            comment: reference,
-            items: chunk.map(({ key: _key, ...item }) => item),
-          }),
-        })
-        const result = await readJsonResponse<{ message?: string }>(response, 'Применение ревизии')
-        if (!response.ok) throw new Error(result.message || `Inventory stocktake save failed: ${response.status}`)
-        appliedKeys.push(...chunk.map((item) => item.key))
-      } catch (err) {
-        await Promise.allSettled([
-          loadInventoryData(source, true, '', false),
-        ])
-        const reason = err instanceof Error ? err.message : 'Не удалось применить результаты ревизии.'
-        const message = appliedKeys.length
-          ? `Часть ревизии сохранена (${appliedKeys.length} поз.). Дальше остановлено: ${reason}`
-          : reason
-        setError(message)
-        return { ok: false, appliedKeys, message }
-      }
-    }
-
-    await Promise.all([
-      loadInventoryData(source, true, '', false),
-    ])
-    const message = `Ревизия ${sourceLabel(source)} применена: исправлено ${appliedKeys.length} поз.`
-    setMessage(message)
-    return { ok: true, appliedKeys, message }
-  }
-
-
-  async function saveInventoryMovement() {
-    if (inventoryMovementBusy) return
-    setInventoryMovementBusy(true)
-    setInventoryMovementError('')
-    setError(null)
-    setMessage(null)
-    try {
-      const movementItems = inventoryDraft.movementType === 'arrival'
-        // Existing catalog SKUs are selected by their IDs in the same grid as
-        // correction/writeoff. Only genuinely new combinations use the legacy
-        // creation subform. Both are saved in the same atomic movement request.
-        ? [
-            ...inventoryDraft.items.filter((item) => item.variantId && Number(item.quantity || 0) > 0),
-            ...flattenInventoryArrivalPositions(),
-          ]
-        : inventoryDraft.items
-      const cleanItems = movementItems
-        .filter((item) => (item.variantId || item.productName) && (inventoryDraft.movementType === 'manual_set' ? item.touched : Number(item.quantity || 0) > 0))
-        .map((item) => ({
-          productId: item.productId,
-          variantId: item.variantId,
-          productName: item.productName,
-          category: item.category,
-          gender: item.gender,
-          color: item.color,
-          material: item.material,
-          length: item.length,
-          size: item.size,
-          quantity: Number(item.quantity || 0),
-          expectedQuantity: item.expectedQuantity,
-          observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
-          ...(inventoryDraft.movementType === 'manual_set' && item.createMissingVariant ? {createMissingVariant:true} : {}),
-        }))
-
-      if (!cleanItems.length) {
-        throw new Error('Выберите хотя бы один товар/вариант.')
-      }
-
-      if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer') && cleanItems.some((item) => !item.variantId)) {
-        throw new Error('Для списания и перемещения выберите существующий вариант из остатков выбранной точки.')
-      }
-
-      if (inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'manual_set') {
-        const same = (left: unknown, right: unknown) => normalizeSearchText(left) === normalizeSearchText(right)
-        const invalidItem = cleanItems.find((item) => {
-          // Explicit +size/+color corrections are resolved by the server from
-          // a validated active catalog product+execution, with no manual SKU matching.
-          if (inventoryDraft.movementType === 'manual_set' && !item.variantId && item.createMissingVariant) return false
-          if (inventoryDraft.movementType === 'manual_set' && !item.variantId) return false
-          const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
-          return !row
-            || getInventoryRowCategory(row) !== item.category
-            || !same(row.productName, item.productName)
-            || !same(row.gender, item.gender)
-            || !same(row.color, item.color)
-            || !same(row.material, item.material)
-            || !same(row.length, item.length)
-            || !same(row.size, item.size)
-        })
-        if (invalidItem) {
-          throw new Error('Выбранная комбинация больше не соответствует остаткам источника. Выберите существующий вариант заново.')
-        }
-      }
-
-      const isTransfer = inventoryDraft.movementType === 'transfer'
-      const isWriteoff = inventoryDraft.movementType === 'writeoff'
-      type InventoryMovementSaveResponse = {
-        ok?: boolean
-        message?: string
-        operationId?: string
-        arrivalReceipt?: {
-          verified: boolean
-          source: InventorySourceKey
-          items: Array<{ variantId: number; productName: string; color: string | null; size: string | null; received: number; currentQuantity: number | null }>
-        }
-        externalId?: string
-        warnings?: Array<{ shortageAfter?: number }>
-        code?: string
-        operationType?: string
-        items?: StockResolutionRequiredItemView[]
-        productId?: number | null
-        productName?: string | null
-        retirementId?: number | null
-        variantId?: number | null
-      }
-      type MovementSubmitItem = (typeof cleanItems)[number]
-
-      const submitMovement = async (
-        stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>,
-        itemsOverride: MovementSubmitItem[] = cleanItems,
-      ) => {
-        const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(isTransfer ? {
-            requestId: inventoryTransferRequestId,
-            fromSource: inventoryDraft.source,
-            toSource: inventoryDraft.targetSource,
-            comment: inventoryDraft.comment,
-            items: itemsOverride,
-            stockConfirmations,
-          } : {
-            requestId: inventoryManualRequestId,
-            inventorySource: inventoryDraft.source,
-            movementType: inventoryDraft.movementType,
-            comment: inventoryDraft.comment,
-            items: itemsOverride,
-            stockConfirmations,
-          }),
-        })
-        const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
-        return { response, result }
-      }
-
-      const finishMovement = async (result: InventoryMovementSaveResponse) => {
-        const refreshes: Array<Promise<unknown>> = isTransfer
-          ? [
-              loadInventoryData('warehouse', true, '', false),
-              loadInventoryData('boutique', true, '', false),
-            ]
-          : inventoryDraft.movementType === 'arrival' || (inventoryDraft.movementType === 'manual_set' && cleanItems.some(item=>item.createMissingVariant))
-            ? [
-                loadInventoryData(inventoryDraft.source, true, '', false),
-                loadCatalogData(true),
-              ]
-            : [
-                loadInventoryData(inventoryDraft.source, true, '', false),
-              ]
-        // The mutation is already committed once the POST returned 2xx. Follow-up reads are
-        // best-effort so a refresh failure cannot invite the employee to submit the operation again.
-        const refreshProblems = loadWarehouseAttention(false, true)
-        const refreshResults = await Promise.allSettled(refreshes)
-        await Promise.allSettled([refreshProblems])
-        // Stage 4.6: committed manual operations also refresh the live problem
-        // counts from the server. A follow-up read failure cannot undo the
-        // committed physical operation or invite a duplicate submit.
-        // Exact-count adjustment is a new physical checkpoint. Reload order
-        // handover flags so affected unshipped orders immediately ask whether
-        // the goods were issued before/after this check.
-        if (inventoryDraft.movementType === 'manual_set') void loadDashboard(false)
-        const refreshedInventory = refreshResults[0]?.status === 'fulfilled'
-          ? refreshResults[0].value as InventoryResponse | null
-          : null
-        const refreshedStock = Boolean(refreshedInventory?.ok)
-        const arrivalReceipt = result.arrivalReceipt
-        const verifiedInStockList = Boolean(arrivalReceipt?.verified && refreshedStock
-          && arrivalReceipt.items.every((receiptItem) =>
-            (refreshedInventory?.items || []).some((stockRow) =>
-              Number(stockRow.variantId) === receiptItem.variantId
-              && stockRow.inventorySource === arrivalReceipt.source
-            )))
-        const arrivalLabel = arrivalReceipt?.items?.length
-          ? [...new Set(arrivalReceipt.items.map((item) => item.productName).filter(Boolean))].join(', ')
-          : ''
-        const arrivalVerificationWarning = inventoryDraft.movementType === 'arrival'
-          && !verifiedInStockList
-          ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
-          : ''
-        const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
-        setInventoryMovementError('')
-        setMessage(isTransfer
-          ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
-          : inventoryDraft.movementType === 'arrival'
-            ? `Приход на ${sourceLabel(inventoryDraft.source)} сохранён${result.operationId ? ` · операция ${result.operationId}` : ''}.${arrivalLabel ? ` Учтённый товар: ${arrivalLabel}.` : ''}${arrivalVerificationWarning}`
-            : `${sourceLabel(inventoryDraft.source)} обновлён.`)
-        if (isTransfer) setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
-        else setInventoryManualRequestId(makeCashRequestId('inventory-manual'))
-        setInventoryDraft((current) => ({
-          ...current,
-          comment: '',
-          items: [createEmptyInventoryItem()],
-        }))
-        if (inventoryDraft.movementType === 'arrival') {
-          setInventoryArrivalPositions([createEmptyArrivalPosition()])
-          setInventoryArrivalVariantOpen({})
-        }
-        resetInventoryOperationSelection()
-        setInventoryMatrix(createEmptyInventoryMatrixDraft())
-        setInventoryMatrixColorToAdd('')
-        setInventoryMatrixSizeToAdd('')
-      }
-
-      const isArrivalRecoveryResult = (result: InventoryMovementSaveResponse) => (
-        result.code === 'arrival_retired_product' || result.code === 'arrival_stale_variant'
-      )
-
-      const openArrivalRecovery = async (result: InventoryMovementSaveResponse, retryItems: MovementSubmitItem[]) => {
-        const { openArrivalRecoveryFlow } = await import('./features/inventory/arrivalRecoveryFlow')
-        await openArrivalRecoveryFlow({
-          result,
-          retryItems,
-          apiFetch: (input, init) => apiFetch(input, init),
-          readJsonResponse: (response, label, options) => readJsonResponse(response, label, options),
-          makeRequestId: makeCashRequestId,
-          normalizeText: normalizeSearchText,
-          submitMovement: (items) => submitMovement(undefined, items as MovementSubmitItem[]),
-          onPrompt: setArrivalRecoveryPrompt,
-          onError: setArrivalRecoveryError,
-          onBusy: setInventoryMovementBusy,
-          onContinuation: (continuation) => { arrivalRecoveryContinueRef.current = continuation },
-          onSuccess: async (recoveryResult) => { await finishMovement(recoveryResult as InventoryMovementSaveResponse) },
-        })
-      }
-
-      let { response, result } = await submitMovement()
-      const resolverOperation = isTransfer ? 'transfer' : isWriteoff ? 'writeoff' : ''
-      if (
-        !response.ok
-        && resolverOperation
-        && result.code === 'stock_resolution_required'
-        && result.operationType === resolverOperation
-        && Array.isArray(result.items)
-        && result.items.length
-      ) {
-        const confirmed = await askStockResolution({
-          title: isTransfer ? 'Для перемещения не хватает учтённого остатка' : 'Для списания не хватает учтённого остатка',
-          intro: isTransfer ? 'Подтвердите, что эти вещи действительно сейчас переносятся между точками.' : 'Подтвердите, что эти вещи действительно сейчас физически списываются.',
-          actionLabel: isTransfer ? 'Да, перемещаю' : 'Да, списываю',
-          items: result.items.map((resolutionItem) => ({
-            productName: resolutionItem.productName || 'Товар',
-            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
-            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
-          })),
-          note: 'Подтверждение относится только к этой операции и не заменяет ревизию.',
-        })
-        if (!confirmed) {
-          setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
-          return
-        }
-        const stockConfirmations = result.items.map((resolutionItem) => ({
-          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
-          variantId: Number(resolutionItem.variantId || 0),
-          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
-          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
-        }))
-        ;({ response, result } = await submitMovement(stockConfirmations))
-      }
-
-      if (!response.ok && isArrivalRecoveryResult(result)) {
-        await openArrivalRecovery(result, cleanItems)
-        return
-      }
-      if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
-
-      await finishMovement(result)
-    } catch (err) {
-      // Keep the original draft and review visible so users can inspect the same
-      // variants instead of starting over. A failed response is not proof that
-      // no movement committed; do not generate a fresh request ID here.
-      setInventoryMovementError(err instanceof Error ? err.message : 'Не удалось сохранить складскую операцию. Проверьте историю.')
-    } finally {
-      setInventoryMovementBusy(false)
-    }
-  }
-
   async function saveCatalogProduct() {
     if (!canManageWarehouse) {
       setError('Редактирование каталога товаров доступно только администратору.')
@@ -5687,213 +2797,6 @@ function App() {
     })
     setMessage(isEdit ? 'Вариант обновлён.' : 'Вариант добавлен.')
   }
-
-  function updateEditorDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
-    setEditorDraft((current) => (current ? { ...current, [key]: value } : current))
-  }
-
-  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
-    setEditorDraft((current) => {
-      if (!current) return current
-      const nextItems = current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          if (selectedOrder?.pricing_mode === 'itemized_v1') {
-            nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-            nextItem.priceNeedsConfirmation = false
-          }
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
-        if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
-          nextItem.stockObservationEnabled = false
-          nextItem.observedPhysicalQuantity = null
-          nextItem.shortageAcknowledged = false
-          nextItem.shortageDecision = null
-          nextItem.serverShortage = undefined
-        }
-        if (field === 'quantity') {
-          nextItem.shortageAcknowledged = false
-          nextItem.shortageDecision = null
-          nextItem.serverShortage = undefined
-        }
-        if (field === 'audienceType') {
-          nextItem.audienceType = normalizeAudienceTypeValue(value)
-        }
-        if (field === 'audienceType') {
-          const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
-          if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
-            nextItem.size = ''
-          }
-        }
-        if (selectedOrder?.pricing_mode === 'itemized_v1' && ['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
-          }
-        }
-        return nextItem
-      })
-      return { ...current, items: nextItems }
-    })
-  }
-
-  function updateEditorPayment(index: number, field: keyof EditorPayment, value: string | number) {
-    setEditorDraft((current) => {
-      if (!current) return current
-      const nextPayments = current.payments.map((payment, paymentIndex) => {
-        if (paymentIndex !== index) return payment
-        if (payment.id && payment.paymentKind === 'extra' && field !== 'method') return payment
-        if (!payment.id && field === 'paymentDate' && payment.paymentKind === 'primary') return payment
-        if (field === 'paymentKind') {
-          const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
-          return {
-            ...payment,
-            paymentKind: nextKind,
-            paymentDate: !payment.id && nextKind === 'primary'
-              ? (current.orderDate || payment.paymentDate)
-              : (payment.paymentDate || formatLocalDateInput()),
-          }
-        }
-        return { ...payment, [field]: value }
-      })
-      return { ...current, payments: nextPayments }
-    })
-  }
-
-  function addEditorPayment(paymentKind: 'primary' | 'debt_close') {
-    const draftKey = `editor-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    setEditorDraft((current) => {
-      if (!current) return current
-      const paymentDate = paymentKind === 'primary'
-        ? (current.orderDate || formatLocalDateInput())
-        : formatLocalDateInput()
-      return {
-        ...current,
-        payments: [...current.payments, { ...createEmptyEditorPayment(paymentDate), paymentKind, draftKey }],
-      }
-    })
-  }
-
-  function removeEditorPayment(index: number) {
-    setEditorDraft((current) => {
-      if (!current || current.payments[index]?.id) return current
-      return { ...current, payments: current.payments.filter((_, paymentIndex) => paymentIndex !== index) }
-    })
-  }
-
-  async function saveEditorPayment(index: number) {
-    if (!editorDraft || !selectedOrder || savingOrder) return
-    const payment = editorDraft.payments[index]
-    if (!payment || payment.id) return
-    const paymentKind = payment.paymentKind === 'primary' || payment.paymentKind === 'debt_close'
-      ? payment.paymentKind
-      : null
-    if (!paymentKind) {
-      setError('Для обычного заказа доступны только первичная оплата и закрытие долга. Доплата оформляется только внутри обмена.')
-      return
-    }
-
-    const amount = Number(payment.amount || 0)
-    if (!payment.paymentDate) {
-      setError('Укажите фактическую дату оплаты.')
-      return
-    }
-    if (!String(payment.method || '').trim()) {
-      setError('Выберите способ оплаты.')
-      return
-    }
-    if (!Number.isInteger(amount) || amount <= 0) {
-      setError('Сумма оплаты должна быть целым числом больше нуля.')
-      return
-    }
-
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        orderId: selectedOrder.id,
-        paymentDate: payment.paymentDate,
-        method: payment.method,
-        amount,
-        paymentKind,
-        comment: payment.comment || '',
-      }
-      const criticalKey = `order-editor-payment:${selectedOrder.id}:${payment.draftKey || index}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{
-        ok?: boolean
-        message?: string
-        paymentId?: number | null
-        order?: OrderRecord
-        refreshRequired?: boolean
-      }>(response, 'Добавление оплаты')
-      if (!response.ok || !result.ok) throw new Error(result.message || `Payment save failed: ${response.status}`)
-      const paymentId = Number(result.paymentId || 0)
-      if (!paymentId) {
-        throw new Error('Оплата могла сохраниться, но сервер не вернул её идентификатор. Повторите сохранение этой строки — повтор безопасен.')
-      }
-      completeCriticalRequest(criticalKey, critical.requestId)
-      setEditorDraft((current) => current ? ({
-        ...current,
-        payments: current.payments.map((entry, paymentIndex) => (
-          paymentIndex === index ? { ...entry, id: paymentId, draftKey: undefined } : entry
-        )),
-      }) : current)
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-        setEditorOrderOverride(result.order)
-      } else if (result.refreshRequired) {
-        void loadDashboard(false)
-      }
-      invalidateFinanceReadCaches()
-      setMessage(`Оплата по заказу ${selectedOrder.external_id} проведена отдельно и не переписывает предыдущие оплаты.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить оплату.')
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-  function addEditorItem() {
-  setEditorDraft((current) => {
-    if (!current) return current
-    const nextItem = selectedOrder?.pricing_mode === 'itemized_v1'
-      ? { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing' as const, priceNeedsConfirmation: false }
-      : createEmptyEditorItem()
-    return { ...current, items: [...current.items, nextItem] }
-  })
-}
-
-function removeEditorItem(index: number) {
-  setEditorDraft((current) => {
-    if (!current) return current
-    if (selectedOrder?.pricing_mode === 'itemized_v1' && current.items.length <= 1) return current
-    const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
-    return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
-  })
-}
 
 function updateDebtPayment(index: number, field: keyof EditorPayment, value: string | number) {
   setDebtPayments((current) => current.map((payment, paymentIndex) => (
@@ -6021,520 +2924,9 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function closeOrderEditor() {
-    setEditorOpen(false)
-    setEditorOrderOverride(null)
-    setSelectedOrderId(null)
-    if (editorReturnSector === 'workshop') {
-      setActiveSector('workshop')
-      window.location.hash = '#workshop'
-    } else {
-      setActiveSector('orders')
-      setOrderPanel('list')
-      window.location.hash = '#orders'
-    }
-    setEditorReturnSector('orders')
-  }
-
-  // Narrow metadata correction: only six order details, never items, payments,
-  // prices, shipping state or manager ownership. The Worker performs the
-  // original-value + lifecycle/finance CAS before the actual update.
-  async function correctOrderMetadata(order: OrderRecord, next: {
-    orderDate:string;customerPhone:string;customerName:string;
-    city:string;deliveryType:string;comment:string;
-  }): Promise<boolean> {
-    const expected={
-      orderDate:String(order.order_date||'').trim(),
-      customerPhone:String(order.customer_phone||'').trim(),
-      customerName:String(order.customer_name||'').trim(),
-      city:String(order.city||'').trim(),
-      deliveryType:String(order.delivery_type||'').trim(),
-      comment:String(order.comment||'').trim(),
-    }
-    if(Object.keys(expected).every(key=>
-      expected[key as keyof typeof expected]===next[key as keyof typeof next]))return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const expectedState={
-        totalAmount:Number(order.total_amount||0),
-        receivedAmount:Number(order.received_amount||0),
-        debtAmount:Number(order.debt_amount||0),
-        returnAmount:Number(order.return_amount||0),
-        shippingStatus:String(order.shipping_status||'').trim(),
-        orderStatus:String(order.order_status||'').trim(),
-      }
-      const payload={metadataCorrection:{expected,next,expectedState}}
-      const criticalKey=`order-metadata-correction:${order.id}`
-      const critical=prepareCriticalRequest(criticalKey,payload)
-      const response=await apiFetch(`/api/orders/${order.id}`,{
-        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const data=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
-        response,'Исправление реквизитов заказа')
-      if(!response.ok||data.ok===false)throw new Error(data.message||'Не удалось сохранить реквизиты.')
-      completeCriticalRequest(criticalKey,critical.requestId)
-      if(data.order)upsertOrderInState(data.order)
-      setMessage('Реквизиты заказа обновлены. Оплаты, товары и склад не менялись.')
-      void loadDashboard()
-      return true
-    }catch(error){
-      setError(error instanceof Error?error.message:'Не удалось обновить реквизиты.')
-      return false
-    }finally{
-      setSavingOrder(false)
-    }
-  }
-
-  // A recorded-price typo is NOT a new sale, cash refund, stock edit, or exchange cancellation.
-  // Send the minimal correction payload, never the whole editor draft.
-  async function correctRecordedOrderItemPrice(order: OrderRecord, item: OrderRecord['items'][number], nextUnitPrice: number): Promise<boolean> {
-    if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0 || !item.id) {
-      setError('Укажите корректную цену и выберите существующую позицию заказа.')
-      return false
-    }
-    if (nextUnitPrice === Number(item.unitPrice || 0)) return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        itemPriceCorrections: [{
-          orderItemId: Number(item.id),
-          unitPrice: nextUnitPrice,
-          expectedUnitPrice: Number(item.unitPrice || 0),
-          expectedQuantity: Number(item.quantity || 0),
-          expectedLineTotal: Number(item.lineTotal || 0),
-          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-        }],
-      }
-      const criticalKey = `recorded-price-correction:${order.id}:${item.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; refreshRequired?: boolean }>(
-        response, 'Исправление записанной цены',
-      )
-      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось исправить цену.')
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (data.order) upsertOrderInState(data.order)
-      setMessage(`Цена позиции в заказе ${order.external_id} исправлена. Склад, обмены, возвраты и оплаты не затронуты.`)
-      void loadDashboard()
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось исправить записанную цену.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  // An order with several independent price typos can be corrected in one
-  // atomic server request. Every line carries its original CAS facts; cash,
-  // inventory and linked exchange/return records are never included.
-  async function correctRecordedOrderItemPrices(
-    order: OrderRecord,
-    changes: Array<{item: OrderRecord['items'][number]; unitPrice: number}>,
-  ): Promise<boolean> {
-    if (!changes.length) return true
-    const ids = new Set<number>()
-    if (changes.some(({item, unitPrice}) => {
-      const id = Number(item?.id)
-      if (!Number.isSafeInteger(id) || id <= 0 || ids.has(id)
-        || !Number.isSafeInteger(unitPrice) || unitPrice < 0) return true
-      ids.add(id)
-      return false
-    })) {
-      setError('Выберите существующие позиции и укажите целые цены от 0 ₸ без повторов.')
-      return false
-    }
-    const payload = {
-      itemPriceCorrections: changes.map(({item,unitPrice}) => ({
-        orderItemId: Number(item.id),
-        unitPrice,
-        expectedUnitPrice: Number(item.unitPrice || 0),
-        expectedQuantity: Number(item.quantity || 0),
-        expectedLineTotal: Number(item.lineTotal || 0),
-        expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-      })),
-    }
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    const sortedIds = [...ids].sort((a,b)=>a-b)
-    const criticalKey = `recorded-price-correction-batch:${order.id}:${sortedIds.join('-')}`
-    try {
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(
-        response, 'Исправление записанных цен',
-      )
-      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось сохранить исправления цен.')
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (data.order) upsertOrderInState(data.order)
-      setMessage(`Исправлено позиций: ${changes.length}. Склад, оплаты и обмены не изменены.`)
-      void loadDashboard()
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось исправить записанные цены.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  type RetiredExchangePriceOption = {
-    exchangeId:number;orderItemId:number;productName:string;size:string;color:string;
-    originalUnitPrice:number;currentRecordedUnitPrice:number;
-  }
-
-  async function loadRetiredExchangePriceOptions(order:OrderRecord):Promise<RetiredExchangePriceOption[]> {
-    const response=await apiFetch(`/api/orders/${order.id}/exchange-old-price-candidates`)
-    const data=await readJsonResponse<{ok?:boolean;message?:string;items?:RetiredExchangePriceOption[]}>(
-      response,'Исторические цены обмена')
-    if(!response.ok || data.ok===false) throw new Error(data.message||'Не удалось загрузить старые позиции обмена.')
-    return Array.isArray(data.items)?data.items:[]
-  }
-
-  async function correctRetiredExchangePrice(order:OrderRecord, entry:RetiredExchangePriceOption, next:number):Promise<boolean> {
-    if(!Number.isSafeInteger(next)||next<0) {
-      setError('Укажите целую правильную цену.')
-      return false
-    }
-    if(next===entry.currentRecordedUnitPrice) return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload={orderItemId:entry.orderItemId,expectedUnitPrice:entry.currentRecordedUnitPrice,newUnitPrice:next}
-      const key=`old-exchange-price:${entry.exchangeId}:${entry.orderItemId}`
-      const critical=prepareCriticalRequest(key,payload)
-      const response=await apiFetch(`/api/exchanges/${entry.exchangeId}/old-recorded-price`,{
-        method:'PATCH',
-        headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const result=await readJsonResponse<{ok?:boolean;message?:string}>(
-        response,'Исправление исторической цены обмена')
-      if(!response.ok||result.ok===false) throw new Error(result.message||'Не удалось исправить историческую цену.')
-      completeCriticalRequest(key,critical.requestId)
-      setMessage(`Исправленная цена позиции до обмена сохранена в истории заказа ${order.external_id}. Фактические оплаты и остатки не менялись.`)
-      void loadDashboard()
-      return true
-    } catch(error) {
-      setError(error instanceof Error?error.message:'Не удалось сохранить историческую цену.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  async function loadExchangeCancellationPreview(order:OrderRecord, exchangeId?:number):Promise<{
-    availableExchangeIds:number[];
-    preview:null|{
-      exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
-      manualReviewRequired:boolean;notice:string;
-      steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
-    };
-  }> {
-    const url=`/api/orders/${order.id}/exchange-cancel-chain`
-      + (exchangeId ? `?exchangeId=${encodeURIComponent(exchangeId)}` : '')
-    const response=await apiFetch(url)
-    const data=await readJsonResponse<{
-      ok?:boolean;message?:string;availableExchangeIds?:number[];
-      preview?:{
-        exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
-        manualReviewRequired:boolean;notice:string;
-        steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
-      } | null;
-    }>(response,'Зависимости обменов')
-    if(!response.ok || data.ok===false)throw new Error(data.message||'Не удалось проверить цепочку обменов.')
-    return {availableExchangeIds:Array.isArray(data.availableExchangeIds)?data.availableExchangeIds:[],
-      preview:data.preview??null}
-  }
-
-
-  type OrderExchangeCancelStep = {
-    type:'exchange'|'return';id:number;reason:string;requiresManualReview:boolean;order:number;
-  }
-  type OrderExchangeCancelPlan = {
-    mode:'last'|'all';availableExchangeIds:number[];selectedExchangeIds:number[];
-    steps:OrderExchangeCancelStep[];signature:string;canExecute:boolean;
-    manualReviewRequired:boolean;notice:string;
-  }
-
-  // Preview only. Compose the existing, server-proven per-exchange dependency
-  // graphs. Never include an independent Return that is not actually downstream
-  // of an exchange. Each real cancellation revalidates its own money/stock CAS.
-  async function loadOrderExchangeCancellationPlan(
-    order:OrderRecord,mode:'last'|'all',
-  ):Promise<OrderExchangeCancelPlan>{
-    const discovery=await loadExchangeCancellationPreview(order)
-    const available=discovery.availableExchangeIds
-    const selected=mode==='last' ? available.slice(-1) : [...available]
-    if(!selected.length)return {mode,availableExchangeIds:[],selectedExchangeIds:[],
-      steps:[],signature:'',canExecute:false,manualReviewRequired:false,
-      notice:'У заказа нет активных обменов.'}
-    // A bounded bulk action is easier to inspect and safer to resume.
-    if(selected.length>20)throw new Error('Более 20 обменов. Массовую отмену нужно проверить отдельно.')
-    const previews=await Promise.all(selected.map(async(id)=>{
-      const result=await loadExchangeCancellationPreview(order,id)
-      if(result.availableExchangeIds.join(',')!==available.join(',')
-        ||!result.preview||result.preview.exchangeId!==id)
-        throw new Error('История обменов изменилась. Откройте проверку заново.')
-      return result.preview
-    }))
-    const nodes=new Map<string,OrderExchangeCancelStep>()
-    const edges=new Map<string,Set<string>>()
-    let manual=false
-    for(const preview of previews){
-      manual ||=preview.manualReviewRequired
-      for(let i=0;i<preview.steps.length;i++){
-        const step=preview.steps[i]
-        const key=step.type+':'+step.id
-        if(step.id<=0||!['exchange','return'].includes(step.type))
-          throw new Error('Неоднозначная зависимость обмена: автоматическая отмена остановлена.')
-        if(!nodes.has(key))nodes.set(key,{...step})
-        if(!edges.has(key))edges.set(key,new Set())
-        if(i>0){
-          const prior=preview.steps[i-1]
-          const before=prior.type+':'+prior.id
-          if(!edges.has(before))edges.set(before,new Set())
-          edges.get(before)!.add(key)
-        }
-      }
-    }
-    // Merge dependency plans by a topological ordering rather than guessing
-    // that numeric exchange IDs always express the complete causal graph.
-    const indegree=new Map<string,number>([...nodes.keys()].map(key=>[key,0]))
-    for(const children of edges.values())
-      for(const child of children)indegree.set(child,(indegree.get(child)||0)+1)
-    const compare=(a:string,b:string)=>{
-      const ra=a.startsWith('return:'),rb=b.startsWith('return:')
-      return ra===rb ? Number(b.split(':')[1])-Number(a.split(':')[1]) : ra?-1:1
-    }
-    const ready=[...indegree].filter(([,count])=>count===0).map(([key])=>key).sort(compare)
-    const ordered:OrderExchangeCancelStep[]=[]
-    while(ready.length){
-      const key=ready.shift()!
-      ordered.push({...nodes.get(key)!,order:ordered.length+1})
-      for(const child of edges.get(key)||[]){
-        const next=(indegree.get(child)||0)-1
-        indegree.set(child,next)
-        if(next===0)ready.push(child)
-      }
-      ready.sort(compare)
-    }
-    if(ordered.length!==nodes.size||selected.some(id=>!nodes.has('exchange:'+id)))
-      throw new Error('Цепочка содержит цикл или отсутствующую операцию. Автоматическая отмена остановлена.')
-    manual ||=ordered.some(step=>step.requiresManualReview)
-    const signature=JSON.stringify({mode,selected,steps:ordered.map(step=>[step.type,step.id])})
-    return {mode,availableExchangeIds:available,selectedExchangeIds:selected,
-      steps:ordered,signature,manualReviewRequired:manual,canExecute:!manual,
-      notice:manual
-        ? 'В цепочке есть старый обмен или неоднозначные данные. Автоматическая отмена заблокирована.'
-        : ordered.some(step=>step.type==='return')
-          ? 'В цепочке есть зависимые возвраты. Они перечислены ниже и будут отменены до связанных обменов.'
-          : 'Каждая операция повторно проверит финансы, склад и историю перед отменой.'}
-  }
-
-  async function cancelOrderExchangeChain(
-    order:OrderRecord,expected:OrderExchangeCancelPlan,
-    onProgress?:(done:number,total:number)=>void,
-  ):Promise<void>{
-    // Never use a stale preview as authorization. Reconstruct the dependency
-    // graph immediately before writes; the existing endpoints enforce CAS again.
-    const current=await loadOrderExchangeCancellationPlan(order,expected.mode)
-    if(!current.canExecute||!current.steps.length||current.signature!==expected.signature)
-      throw new Error('История обменов изменилась или есть небезопасная операция. Обновите предпросмотр.')
-    let completed=0
-    setSavingOrder(true)
-    setError(null)
-    try{
-      for(const step of current.steps){
-        const key='exchange-chain-cancel:'+order.id+':'+step.type+':'+step.id
-        const payload={comment:'Аннулирование '+(expected.mode==='all'?'всех обменов':'последнего обмена')
-          +' из заказа '+order.external_id}
-        const critical=prepareCriticalRequest(key,payload)
-        const url=step.type==='exchange'
-          ? '/api/exchanges/'+step.id+'/cancel'
-          : '/api/returns/'+step.id+'/cancel'
-        const response=await apiFetch(url,{
-          method:'PATCH',headers:{'Content-Type':'application/json',
-            'X-Idempotency-Key':critical.requestId},
-          body:JSON.stringify(critical.payload),
-        })
-        const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
-          response,'Отмена '+(step.type==='exchange'?'обмена':'возврата')+' #'+step.id)
-        if(!response.ok||result.ok===false)
-          throw new Error('Шаг '+(completed+1)+'/'+current.steps.length+': '
-            +(result.message||'Не удалось отменить операцию #'+step.id)
-            +'. Уже завершённые шаги сохраняются. Повторите оставшуюся цепочку.')
-        completeCriticalRequest(key,critical.requestId)
-        if(result.order)upsertOrderInState(result.order)
-        completed++
-        onProgress?.(completed,current.steps.length)
-      }
-      setMessage('Обмены по заказу '+order.external_id
-        +' отменены. Исходные записи сохранились в истории.')
-    }finally{
-      setSavingOrder(false)
-      invalidateInventoryStockCaches(true)
-      invalidateFinanceReadCaches()
-      await Promise.allSettled([
-        loadExchangeHistory(),loadReturnHistory(),loadDashboard(false),
-        loadWorkshopData(),refreshFinanceReportsIfVisible(),
-        loadInventoryLifecycle(true),
-      ])
-    }
-  }
-
-
-  type ReturnCancelChoice={
-    id:number;date:string;amount:number;method:string;itemQuantity:number;
-    parentExchangeId:number|null;
-  }
-  async function loadOrderReturnCancellationChoices(order:OrderRecord):Promise<ReturnCancelChoice[]>{
-    const response=await apiFetch('/api/orders/'+order.id+'/return-cancel-choices')
-    const data=await readJsonResponse<{ok?:boolean;message?:string;choices?:ReturnCancelChoice[]}>(
-      response,'Возвраты по заказу')
-    if(!response.ok||data.ok===false)throw new Error(data.message||'Не удалось загрузить возвраты.')
-    return Array.isArray(data.choices)?data.choices:[]
-  }
-
-  async function cancelOrderReturnChoice(
-    order:OrderRecord,selected:ReturnCancelChoice,
-  ):Promise<void>{
-    // No stale selection can be used as authority. A separate Exchange-owned
-    // refund must NEVER be cancelled independently.
-    const current=await loadOrderReturnCancellationChoices(order)
-    const actual=current.find(x=>x.id===selected.id)
-    if(!actual||actual.parentExchangeId
-      ||actual.amount!==selected.amount
-      ||actual.itemQuantity!==selected.itemQuantity
-      ||actual.date!==selected.date)
-      throw new Error('Возврат изменился или связан с обменом. Откройте его заново.')
-    const payload={comment:'Аннулирование самостоятельного возврата по заказу '+order.external_id}
-    const criticalKey='order-return-cancel:'+order.id+':'+selected.id
-    const critical=prepareCriticalRequest(criticalKey,payload)
-    setSavingOrder(true)
-    setError(null)
-    try{
-      const response=await apiFetch('/api/returns/'+selected.id+'/cancel',{
-        method:'PATCH',headers:{'Content-Type':'application/json',
-          'X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
-        response,'Отмена возврата #'+selected.id)
-      if(!response.ok||result.ok===false)
-        throw new Error(result.message||'Не удалось отменить возврат #'+selected.id)
-      completeCriticalRequest(criticalKey,critical.requestId)
-      if(result.order)upsertOrderInState(result.order)
-      setMessage('Возврат #'+selected.id+' по заказу '+order.external_id+
-        ' аннулирован. Складская и финансовая история сохранена.')
-    }finally{
-      setSavingOrder(false)
-      invalidateInventoryStockCaches(true)
-      invalidateFinanceReadCaches()
-      await Promise.allSettled([
-        loadReturnHistory(),loadDashboard(false),loadWorkshopData(),
-        refreshFinanceReportsIfVisible(),loadInventoryLifecycle(true),
-      ])
-    }
-  }
-
   // Admin correction of a recorded payment method, including an exchange-
   // linked extra payment. This is not a second payment and does not submit the
   // item/payment editor draft or rewrite the order after a completed exchange.
-  async function correctRecordedPaymentMethod(
-    order:OrderRecord,payment:OrderRecord['payments'][number],nextMethod:string,
-  ):Promise<{ok:boolean;message:string}>{
-    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет только администратор.'}
-    const method=String(nextMethod||'').trim()
-    if(!method)return {ok:false,message:'Выберите способ оплаты.'}
-    if(!Number.isSafeInteger(Number(payment.id))||Number(payment.id)<=0)
-      return {ok:false,message:'Не удалось определить запись оплаты. Обновите заказ.'}
-    if(method.toUpperCase()===String(payment.method||'').trim().toUpperCase())
-      return {ok:true,message:'Способ оплаты не изменился.'}
-    const payload={paymentCorrections:[{
-      paymentId:Number(payment.id),method,
-      expectedPaymentDate:String(payment.paymentDate||''),
-      expectedMethod:String(payment.method||''),
-      expectedAmount:Number(payment.amount||0),
-      expectedPaymentKind:String(payment.paymentKind||'primary'),
-      expectedComment:String(payment.comment||''),
-    }]}
-    const key='order-admin-payment-method:'+order.id+':'+payment.id
-    setSavingOrder(true);setError(null);setMessage(null)
-    try{
-      const critical=prepareCriticalRequest(key,payload)
-      const response=await apiFetch('/api/orders/'+order.id,{
-        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord;refreshRequired?:boolean}>(
-        response,'Исправление способа оплаты')
-      if(!response.ok||result.ok===false)throw new Error(result.message||'Не удалось исправить способ оплаты.')
-      completeCriticalRequest(key,critical.requestId)
-      if(result.order)upsertOrderInState(result.order)
-      else if(result.refreshRequired)void loadDashboard(false)
-      invalidateFinanceReadCaches()
-      void Promise.allSettled([refreshFinanceReportsIfVisible(),loadDashboard(false)])
-      const message='Способ оплаты #'+payment.id+' исправлен. Сумма, заказ, товары и склад не менялись.'
-      setMessage(message)
-      return {ok:true,message}
-    }catch(error){
-      const message=error instanceof Error?error.message:'Не удалось изменить способ оплаты.'
-      setError(message)
-      return {ok:false,message}
-    }finally{setSavingOrder(false)}
-  }
-
-  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
-    const projection = await getOrderOperationalProjection(order)
-    if (!projection.canEdit) {
-      setSelectedOrderId(order.id)
-      setEditorOpen(false)
-      setMessage(projection.hasCommittedDownstreamOperation
-        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
-        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
-      return
-    }
-    setEditorReturnSector(returnSector)
-    setEditorOrderOverride(order)
-    setSelectedOrderId(order.id)
-    setEditorDraft(createEditorDraft(order))
-    setActiveSector('orders')
-    setOrderPanel('edit')
-    setEditorOpen(true)
-    window.location.hash = '#editor'
-    if (order.pricing_mode === 'itemized_v1') {
-      void Promise.all([
-        loadCatalogData(true),
-        // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
-        // instead of issuing a second forced Warehouse + Boutique read for the same transition.
-        loadInventoryData('warehouse', false, '', false),
-        loadInventoryData('boutique', false, '', false),
-      ]).catch((err) => {
-        setError(err instanceof Error ? err.message : 'Не удалось обновить Каталог или остатки. Сервер всё равно перепроверит данные при сохранении.')
-      })
-    }
-  }
-
   function upsertOrderInState(nextOrder: OrderRecord) {
     setOrders((current) => {
       const exists = current.some((order) => order.id === nextOrder.id)
@@ -6547,340 +2939,6 @@ function removeDebtPayment(index: number) {
       })
     })
   }
-
-  async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
-    if (!isAdmin) {
-      setError('Полный редактор доступен только администратору. Используйте отдельные исправления цены и реквизитов.')
-      return null
-    }
-    const order = targetOrder || selectedOrder
-    if (!order) return
-    const isItemizedEdit = order.pricing_mode === 'itemized_v1'
-    const normalizedEditorText = (value: unknown) => normalizeSuggestion(String(value ?? ''))
-    const originalItemsById = new Map(order.items.map((item) => [Number(item.id || 0), item]))
-    const isItemizedContentRewrite = isItemizedEdit && (
-      nextDraft.items.length !== order.items.length
-      || nextDraft.items.some((item) => {
-        const original = originalItemsById.get(Number(item.orderItemId || 0))
-        if (!original) return true
-        const originalSource = original.isWorkshop ? 'workshop' : (original.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        const nextSource = item.sourceType === 'workshop' ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        return normalizedEditorText(item.productName) !== normalizedEditorText(original.productName)
-          || normalizeAudienceTypeValue(item.audienceType) !== normalizeAudienceTypeValue(original.audienceType)
-          || normalizedEditorText(item.gender) !== normalizedEditorText(original.gender)
-          || normalizedEditorText(item.color) !== normalizedEditorText(original.color)
-          || normalizedEditorText(item.material || 'СТАНДАРТ') !== normalizedEditorText(original.material || 'СТАНДАРТ')
-          || normalizedEditorText(item.length || 'СТАНДАРТ') !== normalizedEditorText(original.length || 'СТАНДАРТ')
-          || normalizedEditorText(item.size) !== normalizedEditorText(original.size)
-          || Number(item.quantity || 0) !== Number(original.quantity || 0)
-          || nextSource !== originalSource
-          || String(item.workshopComment || '').trim() !== String(original.workshopComment || '').trim()
-          || Boolean(item.workshopUrgent) !== Boolean(original.workshopUrgent)
-          || String(item.workshopUrgent ? (item.workshopDueDate || '') : '') !== String(original.workshopUrgent ? (original.workshopDueDate || '') : '')
-          || String(item.workshopUrgent ? (item.workshopDueTime || '') : '') !== String(original.workshopUrgent ? (original.workshopDueTime || '') : '')
-      })
-    )
-    const projection = await getOrderOperationalProjection(order)
-    if (!projection.canEdit) {
-      setMessage(projection.hasCommittedDownstreamOperation
-        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
-        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
-      return
-    }
-
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-
-    try {
-      const itemPriceCorrections: Array<{
-        orderItemId: number
-        unitPrice: number
-        expectedUnitPrice: number
-        expectedQuantity: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      if (isItemizedEdit && !isItemizedContentRewrite) {
-        for (const item of nextDraft.items) {
-          const orderItemId = Number(item.orderItemId || 0)
-          if (!orderItemId) throw new Error('Не удалось определить позицию заказа для исправления цены. Обновите заказ и повторите.')
-          const original = order.items.find((entry) => Number(entry.id || 0) === orderItemId)
-          if (!original) throw new Error('Одна из позиций заказа уже изменилась. Обновите заказ и повторите исправление.')
-          const nextUnitPrice = Number(item.unitPrice)
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new Error(`Укажите целую цену от 0 для «${item.productName || 'позиции'}».`)
-          }
-          const originalUnitPrice = Number(original.unitPrice || 0)
-          if (nextUnitPrice === originalUnitPrice) continue
-          itemPriceCorrections.push({
-            orderItemId,
-            unitPrice: nextUnitPrice,
-            expectedUnitPrice: originalUnitPrice,
-            expectedQuantity: Number(original.quantity || 0),
-            expectedLineTotal: Number(original.lineTotal || 0),
-            expectedCatalogPriceSnapshot: original.catalogPriceSnapshot ?? null,
-          })
-        }
-      }
-
-      const paymentCorrections: Array<{
-        paymentId: number
-        paymentDate: string
-        method: string
-        amount: number
-        paymentKind: string
-        comment: string
-        expectedPaymentDate: string
-        expectedMethod: string
-        expectedAmount: number
-        expectedPaymentKind: string
-        expectedComment: string
-      }> = []
-      for (const payment of nextDraft.payments) {
-        const paymentId = Number(payment.id || 0)
-        if (!paymentId) continue
-        const original = order.payments.find((entry) => Number(entry.id || 0) === paymentId)
-        if (!original) throw new Error('Одна из оплат уже изменилась. Обновите заказ и повторите исправление.')
-        const nextPaymentDate = String(payment.paymentDate || '').trim()
-        const nextMethod = String(payment.method || '').trim()
-        const nextAmount = Number(payment.amount || 0)
-        const nextPaymentKind = String(payment.paymentKind || 'primary').trim()
-        const nextComment = String(payment.comment || '').trim()
-        const oldPaymentDate = String(original.paymentDate || '').trim()
-        const oldMethod = String(original.method || '').trim()
-        const oldAmount = Number(original.amount || 0)
-        const oldPaymentKind = String(original.paymentKind || 'primary').trim()
-        const oldComment = String(original.comment || '').trim()
-        const changed = nextPaymentDate !== oldPaymentDate
-          || nextMethod.toUpperCase() !== oldMethod.toUpperCase()
-          || nextAmount !== oldAmount
-          || nextPaymentKind !== oldPaymentKind
-          || nextComment !== oldComment
-        if (!changed) continue
-        paymentCorrections.push({
-          paymentId,
-          paymentDate: nextPaymentDate,
-          method: nextMethod,
-          amount: nextAmount,
-          paymentKind: nextPaymentKind,
-          comment: nextComment,
-          expectedPaymentDate: oldPaymentDate,
-          expectedMethod: oldMethod,
-          expectedAmount: oldAmount,
-          expectedPaymentKind: oldPaymentKind,
-          expectedComment: oldComment,
-        })
-      }
-
-      let itemContentReplacement: {
-        expectedItems: Array<Record<string, unknown>>
-        items: Array<Record<string, unknown>>
-      } | null = null
-      if (isItemizedContentRewrite) {
-        const pricingReadiness = evaluateItemizedCreatePricing(nextDraft.items, nextDraft.payments.filter((payment) => Boolean(payment.id)))
-        if (pricingReadiness.status !== 'ready') {
-          const blocker = pricingReadiness.blockers[0]
-          const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-          if (blocker?.code === 'empty_items') throw new Error('В заказе должна остаться хотя бы одна позиция.')
-          if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-          if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-          if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-          if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-          if (blocker?.code === 'overpayment') throw new Error(`После изменения состава итог заказа (${pricingReadiness.totalAmount ?? 0}) меньше уже проведённых оплат (${pricingReadiness.receivedAmount}). Исправьте состав или цены.`)
-          throw new Error('Проверьте состав и цены позиций перед сохранением.')
-        }
-
-        itemContentReplacement = {
-          expectedItems: order.items.map((item) => ({
-            orderItemId: Number(item.id || 0),
-            productName: item.productName,
-            audienceType: item.audienceType && normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: Number(item.unitPrice || 0),
-            lineTotal: Number(item.lineTotal || 0),
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopDueDate || null,
-            workshopDueTime: item.workshopDueTime || null,
-          })),
-          items: nextDraft.items.map((item) => ({
-            orderItemId: Number(item.orderItemId || 0) || undefined,
-            productName: item.productName,
-            audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.sourceType || 'warehouse',
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
-            workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-          })),
-        }
-      }
-
-      const payload = isItemizedContentRewrite ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemContentReplacement,
-      } : isItemizedEdit ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemPriceCorrections,
-      } : {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
-        sourceType: deriveOrderSourceType(nextDraft.items),
-        orderTotal: nextDraft.orderTotal ? Number(nextDraft.orderTotal) : undefined,
-        workshopStatus: nextDraft.workshopStatus,
-        orderStatus: nextDraft.orderStatus,
-        comment: nextDraft.comment,
-        items: nextDraft.items.map((item) => ({
-          productName: item.productName,
-          audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-          gender: item.gender,
-          color: item.color,
-          material: item.material,
-          length: item.length,
-          size: item.size,
-          quantity: item.quantity,
-          unitPrice: Number(item.unitPrice || 0),
-          sourceType: item.sourceType,
-          workshopComment: item.workshopComment,
-          workshopUrgent: Boolean(item.workshopUrgent),
-          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
-          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-        })),
-        paymentCorrections,
-      }
-
-      const criticalKey = `order-edit:${order.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-
-      type EditOrderShortage = {
-        inputIndexes?: number[]
-        physicalQuantity?: number
-        reservedQuantity?: number
-        requestedQuantity?: number
-        shortage?: number
-        inventorySource?: 'warehouse' | 'boutique'
-        variantId?: number
-      }
-      type OrderStockWriteResult = {
-        productName?: string
-        concurrentShortage?: boolean
-        pendingShortage?: boolean
-        shortageAfter?: number
-      }
-      const result = await readJsonResponse<{
-        message?: string
-        order?: OrderRecord
-        refreshRequired?: boolean
-        code?: string
-        shortages?: EditOrderShortage[]
-        stockWriteOff?: OrderStockWriteResult[]
-      }>(response, 'Сохранение заказа', { allowHttpError: true })
-      if (!response.ok) {
-        throw new Error(result.message || `Save failed: ${response.status}`)
-      }
-      // A 2xx response means the server-side critical operation is durably complete. Clear the
-      // browser retry token before readback-driven UI work, including the common result.order path.
-      completeCriticalRequest(criticalKey, critical.requestId)
-
-      const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
-      const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
-      const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
-      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
-      invalidateFinanceReadCaches()
-      // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
-      if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
-      if (pendingReservations.length) {
-        setMessage(`Заказ ${order.external_id} обновлён, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки.`)
-      } else if (concurrentShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
-      } else if (postSaveShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
-      } else {
-        setMessage(isItemizedEdit
-          ? `Заказ ${order.external_id} обновлён.`
-          : `Заказ ${order.external_id} обновлён.`)
-      }
-      if (result?.order) {
-        const savedOrder = result.order as OrderRecord
-        upsertOrderInState(savedOrder)
-        void loadWorkshopData()
-        setSelectedOrderId(savedOrder.id)
-        setEditorOrderOverride(savedOrder)
-        const savedDraft = createEditorDraft(savedOrder)
-        setEditorDraft(pendingEditorPayments.length ? { ...savedDraft, payments: [...savedDraft.payments, ...pendingEditorPayments] } : savedDraft)
-        if (pendingEditorPayments.length) {
-          setEditorOpen(true)
-          setMessage(`Заказ ${order.external_id} обновлён. Новые оплаты ещё не проведены — сохраните каждую новой кнопкой «Провести оплату».`)
-        } else {
-          closeOrderEditor()
-        }
-        if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
-        return savedOrder
-      }
-      if (pendingEditorPayments.length) {
-        setEditorOpen(true)
-        setMessage(`Заказ ${order.external_id} сохранён. Новые оплаты ещё не проведены — сохраните каждую отдельно.`)
-      } else {
-        closeOrderEditor()
-      }
-      if (result.refreshRequired || !result.order) {
-        void loadDashboard(false)
-        void loadWorkshopData()
-      }
-      return null
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      return null
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
 
   async function loadArchivePreview() {
     if (!isAdmin) {
@@ -6919,7 +2977,7 @@ function removeDebtPayment(index: number) {
       setMessage('Сначала сделайте предпросмотр. Подходящих заказов пока нет.')
       return
     }
-    const confirmed = await askActionConfirmation(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
+    const confirmed = window.confirm(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
     if (!confirmed) return
 
     setArchiveBusy(true)
@@ -6958,7 +3016,7 @@ function removeDebtPayment(index: number) {
       return
     }
     if (!isArchivedOrderRecord(order)) return
-    const confirmed = await askActionConfirmation(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
+    const confirmed = window.confirm(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
     if (!confirmed) return
     setSavingOrder(true)
     setError(null)
@@ -6989,313 +3047,6 @@ function removeDebtPayment(index: number) {
       setSavingOrder(false)
     }
   }
-
-  async function openOrderStockHandover(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
-      setMessage('Архивный заказ доступен только для просмотра.')
-      return
-    }
-    setStockHandoverOrder(order)
-    setStockHandoverData(null)
-    setStockHandoverBusy(true)
-    setStockHandoverActionItemId(null)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/orders/${order.id}/stock-handover`)
-      const result = await readJsonResponse<OrderStockHandoverResponse>(response, 'Товары со склада')
-      if (!response.ok || !result.ok) throw new Error(result.message || `Stock handover failed: ${response.status}`)
-      setStockHandoverData(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось открыть товары со склада.')
-      setStockHandoverOrder(null)
-      setStockHandoverData(null)
-    } finally {
-      setStockHandoverBusy(false)
-    }
-  }
-
-  async function openOrderStockHandoverById(orderId: number, externalId = '') {
-    const id = Number(orderId || 0)
-    if (!id) return
-    const known = orders.find((order) => Number(order.id) === id)
-    if (known) {
-      await openOrderStockHandover(known)
-      return
-    }
-    const placeholder = {
-      id,
-      external_id: externalId || `#${id}`,
-      order_status: 'active',
-      shipping_status: 'not_sent',
-    } as OrderRecord
-    await openOrderStockHandover(placeholder)
-  }
-
-  function closeOrderStockHandover() {
-    if (stockHandoverActionItemId !== null) return
-    setStockHandoverOrder(null)
-    setStockHandoverData(null)
-    setStockHandoverBusy(false)
-    setStockHandoverActionItemId(null)
-  }
-
-  async function runOrderStockHandoverAction(item: OrderStockHandoverItemView, action: 'issue_now' | 'issued_before_checkpoint' | 'still_here') {
-    if (!stockHandoverOrder) return
-    const checkpointDate = handoverCheckpointDateLabel(item.checkpointAt)
-    const sourceName = handoverSourceLabel(item.source)
-    let confirmText = ''
-    if (action === 'issue_now') {
-      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nСистема зафиксирует выдачу ${item.quantity} шт. и обновит остаток. Если по учёту товара окажется меньше, система отдельно попросит подтвердить только выдаваемые вещи. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
-    } else if (action === 'issued_before_checkpoint') {
-      confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЕсли да, физический остаток не изменится и повторного списания не будет.`
-    } else {
-      confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} «${item.productName}» ещё находился в точке?\n\nЕсли да, резерв останется и товар спишется только при фактической выдаче.`
-    }
-    if (!await askActionConfirmation(confirmText)) return
-
-    setStockHandoverActionItemId(item.orderItemId)
-    setError(null)
-    setMessage(null)
-    try {
-      const submitHandoverAction = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
-        const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action,
-            orderItemId: item.orderItemId,
-            checkpointId: item.checkpointId || undefined,
-            checkpointAt: item.checkpointAt || undefined,
-            stockConfirmations,
-          }),
-        })
-        const result = await readJsonResponse<OrderStockHandoverActionResponse>(response, 'Товары со склада', { allowHttpError: true })
-        return { response, result }
-      }
-
-      let { response, result } = await submitHandoverAction()
-      if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
-        const resolutionItems = result.items as StockResolutionRequiredItemView[]
-        const confirmed = await askStockResolution({
-          title: 'Товара по учёту меньше, чем нужно для выдачи',
-          intro: 'Перед продолжением подтвердите фактическую ситуацию с этими вещами.',
-          actionLabel: 'Да, выдаю клиенту',
-          items: resolutionItems.map((resolutionItem) => ({
-            productName: resolutionItem.productName || item.productName,
-            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
-            needed: Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1)),
-          })),
-          note: 'Подтверждение относится только к этой выдаче. Общий остаток товара этим не пересчитывается.',
-        })
-        if (!confirmed) {
-          setMessage('Выдача остановлена. Остатки не изменялись.')
-          return
-        }
-        const stockConfirmations = resolutionItems.map((resolutionItem) => ({
-          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
-          variantId: Number(resolutionItem.variantId || 0),
-          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
-          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
-        }))
-        ;({ response, result } = await submitHandoverAction(stockConfirmations))
-      }
-
-      if (!response.ok || !result.ok) throw new Error(result.message || `Stock handover failed: ${response.status}`)
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-        setStockHandoverOrder(result.order)
-      }
-      if (result.state) setStockHandoverData(result.state)
-      if (result.refreshRequired) {
-        if (!result.state) {
-          try {
-            const refresh = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`)
-            const refreshed = await readJsonResponse<OrderStockHandoverResponse>(refresh, 'Обновление товаров со склада')
-            if (refresh.ok && refreshed.ok) setStockHandoverData(refreshed)
-          } catch {
-            // The committed action remains successful; the modal can be reopened to refresh later.
-          }
-        }
-        if (!result.order) void loadDashboard(false)
-      }
-      invalidateInventoryStockCaches(true)
-      if (action === 'issue_now') {
-        setMessage(`«${item.productName}» выдан клиенту. При окончательной отправке заказа этот товар второй раз не спишется.`)
-      } else if (action === 'issued_before_checkpoint') {
-        setMessage(`«${item.productName}»: подтверждено, что товар уже был у клиента. Остаток не изменён, повторного списания не будет.`)
-      } else {
-        setMessage(`«${item.productName}»: подтверждено, что во время ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} товар ещё находился у вас.`)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить действие с товаром.')
-      try {
-        const refresh = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`)
-        const refreshed = await readJsonResponse<OrderStockHandoverResponse>(refresh, 'Обновление товаров со склада')
-        if (refresh.ok && refreshed.ok) setStockHandoverData(refreshed)
-      } catch {
-        // Keep the current modal open; the user can close and reopen it safely.
-      }
-    } finally {
-      setStockHandoverActionItemId(null)
-    }
-  }
-
-  async function markExchangeReplacementSent(order: OrderRecord, item: OrderRecord['items'][number]) {
-    const eventId = Number(item.pendingExchangeDispatchId || 0)
-    if (!eventId || savingOrder) return
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const key = `exchange-dispatch:${eventId}`
-      const critical = prepareCriticalRequest(key, { eventId })
-      const response = await apiFetch(`/api/exchanges/pending-dispatch/${eventId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(
-        response, 'Отправка замены', { allowHttpError: true })
-      if (!response.ok || !result.ok) throw new Error(result.message || 'Не удалось отметить отправку замены.')
-      completeCriticalRequest(key, critical.requestId)
-      if (result.order) upsertOrderInState(result.order)
-      await Promise.allSettled([
-        loadDashboard(false),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      setMessage(`Замена «${item.productName}» по заказу ${order.external_id} отмечена отправленной.`)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось отметить отправку замены.')
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-  async function markOrderSentToClient(order: OrderRecord): Promise<boolean> {
-    const projection = await getOrderOperationalProjection(order)
-    if (!projection.canShip) {
-      setMessage(projection.workshopPending
-        ? 'Отправить весь заказ можно после готовности позиций Цеха.'
-        : projection.hasCommittedItemReturn
-          ? 'Отправка недоступна: по текущему товару уже проведён возврат. Сначала исправьте сам возврат.'
-          : 'Этот заказ сейчас нельзя отметить как отправленный.')
-      return false
-    }
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const today = formatLocalDateInput()
-      const submitShipping = async () => {
-        // The explicit «Отправлен» action is the entire outgoing authorization.
-        // Do not prompt twice for the same known-SKU shortage.
-        const shippingPayload = { shippingStatus: 'sent', shippingDate: today }
-        const criticalKey = `order-shipping:${order.id}`
-        const critical = prepareCriticalRequest(criticalKey, shippingPayload)
-        const response = await apiFetch(`/api/orders/${order.id}/shipping`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
-        if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
-        return { response, result }
-      }
-      let { response, result } = await submitShipping()
-      if (!response.ok && (result.code === 'workshop_not_ready' || result.code === 'stock_handover_review_required')) {
-        setMessage(result.message || 'Перед отправкой проверьте товары со склада.')
-        await openOrderStockHandover(order)
-        return false
-      }
-      if (!response.ok && result.code === 'catalog_review_required') {
-        setOrderCatalogResolutionOrder(order)
-        setMessage(result.message || 'Перед отправкой нужно уточнить складской товар. Окно уточнения открыто прямо в заказах.')
-        return false
-      }
-      if (!response.ok) {
-        throw new Error(result.message || `Shipping failed: ${response.status}`)
-      }
-      if (result?.order) {
-        upsertOrderInState(result.order as OrderRecord)
-        void loadWorkshopData()
-        setSelectedOrderId(result.order.id)
-      }
-      if (result.refreshRequired || !result.order) {
-        void loadDashboard(false)
-        void loadWorkshopData()
-      }
-      // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
-      invalidateInventoryStockCaches(true)
-      invalidateFinanceReadCaches()
-      // Read the persisted shortage evidence on the Orders page immediately
-      // after successful shipping; manager does not need to visit Warehouse.
-      void loadWarehouseAttention(false, true)
-      setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  async function correctMistakenOrderShipping(order: OrderRecord) {
-    const projection = await getOrderOperationalProjection(order)
-    if (savingOrder || !projection.canCorrectShipping) return
-    const confirmed = await askActionConfirmation(
-      projection.hasCommittedItemReturn
-        ? `Исправить последнюю отправку ${order.external_id}? Ранние выдачи и уже оформленный возврат останутся без изменений. Подтверждайте, только если последняя отправка фактически не происходила.`
-        : `Снять отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтвердите только если товар фактически НЕ передавался клиенту. Это исправление ошибочной выдачи, а не возврат от клиента. Если клиент действительно получил товар, оформляйте «Возврат».\n\nВ резерв вернутся ранее списанные позиции. Физический остаток увеличится только на реально списанное количество и только если после отправки не было более свежей физической проверки. Обмены сохраняются.`
-    )
-    if (!confirmed) return
-
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = { physicalOutcome: 'not_issued' as const }
-      const criticalKey = `order-handover-correction:${order.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}/shipping/correct`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{
-        ok?: boolean
-        message?: string
-        order?: OrderRecord
-        refreshRequired?: boolean
-        alreadyCorrected?: boolean
-        restoredPhysicalQuantity?: number
-        freshnessProtectedQuantity?: number
-        reactivatedReservations?: number
-        exchangeCurrentTruth?: boolean
-        reopenedExchangeItems?: number
-        protectedExchangePhysicalTruth?: number
-      }>(response, 'Снятие ошибочной отметки отправки')
-      if (!response.ok) throw new Error(result.message || 'Не удалось снять ошибочную отметку «Отправлен».')
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (result.order) upsertOrderInState(result.order)
-      invalidateInventoryStockCaches(true)
-      setMessage(result.alreadyCorrected
-        ? `Заказ ${order.external_id} уже отмечен как «Не отправлен».`
-        : result.exchangeCurrentTruth
-          ? `Заказ ${order.external_id} снова «Не отправлен». Обмен сохранён.`
-          : `Заказ ${order.external_id} снова «Не отправлен». Физический остаток восстановлен на ${Number(result.restoredPhysicalQuantity || 0)} шт.; не прибавляли после более свежей проверки: ${Number(result.freshnessProtectedQuantity || 0)} шт.; восстановлено резервных позиций: ${Number(result.reactivatedReservations || 0)}.`)
-      void loadWarehouseAttention(false, true)
-      void loadDashboard()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось снять ошибочную отметку «Отправлен».')
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
 
   async function loadAdminOrderDeletePreview(order: OrderRecord) {
     const [response,chainResponse]=await Promise.all([
@@ -7554,921 +3305,6 @@ function removeDebtPayment(index: number) {
     }
   }
 
-  async function saveReturn() {
-    if (!returnSelectedOrder) {
-      setError('Сначала выберите заказ для возврата.')
-      return
-    }
-
-    const amount = Math.max(0, Number(returnDraft.amount || 0))
-    const availableAmount = Math.max(
-      0,
-      Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
-    )
-
-    const selectedUnissuedItem = returnDraft.items.find((item) =>
-      Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0 && !item.issuedToClient
-    )
-    if (selectedUnissuedItem) {
-      setError(`«${selectedUnissuedItem.productName}» не выдавали клиенту. Не оформляйте её как физический возврат: сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0.`)
-      return
-    }
-
-    const selectedReturnItems = returnDraft.items
-      .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
-      .map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-        restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
-        physicalState: item.physicalState,
-      }))
-
-    if (amount <= 0 && selectedReturnItems.length === 0) {
-      setError('Для возврата без денег выберите хотя бы один возвращаемый товар.')
-      return
-    }
-    if (amount > availableAmount) {
-      setError(`Сумма возврата ${formatMoney(amount)} больше доступной суммы ${formatMoney(availableAmount)}.`)
-      return
-    }
-    if (amount > 0 && !returnDraft.paymentMethod.trim()) {
-      setError('Выберите способ возврата денег. Это нужно для правильного учёта наличных и финансов.')
-      return
-    }
-
-    const extraReturnAmount = Number(returnDraft.extraRefundAmount || 0)
-    if (amount > 0 && returnDraft.extraRefundEnabled && (
-      !Number.isSafeInteger(extraReturnAmount)
-      || extraReturnAmount <= 0 || extraReturnAmount >= amount
-      || !returnDraft.extraRefundMethod.trim()
-      || returnDraft.extraRefundMethod.trim().toUpperCase() === returnDraft.paymentMethod.trim().toUpperCase()
-    )) {
-      setError('Для второго способа возврата выберите другой способ и сумму от 1 ₸ до суммы возврата без 1 ₸.')
-      return
-    }
-    const returnPaymentParts = amount > 0
-      ? returnDraft.extraRefundEnabled
-        ? [
-            { method: returnDraft.paymentMethod, amount: amount - extraReturnAmount },
-            { method: returnDraft.extraRefundMethod, amount: extraReturnAmount },
-          ]
-        : [{ method: returnDraft.paymentMethod, amount }]
-      : []
-
-    const selectedQuantity = selectedReturnItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-    const returnKind = amount > 0 && selectedQuantity > 0
-      ? 'ВОЗВРАТ ТОВАРОВ И ДЕНЕГ'
-      : amount > 0
-        ? 'ВОЗВРАТ ТОЛЬКО ДЕНЕГ'
-        : 'ВОЗВРАТ ТОЛЬКО ТОВАРОВ'
-    const pendingQuantity = selectedReturnItems
-      .filter((item) => item.physicalState === 'pending')
-      .reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-    const receivedQuantity = selectedQuantity - pendingQuantity
-    if (!await askActionConfirmation(
-      `Подтвердите операцию по заказу ${returnSelectedOrder.external_id}:\n\n`
-      + `${returnKind}\n`
-      + `Деньги: ${formatMoney(amount)} ₸\n`
-      + `Товары: ${selectedQuantity} шт.\n`
-      + `Ещё едут обратно: ${pendingQuantity} шт.\n`
-      + `Физически получены: ${receivedQuantity} шт.\n\n`
-      + (selectedQuantity === 0
-        ? 'ВНИМАНИЕ: ни один товар не выбран. Складские остатки не увеличатся.\n\n'
-        : '')
-      + 'Проверьте, что товары и деньги указаны по факту. Сохранить возврат?'
-    )) return
-
-    setReturnBusy(true)
-    setError(null)
-    setMessage(null)
-
-    try {
-      const payload = {
-        orderId: returnSelectedOrder.id,
-        returnDate: returnDraft.returnDate,
-        amount,
-        paymentMethod: returnDraft.paymentMethod,
-        paymentParts: returnPaymentParts,
-        comment: returnDraft.comment,
-        restockSource: returnDraft.restockSource,
-        items: selectedReturnItems,
-      }
-      const criticalKey = `return-create:${returnSelectedOrder.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/returns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; pendingInventoryCount?: number }>(response, 'Возврат')
-      if (!response.ok) {
-        throw new Error(result.message || `Return failed: ${response.status}`)
-      }
-      // The return is already durably completed on the server. Clear its retry token before any
-      // secondary refresh so a read failure cannot make the UI treat a committed return as unsaved.
-      completeCriticalRequest(criticalKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-      }
-      setReturnSelectedOrderId(null)
-      setReturnDraft(createReturnDraft())
-      setOrderPanel('list')
-
-      await Promise.allSettled([
-        loadReturnHistory(),
-        refreshActivityLogIfVisible(),
-        refreshFinanceReportsIfVisible(),
-        loadDashboard(false),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-      ])
-      const pendingInventoryCount = Math.max(0, Number(result.pendingInventoryCount || 0))
-      setMessage(pendingInventoryCount > 0
-        ? `Возврат по заказу ${returnSelectedOrder.external_id} сохранён. ${pendingInventoryCount} физ. позици${pendingInventoryCount === 1 ? 'я ожидает' : 'и ожидают'} подтверждения администратора; остаток по ним пока не изменён.`
-        : `Возврат по заказу ${returnSelectedOrder.external_id} сохранён.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setReturnBusy(false)
-    }
-  }
-
-  async function saveExchange() {
-    if (!exchangeSelectedOrder) {
-      setError('Сначала выберите заказ для обмена.')
-      return
-    }
-
-    const itemizedExchange = exchangeSelectedOrder.pricing_mode === 'itemized_v1'
-
-    if (itemizedExchange && exchangeDraft.workflowMode === 'set_v2') {
-      const selectedOld = (exchangeDraft.oldSelections || []).filter((entry) => Number(entry.orderItemId || 0) > 0 && Number(entry.quantity || 0) > 0)
-      const selectedNew = (exchangeDraft.newItems || []).filter((entry) => String(entry.item?.productName || '').trim())
-
-      if (!selectedOld.length) {
-        setError('Выберите хотя бы один товар, который клиент меняет.')
-        return
-      }
-      if (!selectedNew.length) {
-        setError('Добавьте хотя бы один товар, который клиент получает.')
-        return
-      }
-
-      const oldPayload: Array<{
-        orderItemId: number
-        quantity: number
-        physicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-        expectedActiveQuantity: number
-        expectedUnitPrice: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      let removedValue = 0
-      for (const [index, selected] of selectedOld.entries()) {
-        const item = exchangeSelectedOrder.items.find((candidate) => Number(candidate.id || 0) === Number(selected.orderItemId || 0))
-        if (!item) {
-          setError(`Возвращаемая позиция ${index + 1} больше не найдена в заказе. Обновите заказ.`)
-          return
-        }
-        const available = Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0))
-        const quantity = Math.max(1, Number(selected.quantity || 1))
-        const unitPrice = Number(item.unitPrice)
-        const lineTotal = Number(item.lineTotal)
-        if (quantity > available) {
-          setError(`Для «${item.productName}» доступно ${available} шт., выбрано ${quantity}.`)
-          return
-        }
-        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 || !Number.isSafeInteger(lineTotal) || lineTotal !== Number(item.quantity || 0) * unitPrice) {
-          setError(`У «${item.productName}» устарели ценовые данные. Обновите заказ и откройте обмен заново.`)
-          return
-        }
-        removedValue += quantity * unitPrice
-        oldPayload.push({
-          orderItemId: Number(item.id || 0),
-          quantity,
-          physicalState: selected.physicalState,
-          expectedActiveQuantity: Number(item.quantity || 0),
-          expectedUnitPrice: unitPrice,
-          expectedLineTotal: lineTotal,
-          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot == null ? null : Number(item.catalogPriceSnapshot),
-        })
-      }
-
-      const newPayload: EditorItem[] = []
-      let addedValue = 0
-      for (const [index, entry] of selectedNew.entries()) {
-        const item = entry.item
-        const quantity = Math.max(1, Number(item.quantity || 1))
-        const unitPrice = item.unitPrice == null ? Number.NaN : Number(item.unitPrice)
-        const catalogSnapshot = item.catalogPriceSnapshot == null ? null : Number(item.catalogPriceSnapshot)
-        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) {
-          setError(`Новая позиция ${index + 1}: укажите цену продажи.`)
-          return
-        }
-        if (catalogSnapshot !== null && (!Number.isSafeInteger(catalogSnapshot) || catalogSnapshot < 0)) {
-          setError(`Новая позиция ${index + 1}: цена Каталога изменилась. Выберите товар заново.`)
-          return
-        }
-        if (item.sourceType !== 'workshop' && item.shipmentState !== 'sent' && item.shipmentState !== 'pending') {
-          setError(`Новая позиция ${index + 1}: укажите, отправили ли товар клиенту.`)
-          return
-        }
-        addedValue += quantity * unitPrice
-        newPayload.push({
-          ...item,
-          observedPhysicalQuantity: null,
-          quantity,
-          unitPrice,
-          catalogPriceSnapshot: catalogSnapshot,
-        })
-      }
-
-      const currentNetPaid = Math.max(0, Number(exchangeSelectedOrder.received_amount || 0) - Number(exchangeSelectedOrder.return_amount || 0))
-      const projectedTotal = Number(exchangeSelectedOrder.total_amount || 0) - removedValue + addedValue
-      if (!Number.isSafeInteger(projectedTotal) || projectedTotal < 0) {
-        setError('Не удалось безопасно рассчитать новый итог заказа.')
-        return
-      }
-      const dueBeforeSettlement = Math.max(0, projectedTotal - currentNetPaid)
-      const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
-      const paymentAmount = Math.max(0, Math.trunc(Number(exchangeDraft.paymentAmount || 0)))
-      if (refundAmount > 0 && paymentAmount > 0) {
-        setError('После пересчёта клиенту нужно вернуть деньги. Уберите оплату сейчас.')
-        return
-      }
-      if (paymentAmount > dueBeforeSettlement) {
-        setError(`Оплата сейчас больше долга после обмена: ${formatMoney(dueBeforeSettlement)}.`)
-        return
-      }
-      if (paymentAmount > 0 && !exchangeDraft.paymentMethod.trim()) {
-        setError('Выберите способ оплаты денег, полученных сейчас.')
-        return
-      }
-      if (refundAmount > 0 && !exchangeDraft.refundMethod.trim()) {
-        setError(`Нужно вернуть клиенту ${formatMoney(refundAmount)}. Выберите способ возврата денег.`)
-        return
-      }
-
-      const extraPaymentAmount = Number(exchangeDraft.extraPaymentAmount || 0)
-      const extraRefundAmount = Number(exchangeDraft.extraRefundAmount || 0)
-      if (paymentAmount > 0 && exchangeDraft.extraPaymentEnabled && (
-        !Number.isSafeInteger(extraPaymentAmount) || extraPaymentAmount <= 0 || extraPaymentAmount >= paymentAmount
-        || !exchangeDraft.extraPaymentMethod.trim()
-        || exchangeDraft.extraPaymentMethod.trim().toUpperCase() === exchangeDraft.paymentMethod.trim().toUpperCase()
-      )) {
-        setError('Для второго способа доплаты укажите другой способ и сумму меньше получаемой доплаты.')
-        return
-      }
-      if (refundAmount > 0 && exchangeDraft.extraRefundEnabled && (
-        !Number.isSafeInteger(extraRefundAmount) || extraRefundAmount <= 0 || extraRefundAmount >= refundAmount
-        || !exchangeDraft.extraRefundMethod.trim()
-        || exchangeDraft.extraRefundMethod.trim().toUpperCase() === exchangeDraft.refundMethod.trim().toUpperCase()
-      )) {
-        setError('Для второго способа возврата укажите другой способ и сумму меньше возвращаемой.')
-        return
-      }
-      const paymentParts = paymentAmount > 0
-        ? exchangeDraft.extraPaymentEnabled
-          ? [
-              { method: exchangeDraft.paymentMethod, amount: paymentAmount - extraPaymentAmount },
-              { method: exchangeDraft.extraPaymentMethod, amount: extraPaymentAmount },
-            ]
-          : [{ method: exchangeDraft.paymentMethod, amount: paymentAmount }]
-        : []
-      const refundParts = refundAmount > 0
-        ? exchangeDraft.extraRefundEnabled
-          ? [
-              { method: exchangeDraft.refundMethod, amount: refundAmount - extraRefundAmount },
-              { method: exchangeDraft.extraRefundMethod, amount: extraRefundAmount },
-            ]
-          : [{ method: exchangeDraft.refundMethod, amount: refundAmount }]
-        : []
-
-      setExchangeBusy(true)
-      setError(null)
-      setMessage(null)
-      try {
-        const payload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          expectedOrderTotal: Number(exchangeSelectedOrder.total_amount || 0),
-          oldItems: oldPayload,
-          newItems: newPayload.map((item) => ({
-            ...item, observedPhysicalQuantity: null, issuePossessionConfirmed: item.stockObservationEnabled === true,
-          })),
-          paymentAmount,
-          paymentMethod: exchangeDraft.paymentMethod,
-          refundMethod: exchangeDraft.refundMethod,
-          paymentParts,
-          refundParts,
-          comment: exchangeDraft.comment,
-        }
-        const criticalKey = `exchange-set-create:${exchangeSelectedOrder.id}`
-        const critical = prepareCriticalRequest(criticalKey, payload)
-        const response = await apiFetch('/api/exchanges/set', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{
-          ok?: boolean
-          message?: string
-          order?: OrderRecord
-          oldItemCount?: number
-          newItemCount?: number
-          finalTotalAmount?: number
-          paymentAmount?: number
-          refundAmount?: number
-          remainingDebt?: number
-          pendingInventoryCount?: number
-          workshopCount?: number
-        }>(response, 'Обмен')
-        if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
-        completeCriticalRequest(criticalKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-
-        if (result.order) upsertOrderInState(result.order)
-        setExchangeSelectedOrderId(null)
-        setExchangeDraft(createExchangeDraft())
-        setOrderPanel('list')
-        await Promise.allSettled([
-          loadExchangeHistory(),
-          refreshActivityLogIfVisible(),
-          refreshFinanceReportsIfVisible(),
-          loadDashboard(false),
-          Number(result.workshopCount || 0) > 0 ? loadWorkshopData() : Promise.resolve(null),
-          loadInventoryData('warehouse', true, '', false),
-          loadInventoryData('boutique', true, '', false),
-          isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        ])
-
-        const moneyText = Number(result.refundAmount || 0) > 0
-          ? ` Возвращено клиенту: ${formatMoney(Number(result.refundAmount || 0))}.`
-          : Number(result.paymentAmount || 0) > 0
-            ? ` Получено сейчас: ${formatMoney(Number(result.paymentAmount || 0))}.`
-            : ''
-        const debtText = Number(result.remainingDebt || 0) > 0
-          ? ` Остаток долга: ${formatMoney(Number(result.remainingDebt || 0))}.`
-          : ' Долга после обмена нет.'
-        setMessage(`Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: убрано ${result.oldItemCount || oldPayload.length} поз., добавлено ${result.newItemCount || newPayload.length} поз. Новый итог: ${formatMoney(Number(result.finalTotalAmount ?? projectedTotal))}.${moneyText}${debtText}`)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось сохранить обмен.')
-      } finally {
-        setExchangeBusy(false)
-      }
-      return
-    }
-
-    const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
-    const queuedPairs = exchangeDraft.queuedPairs || []
-    const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
-    const visibleCurrentOldItem = requestedCurrentOldItem || exchangeableOldItems[0] || null
-    const currentPair = String(exchangeDraft.newItem.productName || '').trim() && visibleCurrentOldItem ? {
-      draftKey: exchangeDraft.currentPairKey,
-      oldItemId: Number(visibleCurrentOldItem.id || 0),
-      oldQuantity: Math.max(1, Number(exchangeDraft.oldQuantity || 1)),
-      oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
-      oldPhysicalState: exchangeDraft.oldPhysicalState,
-      newItem: exchangeDraft.newItem,
-      newSourceWasManuallyChanged: exchangeDraft.newSourceWasManuallyChanged,
-      saved: false,
-    } : null
-    const pairDrafts = [...queuedPairs, ...(currentPair ? [currentPair] : [])]
-    if (!pairDrafts.length) {
-      setError(exchangeableOldItems.length ? 'Добавьте хотя бы одну позицию обмена.' : 'В заказе не осталось доступных позиций для обмена.')
-      return
-    }
-    if (exchangeDraft.financialAction !== 'none' && Number(exchangeDraft.financialAmount || 0) <= 0) {
-      setError('Укажите сумму доплаты или возврата больше нуля.')
-      return
-    }
-    if (exchangeDraft.financialAction !== 'none' && !exchangeDraft.paymentMethod.trim()) {
-      setError(exchangeDraft.financialAction === 'refund' ? 'Выберите способ возврата денег.' : 'Выберите способ оплаты для доплаты.')
-      return
-    }
-
-    const unsavedPairs: Array<{
-      index: number
-      draftKey: string
-      isQueued: boolean
-      selectedOldItem: OrderRecord['items'][number]
-      oldQuantity: number
-      oldReturnSource: 'none' | 'warehouse' | 'boutique'
-      oldPhysicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-      effectiveNewItem: EditorItem
-      newSourceWasManuallyChanged: boolean
-    }> = []
-    const requestedByOldItem = new Map<number, number>()
-
-    for (let index = 0; index < pairDrafts.length; index += 1) {
-      const pair = pairDrafts[index]
-      if (pair.saved) continue
-      const selectedOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(pair.oldItemId || 0)) || null
-      if (!selectedOldItem) {
-        setError(`Позиция обмена ${index + 1}: старая вещь уже недоступна. Уберите эту строку и выберите актуальную позицию.`)
-        return
-      }
-      const oldQuantity = Math.max(1, Number(pair.oldQuantity || 1))
-      const oldItemId = Number(selectedOldItem.id || 0)
-      const accumulated = (requestedByOldItem.get(oldItemId) || 0) + oldQuantity
-      requestedByOldItem.set(oldItemId, accumulated)
-      const availableOldQuantity = Math.max(0, Number(selectedOldItem.availableOperationQuantity ?? selectedOldItem.quantity ?? 0))
-      if (accumulated > availableOldQuantity) {
-        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${availableOldQuantity} шт.`)
-        return
-      }
-      if (!String(pair.newItem?.productName || '').trim()) {
-        setError(`Позиция обмена ${index + 1}: заполните новый товар.`)
-        return
-      }
-
-      const inheritedReplacementSource = selectedOldItem.sourceType === 'workshop'
-        ? 'workshop'
-        : selectedOldItem.sourceType === 'boutique'
-          ? 'boutique'
-          : 'warehouse'
-      const effectiveNewItem = pair.newSourceWasManuallyChanged
-        ? pair.newItem
-        : { ...pair.newItem, sourceType: inheritedReplacementSource as EditorItem['sourceType'] }
-      if (itemizedExchange) {
-        const oldActiveQuantity = Number(selectedOldItem.quantity)
-        const oldUnitPrice = Number(selectedOldItem.unitPrice)
-        const oldLineTotal = Number(selectedOldItem.lineTotal)
-        const oldCatalogSnapshot = selectedOldItem.catalogPriceSnapshot == null ? null : Number(selectedOldItem.catalogPriceSnapshot)
-        const newUnitPrice = effectiveNewItem.unitPrice == null ? Number.NaN : Number(effectiveNewItem.unitPrice)
-        const newCatalogSnapshot = effectiveNewItem.catalogPriceSnapshot == null ? null : Number(effectiveNewItem.catalogPriceSnapshot)
-        if (!Number.isSafeInteger(oldActiveQuantity) || oldActiveQuantity <= 0
-          || !Number.isSafeInteger(oldUnitPrice) || oldUnitPrice < 0
-          || !Number.isSafeInteger(oldLineTotal) || oldLineTotal !== oldActiveQuantity * oldUnitPrice
-          || (oldCatalogSnapshot !== null && (!Number.isSafeInteger(oldCatalogSnapshot) || oldCatalogSnapshot < 0))) {
-          setError(`Позиция обмена ${index + 1}: ценовые данные старой позиции устарели или повреждены. Обновите заказ и откройте обмен заново.`)
-          return
-        }
-        if (!Number.isSafeInteger(newUnitPrice) || newUnitPrice < 0) {
-          setError(`Позиция обмена ${index + 1}: укажите фактическую цену продажи новой позиции.`)
-          return
-        }
-        if (newCatalogSnapshot !== null && (!Number.isSafeInteger(newCatalogSnapshot) || newCatalogSnapshot < 0)) {
-          setError(`Позиция обмена ${index + 1}: снимок цены Каталога некорректен. Обновите товар в форме обмена.`)
-          return
-        }
-      }
-      const exchangeRequiredQuantity = Math.max(1, Number(effectiveNewItem.quantity || 1))
-      const exchangeAvailability = effectiveNewItem.sourceType === 'workshop'
-        ? null
-        : getOrderSourceAvailability(effectiveNewItem, exchangeRequiredQuantity)
-      const needsPhysicalConfirmation = Boolean(exchangeAvailability?.canObservePhysical && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity)
-      if (effectiveNewItem.shipmentState === 'sent' && needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
-        setError(`Позиция обмена ${index + 1}: по учёту товара недостаточно. Подтвердите только наличие конкретных вещей для выдачи — общий остаток изменять не нужно.`)
-        return
-      }
-
-      unsavedPairs.push({
-        index,
-        draftKey: pair.draftKey || `pair-${index + 1}`,
-        isQueued: index < queuedPairs.length,
-        selectedOldItem,
-        oldQuantity,
-        oldReturnSource: pair.oldPhysicalState === 'warehouse' || pair.oldPhysicalState === 'boutique' ? pair.oldPhysicalState : 'none',
-        oldPhysicalState: pair.oldPhysicalState,
-        effectiveNewItem: { ...effectiveNewItem, observedPhysicalQuantity: null },
-        newSourceWasManuallyChanged: Boolean(pair.newSourceWasManuallyChanged),
-      })
-    }
-
-    if (!unsavedPairs.length) {
-      setError('Все позиции этого обмена уже были сохранены. Обновите историю обменов.')
-      return
-    }
-
-    setExchangeBusy(true)
-    setError(null)
-    setMessage(null)
-    let savedThisAttempt = 0
-    const savedBefore = pairDrafts.filter((pair) => pair.saved).length
-    let lastOrder: OrderRecord | null = null
-    let pendingInventoryCount = 0
-    let exchangeTouchesWorkshop = false
-
-    try {
-      if (itemizedExchange && unsavedPairs.length > 1) {
-        const batchPayload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-          pairs: unsavedPairs.map((pair) => ({
-            oldItemId: Number(pair.selectedOldItem.id || 0),
-            oldQuantity: pair.oldQuantity,
-            oldReturnSource: pair.oldReturnSource,
-            oldPhysicalState: pair.oldPhysicalState,
-            newItem: {
-              ...pair.effectiveNewItem,
-              issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
-              unitPrice: Number(pair.effectiveNewItem.unitPrice),
-              catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-            },
-            newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          })),
-          financialAction: exchangeDraft.financialAction,
-          financialAmount: exchangeDraft.financialAmount,
-          paymentMethod: exchangeDraft.paymentMethod,
-          comment: exchangeDraft.comment,
-        }
-        const batchKey = `exchange-batch-create:${exchangeSelectedOrder.id}:${unsavedPairs.map((pair) => pair.draftKey).join('.')}`
-        const critical = prepareCriticalRequest(batchKey, batchPayload)
-        const response = await apiFetch('/api/exchanges/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{
-          ok?: boolean
-          message?: string
-          order?: OrderRecord
-          exchangeIds?: number[]
-          exchangeCount?: number
-          pendingInventoryCount?: number
-          workshopCount?: number
-          finalTotalAmount?: number
-        }>(response, 'Обмен · несколько позиций')
-        if (!response.ok) throw new Error(result.message || `Exchange batch failed: ${response.status}`)
-        completeCriticalRequest(batchKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-
-        if (result.order) {
-          upsertOrderInState(result.order)
-          setSelectedOrderId(result.order.id)
-        }
-        const totalPairCount = Math.max(unsavedPairs.length, Number(result.exchangeCount || 0))
-        pendingInventoryCount = Math.max(0, Number(result.pendingInventoryCount || 0))
-        exchangeTouchesWorkshop = unsavedPairs.some((pair) => pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop')
-        setExchangeSelectedOrderId(null)
-        setExchangeDraft(createExchangeDraft())
-        await Promise.allSettled([
-          loadExchangeHistory(),
-          refreshActivityLogIfVisible(),
-          refreshFinanceReportsIfVisible(),
-          loadDashboard(false),
-          exchangeTouchesWorkshop ? loadWorkshopData() : Promise.resolve(null),
-          loadInventoryData('warehouse', true, '', false),
-          loadInventoryData('boutique', true, '', false),
-          isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        ])
-        setMessage(pendingInventoryCount > 0
-          ? `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз. ${pendingInventoryCount} складск${pendingInventoryCount === 1 ? 'ое движение ожидает' : 'их движения ожидают'} подтверждения администратора.`
-          : `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз.`)
-        return
-      }
-
-      for (const pair of unsavedPairs) {
-        const isFinalPair = pair.index === pairDrafts.length - 1
-        const payload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          oldItemId: Number(pair.selectedOldItem.id || 0),
-          oldQuantity: pair.oldQuantity,
-          oldReturnSource: pair.oldReturnSource,
-          oldPhysicalState: pair.oldPhysicalState,
-          newItem: itemizedExchange ? {
-            ...pair.effectiveNewItem,
-            issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
-            unitPrice: Number(pair.effectiveNewItem.unitPrice),
-            catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-          } : { ...pair.effectiveNewItem, issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true },
-          newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-          ...(itemizedExchange ? {
-            expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          } : {}),
-          // One visit has one money difference. Put it only on the final child exchange,
-          // so debt/top-up/refund can never be counted once per selected product.
-          financialAction: isFinalPair ? exchangeDraft.financialAction : 'none',
-          financialAmount: isFinalPair ? exchangeDraft.financialAmount : 0,
-          paymentMethod: isFinalPair ? exchangeDraft.paymentMethod : '',
-          comment: exchangeDraft.comment,
-        }
-        const criticalKey = `exchange-create:${exchangeSelectedOrder.id}:${pair.draftKey}`
-        const critical = prepareCriticalRequest(criticalKey, payload)
-        const response = await apiFetch('/api/exchanges', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; exchangeId?: number; pendingInventoryCount?: number }>(response, `Обмен · позиция ${pair.index + 1}`)
-        if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
-        completeCriticalRequest(criticalKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-        savedThisAttempt += 1
-        pendingInventoryCount += Math.max(0, Number(result.pendingInventoryCount || 0))
-        exchangeTouchesWorkshop = exchangeTouchesWorkshop || pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop'
-        if (result.order) {
-          lastOrder = result.order
-          upsertOrderInState(result.order)
-          setSelectedOrderId(result.order.id)
-        }
-        if (pair.isQueued) {
-          setExchangeDraft((current) => ({
-            ...current,
-            queuedPairs: (current.queuedPairs || []).map((queued) => queued.draftKey === pair.draftKey ? { ...queued, saved: true } : queued),
-          }))
-        }
-      }
-
-      if (lastOrder) upsertOrderInState(lastOrder)
-      const totalPairCount = pairDrafts.length
-      setExchangeSelectedOrderId(null)
-      setExchangeDraft(createExchangeDraft())
-      await Promise.allSettled([
-        loadExchangeHistory(),
-        refreshActivityLogIfVisible(),
-        refreshFinanceReportsIfVisible(),
-        loadDashboard(false),
-        exchangeTouchesWorkshop ? loadWorkshopData() : Promise.resolve(null),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-      ])
-      setMessage(pendingInventoryCount > 0
-        ? `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз. ${pendingInventoryCount} складск${pendingInventoryCount === 1 ? 'ое движение ожидает' : 'их движения ожидают'} подтверждения администратора.`
-        : `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз.`)
-    } catch (err) {
-      const savedCount = savedBefore + savedThisAttempt
-      const details = err instanceof Error ? err.message : 'Неизвестная ошибка'
-      setError(savedCount > 0
-        ? `Сохранено ${savedCount} из ${pairDrafts.length} позиций обмена. Уже сохранённые строки отмечены и повторно не создадутся. Остальные не завершены: ${details}`
-        : details)
-    } finally {
-      setExchangeBusy(false)
-    }
-  }
-
-
-  async function receiveReturnedItemAction(input: {
-    operationType: 'return' | 'exchange'
-    operationId: number
-    operationItemId: number
-    destination: 'warehouse' | 'boutique' | 'no_stock'
-    productName: string
-    externalId: string
-    freshnessDecision?: 'already_counted' | 'arrived_after_check'
-    deferRefresh?: boolean
-  }) {
-    const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
-    const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
-    setBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      let freshnessDecision = input.freshnessDecision
-      let result: {
-        ok?: boolean
-        code?: string
-        message?: string
-        productName?: string
-        quantity?: number
-        latestCheck?: { id?: number; checkedAt?: string; expectedQuantity?: number; countedQuantity?: number } | null
-        pendingInventoryCount?: number
-        pendingInventory?: { eventId?: number; reason?: string; productName?: string } | null
-        stockApplied?: boolean
-        stockAlreadyApplied?: boolean
-        freshnessProtected?: boolean
-      } = {}
-
-      while (true) {
-        const payload = {
-          operationType: input.operationType,
-          operationId: input.operationId,
-          operationItemId: input.operationItemId,
-          destination: input.destination,
-          ...(freshnessDecision ? { freshnessDecision } : {}),
-        }
-        const criticalKey = `returned-item-receive:${input.operationType}:${input.operationId}:${input.operationItemId}:${input.destination}:${freshnessDecision || 'preflight'}`
-        const critical = prepareCriticalRequest(criticalKey, payload)
-        const response = await apiFetch('/api/returned-items/receive', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        result = await readJsonResponse<typeof result>(response, 'Получение возвращённого товара')
-
-        if (result.code === 'intake_freshness_confirmation_required' && !freshnessDecision) {
-          completeCriticalRequest(criticalKey, critical.requestId)
-          const check = result.latestCheck
-          const alreadyCounted = await askStockResolution({
-            title: 'После оформления возврата товар уже пересчитывали',
-            intro: `Последняя физическая сверка этой позиции была ${check?.checkedAt ? formatDateShort(check.checkedAt) : 'после оформления возврата'}. Нужно понять, вошла ли возвращённая вещь в тот пересчёт.`,
-            question: 'Эта возвращённая вещь уже была включена в последнюю сверку?',
-            actionLabel: 'Да, уже учтена',
-            cancelLabel: 'Нет, приехала позже',
-            trackedLabel: 'В последней сверке',
-            neededLabel: 'Сейчас принимаем',
-            items: [{
-              productName: result.productName || input.productName,
-              tracked: Math.max(0, Number(check?.countedQuantity || 0)),
-              needed: Math.max(1, Number(result.quantity || 1)),
-            }],
-            note: 'Если вещь уже была в пересчёте, система не прибавит её второй раз. Если она приехала позже — добавит как новое физическое поступление.',
-          })
-          freshnessDecision = alreadyCounted ? 'already_counted' : 'arrived_after_check'
-          continue
-        }
-
-        if (!response.ok || result.ok === false) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
-        completeCriticalRequest(criticalKey, critical.requestId)
-        break
-      }
-
-      invalidateInventoryStockCaches(true)
-      if (!input.deferRefresh) {
-        await Promise.allSettled([
-          input.operationType === 'return' ? loadReturnHistory() : loadExchangeHistory(),
-          refreshActivityLogIfVisible(),
-          loadInventoryData('warehouse', true, '', false),
-          loadInventoryData('boutique', true, '', false),
-          isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        ])
-      }
-      if (input.destination === 'no_stock') {
-        setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
-      } else if (result.freshnessProtected) {
-        setMessage(`«${input.productName}» отмечен как полученный. Повторно в ${destinationLabel} не добавляли: вы подтвердили, что вещь уже была учтена в более свежей сверке.`)
-      } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        const eventId = Number(result.pendingInventory?.eventId || 0)
-        if (eventId) setReturnedItemResolutionEventId(eventId)
-        setMessage(eventId
-          ? `«${input.productName}» получен. Открылось уточнение товара — после подтверждения он сразу попадёт в выбранный остаток.`
-          : `«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
-      } else {
-        setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
-      }
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось отметить товар полученным.')
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function cancelReturnEntry(entry: ReturnHistoryEntry) {
-    if (!await askActionConfirmation(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
-    setReturnBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = { comment: 'Отменено из интерфейса Cloudflare' }
-      const criticalKey = `return-cancel:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/returns/${entry.id}/cancel`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена возврата')
-      if (!response.ok) throw new Error(result.message || `Cancel return failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setReturnSelectedOrderId(result.order.id)
-        setReturnDraft(createReturnDraft(result.order))
-      }
-      await Promise.allSettled([
-        loadReturnHistory(),
-        refreshActivityLogIfVisible(),
-        refreshFinanceReportsIfVisible(),
-        loadDashboard(false),
-        loadWorkshopData(),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadInventoryLifecycle(true),
-      ])
-      setMessage(`Возврат по заказу ${entry.externalId || ''} отменён. Финансы, остатки и цех обновлены.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отмены возврата')
-    } finally {
-      setReturnBusy(false)
-    }
-  }
-
-  async function correctExchangeFinancialEntry(
-    entry: ExchangeHistoryEntry,
-    draft: { exchangeDate: string; financialAmount: number; paymentMethod: string; comment: string },
-  ) {
-    const amount = Math.trunc(Number(draft.financialAmount || 0))
-    if (entry.status === 'cancelled' || (entry.financialAction !== 'extra_payment' && entry.financialAction !== 'refund')) return false
-    if (!draft.exchangeDate) {
-      setError('Укажите дату денежной операции обмена.')
-      return false
-    }
-    if (!Number.isInteger(amount) || amount <= 0) {
-      setError('Укажите целую сумму больше нуля.')
-      return false
-    }
-    if (!draft.paymentMethod.trim()) {
-      setError(entry.financialAction === 'refund' ? 'Выберите способ возврата денег.' : 'Выберите способ оплаты доплаты.')
-      return false
-    }
-
-    setExchangeBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        exchangeDate: draft.exchangeDate,
-        financialAmount: amount,
-        paymentMethod: draft.paymentMethod,
-        comment: draft.comment,
-        expectedExchangeDate: entry.exchangeDate,
-        expectedFinancialAmount: entry.financialAmount,
-        expectedPaymentMethod: entry.paymentMethod || '',
-        expectedComment: entry.comment || '',
-      }
-      const criticalKey = `exchange-financial-correct:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/exchanges/${entry.id}/financials`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; unchanged?: boolean }>(response, 'Исправление денег обмена')
-      if (!response.ok) throw new Error(result.message || `Exchange correction failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (result.order) upsertOrderInState(result.order)
-      invalidateFinanceReadCaches()
-      await Promise.allSettled([
-        loadExchangeHistory(),
-        refreshActivityLogIfVisible(),
-        refreshFinanceReportsIfVisible(),
-        loadDashboard(false),
-        cashRegister?.initialized ? loadCashRegister() : Promise.resolve(null),
-      ])
-      setMessage(result.unchanged
-        ? `Денежная часть обмена #${entry.id} уже соответствует этим данным.`
-        : `Денежная часть обмена #${entry.id} исправлена. Товары, остатки и цех не менялись.`)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка исправления денег обмена')
-      return false
-    } finally {
-      setExchangeBusy(false)
-    }
-  }
-
-  async function cancelExchangeEntry(entry: ExchangeHistoryEntry) {
-
-    if (!await askActionConfirmation(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
-    setExchangeBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = { comment: 'Отменено из интерфейса Cloudflare' }
-      const criticalKey = `exchange-cancel:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/exchanges/${entry.id}/cancel`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена обмена')
-      if (!response.ok) throw new Error(result.message || `Cancel exchange failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
-        invalidateWarehouseAttentionAfterCommit()
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-        setExchangeSelectedOrderId(result.order.id)
-      }
-      await Promise.allSettled([
-        loadExchangeHistory(),
-        refreshActivityLogIfVisible(),
-        refreshFinanceReportsIfVisible(),
-        loadDashboard(false),
-        loadWorkshopData(),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        loadInventoryLifecycle(true),
-      ])
-      setMessage(`Обмен по заказу ${entry.externalId} отменён. Финансы, позиции, остатки и цех обновлены.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка отмены обмена')
-    } finally {
-      setExchangeBusy(false)
-    }
-  }
-
   function renderInventoryStockGroups(source: InventorySourceKey, groups: InventoryStockGroup[]) {
     return InventoryStockGroupsRenderer(source, groups, { expandedInventoryGroups, getInventoryRowCategory, hasInventoryQuickFilters, inventorySearchTokens, isAdmin: canManageWarehouse, productCategoryLabel, sourceLabel, startInventoryTransferFromStockRow, toggleInventoryGroup })
   }
@@ -8523,114 +3359,34 @@ function removeDebtPayment(index: number) {
     setMessage(`Открыты отчёты за период ${firstMonth} — ${lastMonth}. Сохраните нужные Word/PDF перед удалением.`)
   }
 
-  if (authChecking) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">Проверяем вход...</div>
-            </div>
-          </div>
-          <p className="muted-note">Загрузка сессии.</p>
-        </section>
-      </main>
-    )
+  const authGateProps = {
+    authUser,
+    authHasUsers,
+    authLogin,
+    authPassword,
+    authDisplayName,
+    authBootstrapLogin,
+    authBootstrapPassword,
+    authBusy,
+    passwordChangeBusy,
+    passwordChangeDraft,
+    error,
+    setError,
+    setAuthLogin,
+    setAuthPassword,
+    setAuthDisplayName,
+    setAuthBootstrapLogin,
+    setAuthBootstrapPassword,
+    setPasswordChangeDraft,
+    submitAuth,
+    submitPasswordChange,
+    logout,
   }
 
-  if (!authUser) {
-    return (
-      <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitAuth} method="post" action={authHasUsers ? '/api/auth/login' : '/api/auth/setup'} autoComplete="on">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по логину и паролю' : 'Первый запуск'}</div>
-            </div>
-          </div>
-          <div>
-            <h1>{authHasUsers ? 'Вход' : 'Создать администратора'}</h1>
-            <p>
-              {authHasUsers
-                ? 'Введите логин и пароль своего аккаунта.'
-                : 'Подтвердите текущий админ-доступ и создайте первый персональный аккаунт администратора.'}
-            </p>
-          </div>
-          {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
-          {!authHasUsers ? (
-            <>
-              <label>
-                <span>Текущий админ-логин</span>
-                <input id="auth-bootstrap-username" name="bootstrap-username" value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
-              </label>
-              <label>
-                <span>Текущий админ-пароль</span>
-                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
-              </label>
-              <label>
-                <span>Имя администратора</span>
-                <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
-              </label>
-            </>
-          ) : null}
-          <label>
-            <span>{authHasUsers ? 'Логин' : 'Новый логин'}</span>
-            <input id="auth-username" name="username" value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required minLength={3} maxLength={32} placeholder="Например: admin" />
-          </label>
-          <label>
-            <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
-            <input id="auth-password" name="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
-          </label>
-          <button className="primary" type="submit" disabled={authBusy}>
-            {authBusy ? 'Проверяю...' : authHasUsers ? 'Войти' : 'Создать администратора'}
-          </button>
-        </form>
-      </main>
-    )
-  }
+  if (authChecking) return <AuthGate stage="checking" {...authGateProps} />
+  if (!authUser) return <AuthGate stage="login" {...authGateProps} />
+  if (authUser.mustChangePassword) return <AuthGate stage="change-password" {...authGateProps} />
 
-  if (authUser.mustChangePassword) {
-    return (
-      <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
-          <div className="erp-brand auth-brand">
-            <div className="erp-brand-mark">S</div>
-            <div>
-              <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">Первый вход сотрудника</div>
-            </div>
-          </div>
-          <div>
-            <h1>Смените временный пароль</h1>
-            <p>Администратор создал аккаунт с временным паролем. Перед работой нужно задать свой пароль.</p>
-          </div>
-          {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
-          <label>
-            <span>Логин</span>
-            <input id="auth-change-username" name="username" value={authUser.login} autoComplete="username" readOnly />
-          </label>
-          <label>
-            <span>Текущий временный пароль</span>
-            <input id="auth-current-password" name="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
-          </label>
-          <label>
-            <span>Новый пароль</span>
-            <input id="auth-new-password" name="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
-          </label>
-          <button className="primary" type="submit" disabled={passwordChangeBusy}>
-            {passwordChangeBusy ? 'Сохраняю...' : 'Сменить пароль и войти'}
-          </button>
-          <button className="secondary" type="button" onClick={() => void logout()} disabled={passwordChangeBusy}>Выйти</button>
-        </form>
-      </main>
-    )
-  }
-
-  // The redirect effect normalizes #finance/#reports/etc. An extra render
-  // boundary avoids briefly displaying a forbidden section before the effect.
   if (!canOpenWorkspaceSector(accessRole, activeSector)) {
     return <main className="auth-shell" role="status">Открываем раздел «Заказы»…</main>
   }
@@ -8744,7 +3500,7 @@ function removeDebtPayment(index: number) {
                   {stockHandoverData?.orderDate ? <span>Заказ от {handoverCheckpointDateLabel(stockHandoverData.orderDate)}</span> : null}
                   {stockHandoverData?.orderCreatedAt ? <span>Внесён в систему {handoverDateTimeLabel(stockHandoverData.orderCreatedAt)}</span> : null}
                 </div>
-                <p>Для старых заказов после ревизии сначала уточните, где была вещь в день пересчёта. Это не новая ревизия: ответ касается только выбранного заказа. Остатки других товаров не меняются.</p>
+                <p>Уточнение после ревизии исправляет учёт резерва на основании ответа сотрудника. Оно не устанавливает статус «Отправлен» и не доказывает доставку клиенту. Остатки других товаров не меняются.</p>
               </div>
               <button className="secondary compact" type="button" onClick={closeOrderStockHandover} disabled={stockHandoverActionItemId !== null}>Закрыть</button>
             </div>
@@ -8788,8 +3544,8 @@ function removeDebtPayment(index: number) {
 
                         {item.state === 'already_issued' ? (
                           <div className="order-stock-handover-result is-done">
-                            <strong>Уже выдано клиенту.</strong>
-                            <span>{item.reviewDecision === 'issued_before_checkpoint' ? `Подтверждено, что товар был у клиента до ${checkpointWord} ${handoverCheckpointDateLabel(item.reviewedCheckpointAt || item.checkpointAt)}. Физический остаток второй раз не уменьшался.` : 'При окончательной отправке заказа этот товар второй раз не спишется.'}</span>
+                            <strong>По учёту выдача уже отмечена.</strong>
+                            <span>{item.reviewDecision === 'issued_before_checkpoint' ? `Сотрудник отметил выдачу до ${checkpointWord} ${handoverCheckpointDateLabel(item.reviewedCheckpointAt || item.checkpointAt)}. Резерв закрыт, физический остаток второй раз не уменьшался. Это не подтверждение отправки заказа.` : 'При окончательной отправке заказа этот товар второй раз не спишется.'}</span>
                           </div>
                         ) : item.state === 'handover_review' ? (
                           <div className="order-stock-handover-legacy-choice">
@@ -8797,7 +3553,7 @@ function removeDebtPayment(index: number) {
                               <strong>К моменту {checkpointWord} {checkpointDate} товар уже был у клиента?</strong>
                               <span>{item.reviewReason === 'late_entry' ? 'Заказ внесли в систему после проверки за более раннюю дату.' : 'После оформления заказа была физическая проверка. Уточните, где находилась вещь в тот день.'}</span>
                               {item.itemCreatedAt ? <span>Позиция в учёте с {handoverDateTimeLabel(item.itemCreatedAt)}.</span> : null}
-                              <span>Выбирайте по факту, а не по статусу в программе. Если вещь выдали до проверки, резерв закроется без повторного списания. Если на момент проверки вещь ещё была на месте, резерв сохранится до подтверждения отправки.</span>
+                              <span>Отмечайте только то, что известно по факту. Ответ «выдали до проверки» закрывает резерв без повторного списания, но НЕ отмечает заказ отправленным. Если вещь была на месте, резерв сохраняется до отправки.</span>
                             </div>
                             <div className="order-stock-handover-choice-grid">
                               <button
@@ -8806,7 +3562,7 @@ function removeDebtPayment(index: number) {
                                 disabled={stockHandoverActionItemId !== null}
                                 onClick={() => void runOrderStockHandoverAction(item, 'issued_before_checkpoint')}
                               >
-                                <strong>Да, выдали до проверки</strong>
+                                <strong>Да, клиент получил до проверки</strong>
                                 <span>Закрыть резерв, не уменьшать остаток повторно</span>
                               </button>
                               <button
@@ -8856,8 +3612,6 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
-      <ActionConfirmationModal message={actionConfirmationMessage} onDecision={answerActionConfirmation} />
-      <ActionTextPromptModal message={actionTextPrompt?.message || null} defaultValue={actionTextPrompt?.defaultValue || ''} onDecision={answerActionText} />
       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
@@ -8907,12 +3661,10 @@ function removeDebtPayment(index: number) {
           if (!freshResponse.ok || freshResult.ok === false || !freshResult.order || freshResult.order.id !== resolvedOrder.id) {
             throw new Error(freshResult.message || 'Не удалось получить свежий заказ после уточнения товара.')
           }
-          // Item resolution must not authorize an unseen whole-order send.
-          // The employee explicitly chooses the ready lines in the Orders table.
           upsertOrderInState(freshResult.order)
           setSelectedOrderId(freshResult.order.id)
           setOrderCatalogResolutionOrder(null)
-          setMessage('Товар уточнён. Теперь выберите готовые вещи через «Отправить товары».')
+          setMessage('Товар уточнён. Выберите готовые вещи через «Отправить товары».')
           return true
         }}
         onEditOrder={async (blockedOrder: OrderRecord) => {
@@ -9055,7 +3807,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ askActionConfirmation, onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
           const draftKey=inventoryUiId('correction')
           setInventoryDraft(current=>{
             // Two fast clicks on +размер/+цвет must never add the same SKU twice:
@@ -9096,7 +3848,7 @@ function removeDebtPayment(index: number) {
               sizes: [{ id: inventoryUiId('size'), color: seed.color, size: seed.size, quantity: seed.quantity }],
             }),
           ])
-        }, activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin: canManageWarehouse, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryOperationAttempts, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, refreshOrdersAfterPhysicalCheck: () => loadDashboard(false), operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
+        }, activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin: canManageWarehouse, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
         </DeferredSection>
 
         <section className="grid" style={sectorStyle('overview')}>
@@ -9135,11 +3887,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
-        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary: {...returnHistorySummary,pendingPhysicalQuantity:returnPendingInbox.pendingQuantity}, exchangeHistorySummary: {...exchangeHistorySummary,pendingPhysicalQuantity:exchangePendingInbox.pendingQuantity}, sectorStyle, setEditorOpen, setOrderPanel }} />
+        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary, exchangeHistorySummary, sectorStyle, setEditorOpen, setOrderPanel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">
-        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, createdOrderNotice, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, restoreOrderFiltersAfterCreated, savedOrderView, sectorStyle, setCreatedOrderNotice, setFilters, showCreatedOrder }} />
+        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, sectorStyle, setFilters }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">
@@ -9151,7 +3903,9 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ askActionConfirmation, askStockResolution, correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, canResolvePendingReservation: isAdmin || (authUser?.role === 'manager' && authUser?.employeeRole !== 'Упаковщик'), apiFetch, setMessage, onPendingReservationResolved: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false, filters, 0); void loadWarehouseAttention(false, true) }, onShipmentChange: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false, filters, 0); void loadWorkshopData() }, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text), askStockResolution,
+        onShipmentChange: async () => { invalidateInventoryStockCaches(true); return (await loadDashboard(false)) != null },
+        setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
@@ -9194,97 +3948,16 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
       </div>
       {archiveModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setArchiveModalOpen(false) }}>
-          <section className="modal-card archive-month-modal" role="dialog" aria-modal="true" aria-label="Архив месяца">
-            <div className="modal-head">
-              <div>
-                <div className="card-label">Архив месяца</div>
-                <h3>Убрать закрытый месяц из работы</h3>
-                <p>Заказы не удаляются: они остаются в клиентах, отчётах и истории. Архив просто убирает закрытые записи из ежедневной таблицы.</p>
-              </div>
-              <button className="ghost compact" type="button" onClick={() => setArchiveModalOpen(false)}>Закрыть</button>
-            </div>
-
-            <div className="archive-month-controls">
-              <label>
-                <span>Месяц</span>
-                <input
-                  type="month"
-                  max={getClosedArchiveMonth().value}
-                  value={archiveDraft.month}
-                  onChange={(event) => {
-                    const month = event.target.value || getClosedArchiveMonth().value
-                    setArchiveDraft((draft) => ({
-                      ...draft,
-                      month,
-                      cutoffDate: monthEndFromInput(month),
-                      reason: `Закрытие месяца: ${monthLabelFromInput(month)}`,
-                    }))
-                    setArchivePreview(null)
-                  }}
-                />
-              </label>
-              <div className="archive-month-range">
-                <span>Период</span>
-                <strong>{formatDateShort(monthStartFromInput(archiveDraft.month))} — {formatDateShort(monthEndFromInput(archiveDraft.month))}</strong>
-              </div>
-              <label className="checkbox-row archive-checkbox">
-                <input
-                  type="checkbox"
-                  checked={archiveDraft.includeNotSent}
-                  onChange={(event) => {
-                    setArchiveDraft((draft) => ({ ...draft, includeNotSent: event.target.checked }))
-                    setArchivePreview(null)
-                  }}
-                />
-                <span>Разрешить закрытые, но не отправленные заказы</span>
-              </label>
-            </div>
-
-            <div className="archive-month-message">
-              {!archivePreview ? (
-                <span>Сначала проверьте месяц. Система покажет, мешают ли долги, активный цех или неотправленные заказы.</span>
-              ) : archivePreview.blocked.withDebt === 0 ? (
-                <span className="is-good">Долги по выбранному месяцу закрыты. Можно архивировать подходящие заказы.</span>
-              ) : (
-                <span className="is-warning">Есть незакрытые долги: {archivePreview.blocked.withDebt}. Лучше закрыть их перед архивацией.</span>
-              )}
-            </div>
-
-            {archivePreview ? (
-              <div className="archive-preview-box">
-                <div className="archive-preview-title">
-                  <strong>Предпросмотр</strong>
-                  <span>{archivePreview.eligibleCount ? `Можно архивировать: ${archivePreview.eligibleCount}` : 'Пока нечего архивировать'}</span>
-                </div>
-                <div className="archive-preview-stats">
-                  <div className="is-good"><span>Готово</span><strong>{archivePreview.eligibleCount}</strong></div>
-                  <div><span>Не закрыты</span><strong>{archivePreview.blocked.notClosed}</strong></div>
-                  <div><span>С долгом</span><strong>{archivePreview.blocked.withDebt}</strong></div>
-                  <div><span>Цех активен</span><strong>{archivePreview.blocked.activeWorkshop}</strong></div>
-                  <div><span>Не отправлены</span><strong>{archivePreview.blocked.notSent}</strong></div>
-                </div>
-                <div className="archive-preview-list">
-                  {(archivePreview.orders || []).slice(0, 10).map((order) => (
-                    <div className="archive-preview-item" key={`archive-modal-${order.id}`}>
-                      <strong>{order.externalId}</strong>
-                      <span>{formatDateShort(order.orderDate)} · {order.manager || '—'} · {formatMoney(order.totalAmount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="modal-actions">
-              <button className="secondary" type="button" onClick={() => void loadArchivePreview()} disabled={archiveBusy}>
-                {archiveBusy ? 'Проверяю...' : 'Проверить месяц'}
-              </button>
-              <button className="primary" type="button" onClick={() => void runArchiveOrders()} disabled={archiveBusy || !archivePreview?.eligibleCount}>
-                Архивировать месяц
-              </button>
-            </div>
-          </section>
-        </div>
+        <ArchiveMonthModal
+          archiveDraft={archiveDraft}
+          archivePreview={archivePreview}
+          archiveBusy={archiveBusy}
+          setArchiveDraft={setArchiveDraft}
+          setArchivePreview={setArchivePreview}
+          setArchiveModalOpen={setArchiveModalOpen}
+          loadArchivePreview={loadArchivePreview}
+          runArchiveOrders={runArchiveOrders}
+        />
       ) : null}
       <datalist id="manager-list">
         {suggestionValues.managers.map((value) => <option value={value} key={value} />)}

@@ -727,7 +727,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               {entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId ? (
                                 <div className="mini-panel-actions">
                                   <select
-                                    value={receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || 'warehouse'}
+                                    value={receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')}
                                     onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`exchange:${entry.id}:${entry.oldOperationItemId}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                     disabled={exchangeBusy}
                                   >
@@ -743,7 +743,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                       operationType: 'exchange',
                                       operationId: entry.id,
                                       operationItemId: entry.oldOperationItemId,
-                                      destination: receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || 'warehouse',
+                                      destination: receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse'),
                                       productName: entry.oldProductName,
                                       externalId: entry.externalId,
                                     })}

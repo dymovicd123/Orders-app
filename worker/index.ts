@@ -1,10 +1,10 @@
 // Step 190.6A: Worker composition root. Domain logic lives under worker/core and worker/domains.
 import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson } from './core/http.ts'
-import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, toInt, upperText } from './core/text.ts'
+import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
-import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders, authenticatedActor } from './domains/auth.ts'
+import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
@@ -12,28 +12,21 @@ import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
-import { inspectPendingReservation, resolvePendingReservation, PendingReservationError } from './domains/pending-reservation.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
-import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
-import { readPriorIssuedItemIds } from './domains/order-prior-issued-origin.ts'
-import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
-import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
-import { DispatchStockConfirmationRequired } from './domains/order-dispatch-confirmation.ts'
-import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
 import { listProductKpis, removeProductKpi, saveProductKpi } from './domains/product-kpi.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
-import { listWarehouseOperationAttempts, safelyRecordWarehouseAttempt } from './domains/inventory-attempts.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
+import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
@@ -43,6 +36,9 @@ import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderRe
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
+import { handleOrderSelectiveShippingRoute } from './routes/order-selective-shipping.ts'
+import { listOrderSourcePicker } from './domains/order-source-picker.ts'
+import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
 import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
@@ -65,7 +61,7 @@ import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-und
 import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
-import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, dispatchPendingExchangeReplacement, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
@@ -78,6 +74,7 @@ import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
+
 
 function warehouseSupervisorEndpoint(path: string, method: string) {
   // Explicit warehouse-only allowlist. No order, payment, employee, or global administrator rights.
@@ -110,8 +107,6 @@ function isWarehouseCatalogCharacteristicKind(kind: string | null) {
     normalizeReferenceKind(kind) || '',
   );
 }
-
-
 
 
 export default {
@@ -901,7 +896,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<ArchiveRuleInput>(request);
-        const actor = authenticatedActor(request, 'X-Archive-Actor') || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Archive-Actor')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         return json(await archiveOrders(env.DB, input, actor));
       }
 
@@ -912,6 +907,10 @@ export default {
       const clientMatch = url.pathname.match(/^\/api\/clients\/(\d+)$/);
       if (clientMatch && request.method === 'GET') {
         return measuredResponseRead('clients.details', () => getClientDetails(env.DB, Number(clientMatch[1]), url));
+      }
+
+      if (url.pathname === '/api/orders/source-picker' && request.method === 'GET') {
+        return measuredJsonRead('orders.source-picker', () => listOrderSourcePicker(env.DB));
       }
 
       if (url.pathname === '/api/orders/open-debts' && request.method === 'GET') {
@@ -986,7 +985,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<{ comment?: unknown }>(request);
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const result = await reverseInventoryMovementOperation(
           env.DB,
@@ -1013,7 +1012,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<{ issueKey?: unknown; resolved?: unknown; comment?: unknown }>(request);
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const resolved = input.resolved !== false && cleanText(input.resolved).toLowerCase() !== 'false' && cleanText(input.resolved) !== '0';
         const result = await setInventoryAuditResolution(env.DB, cleanText(input.issueKey), resolved, actor, cleanText(input.comment));
         await writeActivityLog(env.DB, {
@@ -1031,7 +1030,7 @@ export default {
 
       if (url.pathname === '/api/inventory/cycle-counts/apply' && request.method === 'POST') {
         const input = await request.json<Record<string, unknown>>();
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor, checkType: 'cycle_count', referenceType: 'cycle_count' });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_cycle_count', entityType: 'inventory', title: 'Короткая циклическая сверка', details: `${cleanText(input.source)}; проверено: ${Array.isArray(input.items) ? input.items.length : 0}; расхождений: ${result.changedCount || 0}` });
@@ -1045,7 +1044,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes' && request.method === 'POST') {
         const input = await readJson<{ source?: unknown }>(request);
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await createInventoryStocktakeSession(env.DB, input, actor);
         if (!result.ok) return json(result, { status: 409 });
         const session = result.session;
@@ -1060,7 +1059,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes/quick-batch' && request.method === 'POST') {
         const input = await request.json<Record<string, unknown>>();
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_quick_stocktake', entityType: 'inventory', title: 'Быстрая сверка остатков', details: `${cleanText(input.source)}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}; изменений: ${result.changedCount || 0}` });
@@ -1070,7 +1069,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes/quick' && request.method === 'POST') {
         const input = await readJson<{ source?: unknown; variantId?: unknown; expectedQuantity?: unknown; countedQuantity?: unknown }>(request);
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktake(env.DB, input, { actor });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_quick_stocktake', entityType: 'inventory', title: 'Точечная сверка остатка', details: `${cleanText(input.source)}; variant ${toInt(input.variantId, 0)}; ${result.previousQuantity} → ${result.physical}` });
@@ -1145,11 +1144,6 @@ export default {
         return json(await listInventoryCheckHistory(env.DB, url));
       }
 
-      if (url.pathname === '/api/inventory/operation-attempts' && request.method === 'GET') {
-        const result = await listWarehouseOperationAttempts(env.DB, url);
-        return json(result, { status: result.ok ? 200 : 400 });
-      }
-
       if (url.pathname === '/api/inventory/reservations' && request.method === 'GET') {
         return json(await listInventoryReservations(env.DB, url));
       }
@@ -1169,19 +1163,12 @@ export default {
           if (denied) return denied;
         }
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
-        const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
-        const targets = (Array.isArray(input.items) ? input.items : []).map((item) => ({ source: input.inventorySource, variantId: item?.variantId }));
-        const attempt = (outcome: 'rejected' | 'uncertain' | 'replayed', code: string, message: string) =>
-          safelyRecordWarehouseAttempt(env.DB, {
-            requestId: input.requestId, kind: movementType as 'arrival' | 'writeoff' | 'manual_set',
-            outcome, reasonCode: code, message, actorId: authUser?.id, actor, targets,
-          });
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         let result;
         try {
-          result = await applyInventoryMovement(env.DB, input, returnInventory, actor, authUser?.id || 0);
+          result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
         } catch (error) {
           if (error instanceof ArrivalRecoveryRequiredError) {
-            await attempt('rejected', error.code, error.message);
             return json({
               ok: false,
               code: error.code,
@@ -1195,7 +1182,6 @@ export default {
           const safe = warehouseOperationFeedback(error,
             movementType === 'manual_set' ? 'manual_set' : movementType === 'writeoff' ? 'writeoff' : 'arrival',
             input.requestId);
-          await attempt(safe.status === 409 || safe.status === 400 ? 'rejected' : 'uncertain', safe.code, safe.message);
           console.error(JSON.stringify({
             event:'warehouse_movement_failed', operation:movementType,
             requestId:cleanText(input.requestId), code:safe.code,
@@ -1204,11 +1190,9 @@ export default {
           return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
         }
         if ('code' in result && result.code === 'stock_resolution_required') {
-          await attempt('rejected', 'stock_resolution_required', cleanText(result.message) || 'Требуется разрешение по складу.');
           return json(result, { status: 409 });
         }
         if (!('duplicate' in result)) throw new Error('Некорректный ответ складской операции.');
-        if (result.duplicate) await attempt('replayed', 'same_request', 'Повтор запроса: исходная операция уже проведена, второе движение не создавалось.');
         if (!result.duplicate) {
           try {
             await writeActivityLog(env.DB, {
@@ -1227,22 +1211,11 @@ export default {
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
-        const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
-        const targets = (Array.isArray(input.items) ? input.items : []).flatMap((item) => [
-          { source: input.fromSource, variantId: item?.variantId },
-          { source: cleanText(input.toSource) || (cleanText(input.fromSource) === 'warehouse' ? 'boutique' : 'warehouse'), variantId: item?.variantId },
-        ]);
-        const attempt = (outcome: 'rejected' | 'uncertain' | 'replayed', code: string, message: string) =>
-          safelyRecordWarehouseAttempt(env.DB, {
-            requestId: input.requestId, kind: 'transfer', outcome, reasonCode: code, message,
-            actorId: authUser?.id, actor, targets,
-          });
         let result;
         try {
-          result = await applyInventoryTransfer(env.DB, input, actor, returnInventory);
+          result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
         } catch(error) {
           const safe = warehouseOperationFeedback(error,'transfer',input.requestId);
-          await attempt(safe.status === 409 || safe.status === 400 ? 'rejected' : 'uncertain', safe.code, safe.message);
           console.error(JSON.stringify({
             event:'warehouse_transfer_failed',
             requestId:cleanText(input.requestId), code:safe.code,
@@ -1251,11 +1224,9 @@ export default {
           return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
         }
         if ('code' in result && result.code === 'stock_resolution_required') {
-          await attempt('rejected', 'stock_resolution_required', cleanText(result.message) || 'Требуется разрешение по складу.');
           return json(result, { status: 409 });
         }
         if (!('duplicate' in result)) throw new Error('Некорректный ответ перемещения.');
-        if (result.duplicate) await attempt('replayed', 'same_request', 'Повтор запроса: исходное перемещение уже проведено, второе движение не создавалось.');
         if (!result.duplicate) {
           try {
             await writeActivityLog(env.DB, {
@@ -1402,7 +1373,6 @@ export default {
         return json(result);
       }
 
-
       // Deliberate, per-order-item physical handover of a retired SKU. It
       // never reverses catalog retirement or writes the stock a second time.
 
@@ -1444,6 +1414,9 @@ export default {
 
       const retiredHandoverMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/confirm-retired-delivery$/);
       if (retiredHandoverMatch && request.method === 'POST') {
+        if (!authUser || !['admin', 'manager'].includes(cleanText(authUser.role))) {
+          return json({ok:false,message:'Доступно только администратору или менеджеру.'}, {status:403});
+        }
         const orderId = toInt(retiredHandoverMatch[1], 0);
         const orderItemId = toInt(retiredHandoverMatch[2], 0);
         const input = await readJson<{
@@ -1455,7 +1428,7 @@ export default {
             expectedVariantId: toInt(input.expectedVariantId, 0),
             expectedQuantity: toInt(input.expectedQuantity, 0),
             confirmedPhysicallyDelivered: input.confirmedPhysicallyDelivered === true,
-            actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            actor: cleanText(authUser.displayName) || 'authenticated user',
           });
           if (!result.alreadyConfirmed) {
             try {
@@ -1726,7 +1699,7 @@ export default {
         if (!orderItemId) return json({ ok: false, message: 'Не выбрана позиция заказа.' }, { status: 400 });
         const item = state.items.find((row) => row.orderItemId === orderItemId);
         if (!item) return json({ ok: false, message: 'Этой складской позиции больше нет в заказе. Обновите страницу.' }, { status: 409 });
-        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const activeStocktake = await activeStocktakeSessionForHandover(env.DB, item.source);
         if (activeStocktake) {
           const sourceLabel = item.source === 'warehouse' ? 'Склад' : 'Бутик';
@@ -1760,9 +1733,7 @@ export default {
 
         try {
           if (action === 'issue_now') {
-            if(await orderHasNewDispatchHistory(id)){
-              return json({ok:false,message:'Откройте «Отправить товары» и выберите нужные позиции.'},{status:409});
-            }
+            if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Откройте «Отправить товары» и выберите позиции.'},{status:409});
             if (item.reviewNeeded) {
               return json({ ok: false, message: `Сначала уточните, где находился товар «${item.productName}» во время последней физической ревизии или сверки.` }, { status: 409 });
             }
@@ -1839,24 +1810,21 @@ export default {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
-          if (await orderHasNewDispatchHistory(id)) {
-            return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки». Остальные товары не изменятся.'},{status:409});
-          }
-          // A status-only confirmation of previously issued stock must never
-          // fall through to the legacy physical correction (would restock twice).
-          const statusOnly = await correctPriorIssuedOrderShippingIfApplicable(env.DB,id,{
-            physicalOutcome:input.physicalOutcome,
-            actor:authenticatedActor(request)||'Сотрудник',
+          if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки».'},{status:409});
+          const statusOnly = await correctPriorIssuedOrderShippingIfApplicable(env.DB, id, {
+            physicalOutcome: input.physicalOutcome,
+            actor: cleanText(request.headers.get('X-Access-User')) || 'Сотрудник',
           });
           if (statusOnly) {
-            let updatedOrder=null;
-            try { updatedOrder=await getOrder(env.DB,id) }
-            catch(error) { console.warn('Prior-issued correction readback failed',error) }
-            return json({...statusOnly,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
+            let updatedOrder = null;
+            try { updatedOrder = await getOrder(env.DB, id) }
+            catch (error) { console.warn('Prior-issued correction readback failed', error) }
+            return json({ ...statusOnly, ...(updatedOrder ? { order: updatedOrder } : {}),
+              refreshRequired: !updatedOrder });
           }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
-            actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           });
           let updatedOrder = null;
           try {
@@ -1871,114 +1839,13 @@ export default {
         }
       }
 
-      const orderDispatchesMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/dispatches$/);
-      if (orderDispatchesMatch && (request.method === 'GET' || request.method === 'POST')) {
-        const orderId = toInt(orderDispatchesMatch[1],0);
-        if (request.method === 'GET') {
-          const order = await env.DB.prepare('SELECT id FROM orders WHERE id=?')
-            .bind(orderId).first<{id:number}>();
-          if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
-          const records = await env.DB.prepare(
-            `SELECT d.id AS dispatchId,d.dispatch_date AS dispatchDate,d.created_at AS dispatchedAt,
-                    d.status AS dispatchStatus,di.id AS dispatchItemId,di.order_item_id AS orderItemId,
-                    di.quantity,di.cancelled_quantity AS cancelledQuantity,
-                    EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
-                      WHERE ri.order_item_id=di.order_item_id AND ri.quantity>0
-                        AND COALESCE(r.status,'completed')<>'cancelled') AS hasReturn,
-                    EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=d.order_id
-                      AND (e.old_order_item_id=di.order_item_id OR e.new_order_item_id=di.order_item_id
-                        OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
-                          AND ei.order_item_id=di.order_item_id))
-                        AND COALESCE(e.status,'completed')<>'cancelled') AS hasExchange,
-                    EXISTS(SELECT 1 FROM exchanges e
-                      WHERE e.order_id=d.order_id
-                        AND (e.new_order_item_id=di.order_item_id OR EXISTS(
-                          SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
-                            AND ei.role='new' AND ei.order_item_id=di.order_item_id))
-                        AND COALESCE(e.status,'completed')<>'cancelled'
-                        AND (di.source_type='workshop' OR EXISTS(
-                          SELECT 1 FROM inventory_lifecycle_events le
-                          WHERE le.operation_id=e.id AND le.operation_type='exchange'
-                            AND le.order_item_id=di.order_item_id AND le.event_type='exchange_new_out'
-                            AND le.status='applied' AND le.movement_id=di.movement_id))) AS isReplacement,
-                    di.source_type AS sourceType,oi.product_name_snapshot AS productName,
-                    oi.color_snapshot AS color,oi.size_snapshot AS size,
-                    oi.material_snapshot AS material,oi.length_snapshot AS length,
-                    di.variant_id AS variantId
-             FROM order_dispatches d JOIN order_dispatch_items di ON di.dispatch_id=d.id
-             JOIN order_items oi ON oi.id=di.order_item_id
-             WHERE d.order_id=? ORDER BY d.id DESC,di.id`
-          ).bind(orderId).all<Record<string,unknown>>();
-          return json({ok:true,dispatches:records.results||[]});
-        }
-        try {
-          const input=await readJson<{ requestId?:unknown; items?:unknown; dispatchDate?:unknown; stockConfirmations?:unknown }>(request);
-          const items=Array.isArray(input.items) ? input.items.map((row:any)=>({
-            orderItemId:Number(row?.orderItemId),quantity:Number(row?.quantity)
-          })) : [];
-          const result=await dispatchSelectedCompleteOrderLines(env.DB,orderId,{
-            requestId:cleanText(input.requestId),items,
-            dispatchDate:cleanText(input.dispatchDate),
-            actor:authenticatedActor(request)||'Сотрудник',
-            stockConfirmations:input.stockConfirmations as any,
-          });
-          let updatedOrder=null;
-          try { updatedOrder=await getOrder(env.DB,orderId) }
-          catch(error) { console.warn('Dispatch committed; order readback failed',error) }
-          return json({...result,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
-        }catch(error){
-          if(error instanceof DispatchStockConfirmationRequired){
-            return json({ok:false,code:error.code,message:error.message,items:error.items},{status:409})
-          }
-          const e=publicApiError(error);
-          return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
-        }
-      }
-
-      const orderDispatchItemCancelMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/dispatch-items\/(\d+)\/correct$/);
-      if(orderDispatchItemCancelMatch && request.method==='POST'){
-        const orderId=toInt(orderDispatchItemCancelMatch[1],0);
-        const dispatchItemId=toInt(orderDispatchItemCancelMatch[2],0);
-        try {
-          const input=await readJson<{requestId?:unknown;reason?:unknown}>(request);
-          const result=await cancelExactOrderDispatchItem(env.DB,orderId,{
-            dispatchItemId,requestId:cleanText(input.requestId),
-            actor:authenticatedActor(request)||'Сотрудник',
-            reason:cleanText(input.reason),
-          });
-          let updatedOrder=null;
-          try { updatedOrder=await getOrder(env.DB,orderId) }
-          catch(error){console.warn('Dispatch correction committed; order readback failed',error)}
-          return json({...result,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
-        }catch(error){
-          const e=publicApiError(error);
-          return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
-        }
-      }
-
-      const orderShippingPlanMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/plan$/);
-      if (orderShippingPlanMatch && request.method === 'GET') {
-        const orderId = toInt(orderShippingPlanMatch[1], 0);
-        const order = await getOrder(env.DB, orderId);
-        if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
-        const activeReservations = await env.DB.prepare(
-          `SELECT order_item_id, quantity, status, variant_id, inventory_source
-           FROM inventory_reservations WHERE order_id = ? AND status IN ('active','unresolved','fulfilled')
-           ORDER BY order_item_id ASC, id ASC`
-        ).bind(orderId).all<Record<string,unknown>>();
-        return json(buildOrderShipmentPlan(
-          order as Parameters<typeof buildOrderShipmentPlan>[0],
-          (activeReservations.results || []) as Parameters<typeof buildOrderShipmentPlan>[1],
-          await readPriorIssuedItemIds(env.DB,orderId),
-        ));
-      }
+      const selectiveShipmentResponse = await handleOrderSelectiveShippingRoute(env.DB, request, url.pathname);
+      if (selectiveShipmentResponse) return selectiveShipmentResponse;
 
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
-        if(request.method==='PATCH' && await orderHasNewDispatchHistory(id)){
-          return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».'},{status:409});
-        }
+        if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся товары через «Отправить товары».'},{status:409});
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
@@ -2009,18 +1876,27 @@ export default {
         }
         if (input.confirmAlreadyIssued === true) {
           try {
-            const confirmed=await confirmPriorIssuedOrderShipping(env.DB,id,{
-              shippingDate:cleanText(input.shippingDate),
-              actor:authenticatedActor(request)||'Сотрудник',
+            const confirmed = await confirmPriorIssuedOrderShipping(env.DB, id, {
+              shippingDate: cleanText(input.shippingDate),
+              actor: cleanText(request.headers.get('X-Access-User')) || 'Сотрудник',
             });
-            let updatedOrder=null;
-            try { updatedOrder=await getOrder(env.DB,id) }
-            catch(error) { console.warn('Prior-issued shipping readback failed',error) }
-            return json({...confirmed,...(updatedOrder?{order:updatedOrder}:{}),
-              refreshRequired:!updatedOrder});
-          } catch(error) {
-            const e=publicApiError(error);
-            return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
+            let updatedOrder = null;
+            try {
+              updatedOrder = await getOrder(env.DB, id);
+            } catch (error) {
+              console.warn('Prior-issued shipping readback failed', error);
+            }
+            return json({
+              ...confirmed,
+              ...(updatedOrder ? { order: updatedOrder } : {}),
+              refreshRequired: !updatedOrder,
+            });
+          } catch (error) {
+            const publicError = publicApiError(error);
+            return json({
+              ok: false, ...(publicError.code ? { code: publicError.code } : {}),
+              message: publicError.message,
+            }, { status: publicError.status });
           }
         }
         const workshop = await orderWorkshopPendingForShipping(env.DB, id);
@@ -2034,6 +1910,10 @@ export default {
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
         const normalizedStockConfirmations = humanInventoryModelEnabled ? normalizeShipmentStockConfirmations(input.stockConfirmations) : [];
         if (humanInventoryModelEnabled) {
+          // An explicit shipment retry is the safe re-admission point after
+          // stock arrives. This keeps pending reservation/item IDs unchanged.
+          // Still-short items remain unresolved and shipping remains blocked.
+          await recoverPendingOrderReservationsBeforeShipping(env.DB, id, new Date().toISOString());
           // Before fulfilling this order, compare its still-active reservations to
           // later physical checks. A past revision may already have counted a
           // physically departed item; ordinary stock-only orders need this too.
@@ -2049,10 +1929,6 @@ export default {
           let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           if (unresolvedBlockers.length && unresolvedBlockers.some(row => toInt(row.known_pending_reservation, 0) !== 1)) {
-            // Every blocker already known as pending shortage has a canonical
-            // identity and a current unresolved reservation. A catalog repair
-            // would only churn that reservation ID; allow the existing
-            // explicit confirmation/edit flow to handle physical availability.
             try {
               await reconcileCatalogReviewOrder(env.DB, id);
             } catch (error) {
@@ -2062,21 +1938,17 @@ export default {
             unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           }
           if (unresolvedBlockers.length) {
-            // A known active SKU with a genuinely pending shortage is not a
-            // Catalog Resolver problem. Do not guess or silently over-reserve;
-            // use the existing explicit pending-reservation action instead.
             if (unresolvedBlockers.every(row => toInt(row.known_pending_reservation, 0) === 1)) {
               const first = unresolvedBlockers[0];
               const name = cleanText(first.product_name_snapshot) || `позиция #${toInt(first.id, 0)}`;
               return json({
                 ok: false,
                 code: 'inventory_reservation_pending',
-                message: `Заказ не отправлен: товар «${name}» уже распознан, но его резерв ожидает проверки нехватки. Откройте заказ и нажмите «Подтвердить резерв при нехватке», только если проверили фактическое наличие вещи. Повторно выбирать товар в Каталоге не нужно.`,
+                message: `Заказ не отправлен: товар «${name}» распознан, но резерв не подтверждён из-за нехватки. Проверьте приход и источник товара. После поступления повторите отправку: система попробует закрепить имеющийся товар автоматически. Если свободного остатка всё ещё нет, заказ останется неотправленным. Повторно распознавать товар не нужно.`,
               }, { status: 409 });
             }
-            // A broken/missing stock row or active reservation is not necessarily an
-            // unidentified product. Never open an empty Catalog Resolver.
-            // Read the EXACT order-scoped review queue that the modal itself loads.
+            // Only catalog identity ambiguity belongs in Resolver. A missing stock
+            // row or a broken active reservation must not open an empty modal.
             const reviewUrl = new URL(request.url);
             reviewUrl.searchParams.set('orderId', String(id));
             reviewUrl.searchParams.set('limit', '10');
@@ -2096,9 +1968,24 @@ export default {
             }
             return json({ ok: false, code: 'catalog_review_required', reviewOrderId: id, message: orderShipmentInventoryBlockerMessage(unresolvedBlockers) }, { status: 409 });
           }
-          // Identified SKU shortages do not block an actual outgoing shipment.
-          // The atomic fulfillment journals unexplained physical units instead.
-          // Unknown SKU / review-needed / returned-item guards above stay active.
+          const shortageBlockers = blockers.filter((row) => cleanText(row.blocker_reason) === 'insufficient_physical');
+          const uncoveredShortages = shortageBlockers.filter((row) => {
+            const source = normalizeSourceType(row.inventory_source);
+            const variantId = toInt(row.reservation_variant_id, 0);
+            const required = Math.max(1, toInt(row.required_quantity, 1));
+            const physical = Math.max(0, toInt(row.physical_quantity, 0));
+            const confirmation = normalizedStockConfirmations.find((candidate) => candidate.source === source && candidate.variantId === variantId);
+            return !confirmation || confirmation.expectedQuantity !== physical || confirmation.operationQuantity !== required;
+          });
+          if (uncoveredShortages.length) {
+            return json(buildStockResolutionRequired('shipping', uncoveredShortages.map((row) => ({
+              source: normalizeSourceType(row.inventory_source),
+              variantId: toInt(row.reservation_variant_id, 0),
+              productName: cleanText(row.product_name_snapshot),
+              trackedPhysicalQuantity: Math.max(0, toInt(row.physical_quantity, 0)),
+              operationQuantity: Math.max(1, toInt(row.required_quantity, 1)),
+            }))), { status: 409 });
+          }
         }
         const timestamp = new Date().toISOString();
         const nextShippingDate = normalizeDate(input.shippingDate || timestamp);
@@ -2106,7 +1993,7 @@ export default {
           ? await fulfillOrderReservationsV2(env.DB, id, cleanText(existing.external_id), timestamp, {
               stockConfirmations: normalizedStockConfirmations,
               shippingDate: nextShippingDate,
-              checkedBy: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              checkedBy: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
             })
           : null;
         if (inventoryDelivery?.unresolved) {
@@ -2217,44 +2104,13 @@ export default {
             id,
             input,
             authUser,
-            authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           ));
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
           const publicError = publicApiError(error);
           return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
-        }
-      }
-
-      const pendingReservationMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/items\/(\d+)\/pending-reservation$/);
-      if (pendingReservationMatch && (request.method === 'GET' || request.method === 'POST')) {
-        // Packing-only accounts cannot approve over-reservation or move stock
-        // obligations. Admin, manager and warehouse supervisor retain access.
-        if (authUser!.role !== 'admin' && authUser!.employeeRole === 'Упаковщик') {
-          return json({ok:false,message:'Подтверждение резерва доступно менеджеру или заведующему складом.'},{status:403});
-        }
-        const orderId = toInt(pendingReservationMatch[1],0);
-        const orderItemId = toInt(pendingReservationMatch[2],0);
-        try {
-          if (request.method === 'GET') {
-            return json(await inspectPendingReservation(env.DB,orderId,orderItemId));
-          }
-          const input = await readJson<{
-            snapshot?: { inventorySource: 'warehouse' | 'boutique'; variantId:number;
-              requestedQuantity:number; physicalQuantity:number; reservedQuantity:number };
-            allowShortage?: boolean
-          }>(request);
-          const result = await resolvePendingReservation(env.DB,orderId,orderItemId,input,{
-            id:authUser!.id, displayName:authUser!.displayName || authUser!.login,
-          });
-          return json(result);
-        } catch(error) {
-          if (error instanceof PendingReservationError) return json({
-            ok:false,code:error.code,message:error.message,
-            ...(error.snapshot ? { snapshot:error.snapshot } : {}),
-          },{status:error.status});
-          throw error;
         }
       }
 
@@ -2275,7 +2131,7 @@ export default {
           try {
             const result = await updateOrderCritical(
               env.DB, id, input, authUser,
-              authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
             );
             return json(result);
           } catch (error) {
@@ -2422,19 +2278,6 @@ export default {
         }))});
       }
 
-      const exchangeDispatchMatch = url.pathname.match(/^\/api\/exchanges\/pending-dispatch\/(\d+)$/)
-      if (exchangeDispatchMatch && request.method === 'POST') {
-        const input = await readJson<{ requestId?: string }>(request)
-        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined
-        try {
-          return json(await dispatchPendingExchangeReplacement(env.DB, toInt(exchangeDispatchMatch[1], 0), input.requestId))
-        } catch (error) {
-          const criticalResponse = criticalOperationErrorResponse(error)
-          if (criticalResponse) return criticalResponse
-          throw error
-        }
-      }
-
       if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {
         try {
           return json(await createItemizedExchangeBatchFromRequest(env.DB, request), { status: 201 });
@@ -2532,7 +2375,7 @@ export default {
             newUnitPrice:Number(body.newUnitPrice),
             requestId,
             actorLabel:cleanText(authUser?.displayName)||cleanText(authUser?.email)
-              ||authenticatedActor(request)||'Сотрудник',
+              ||cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
           }));
         } catch(error) {
           const criticalResponse=criticalOperationErrorResponse(error);

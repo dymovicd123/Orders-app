@@ -55,15 +55,10 @@ try {
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
   const contextualLazyFeatures = ['OrderCatalogResolutionModal','StockResolutionConfirmModal','ReturnedItemResolutionModal','ArrivalRecoveryDialog']
-  const dormantLazyFeatures = ['KaspiOrdersSection']
-  const allLazyFeatures = [...lazySections, ...dormantLazyFeatures, ...contextualLazyFeatures]
+  const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
   for (const name of lazySections) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
     check(app.includes(`<${name} `), `App no longer renders lazy feature: ${name}`)
-  }
-  for (const name of dormantLazyFeatures) {
-    check(lazy.includes(`export const ${name} = namedLazy(`), `Dormant lazy compatibility boundary missing: ${name}`)
-    check(!app.includes(`<${name} `), `Dormant legacy feature rendered again: ${name}`)
   }
   for (const name of contextualLazyFeatures) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
@@ -103,9 +98,7 @@ try {
   // OrderExchangeSection remains lazy; keep the bound aligned with the reviewed Production ceiling.
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
-  // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
-  // Kaspi reuses the existing lazy Orders table/filter/header surfaces. The eager App delta also carries
-  // the small Production-parity factual-payment-date confirmation modal.
+  // Exchange Set V2 stays lazy. Kaspi reuses the existing Orders lazy surfaces; its list/create/payment coordinators and the small factual-payment-date confirmation modal live in the eager App graph.
   check(sourceBytes <= 718_600, `Initial static source graph regrew beyond the reviewed Kaspi Workshop allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)

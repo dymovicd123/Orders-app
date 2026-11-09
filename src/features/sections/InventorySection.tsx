@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { selectStockOverviewModels } from '../inventory/stockOverviewSelectors'
+import { loadOperationStockSources } from '../inventory/loadOperationStockSources'
+import { useInventoryHistoryWorkspace } from '../inventory/useInventoryHistoryWorkspace'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
-import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse, InventoryOperationAttempt, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
+import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
 import { renderInventoryHealthPanel } from '../inventory/views/renderInventoryHealthPanel'
 import { renderInventoryExactPanel } from '../inventory/views/renderInventoryExactPanel'
 import { renderInventorySourceToolbar } from '../inventory/views/renderInventorySourceToolbar'
@@ -10,7 +12,6 @@ import { renderInventoryOverviewPanel } from '../inventory/views/renderInventory
 import { renderInventoryAttentionPanel } from '../inventory/views/renderInventoryAttentionPanel'
 import { useInventoryAttentionActions } from '../inventory/useInventoryAttentionActions'
 import { runRoutineCycleCount } from '../inventory/routineCycleCount'
-import { loadOperationStockSources } from '../inventory/loadOperationStockSources'
 import { renderInventoryStocktakePanel } from '../inventory/views/renderInventoryStocktakePanel'
 import { renderInventoryWarehousePanel } from '../inventory/views/renderInventoryWarehousePanel'
 import { renderInventoryBoutiquePanel } from '../inventory/views/renderInventoryBoutiquePanel'
@@ -65,18 +66,6 @@ type SimpleStockDetail = {
   hasDataIssue: boolean
 }
 
-type InventoryHistoryFilter = {
-  source: InventorySourceKey
-  variantId: number
-  productId?: number
-  productName?: string
-  color?: string
-  size?: string
-  material?: string
-  length?: string
-  gender?: string
-}
-
 type ResolutionFactsState = CatalogResolutionFacts & { productId: number; genderScope: '' | 'female' | 'male' | 'unisex' }
 type ResolutionContextState = Partial<CatalogResolutionContext> & { error?: string }
 type ResolutionEditableField = 'material' | 'length' | 'color' | 'size'
@@ -97,7 +86,6 @@ type SectionContext = Record<string, any> & {
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
     onInlineArrivalVariant,
-    askActionConfirmation,
     onInlineCorrectionVariant,
     inventoryMovementError,
     clearInventoryMovementError,
@@ -198,7 +186,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     loadInventoryAudit,
     loadInventoryData,
     loadInventoryHistory,
-    loadInventoryOperationAttempts,
     loadInventoryCheckHistory,
     loadInventoryReservations,
     loadInventoryStocktakeSessions,
@@ -229,7 +216,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     referenceSearch,
     referenceStatusFilter,
     refreshInventoryModule,
-    refreshOrdersAfterPhysicalCheck,
     removeReferenceEntry,
     renderInventoryStockGroups,
     resetReferenceDraft,
@@ -290,37 +276,35 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [simpleStockDetail, setSimpleStockDetail] = useState<SimpleStockDetail | null>(null)
   const [simpleStockReservations, setSimpleStockReservations] = useState<InventoryReservation[]>([])
   const [simpleStockReservationsBusy, setSimpleStockReservationsBusy] = useState(false)
-  const [historyVariantFilter, setHistoryVariantFilter] = useState<InventoryHistoryFilter | null>(null)
-  const [historyMode, setHistoryMode] = useState<'movements' | 'checks'>('movements')
-  const [historyRows, setHistoryRows] = useState<InventoryHistoryResponse['movements']>([])
-  const [historyAttempts, setHistoryAttempts] = useState<InventoryOperationAttempt[]>([])
-  const [historyAttemptsHasMore, setHistoryAttemptsHasMore] = useState(false)
-  const [historyAttemptCursor, setHistoryAttemptCursor] = useState<number | null>(null)
-  const [historyAttemptsBusy, setHistoryAttemptsBusy] = useState(false)
-  const [historyAttemptsError, setHistoryAttemptsError] = useState('')
-  const [historyCheckRows, setHistoryCheckRows] = useState<InventoryCheckHistoryRow[]>([])
-  const [historyCheckEvidence, setHistoryCheckEvidence] = useState<InventoryCheckHistoryResponse | null>(null)
-  // Active reservations are a separate CURRENT obligation, never a historic
-  // movement or a claim about how many items were physically counted.
-  const [historyActiveOrders, setHistoryActiveOrders] = useState<InventoryReservation[]>([])
-  const [historyActiveOrdersBusy, setHistoryActiveOrdersBusy] = useState(false)
-  const [historyActiveOrdersError, setHistoryActiveOrdersError] = useState('')
-  const [historyActiveOrdersTotalQuantity, setHistoryActiveOrdersTotalQuantity] = useState(0)
-  const [historyActiveOrdersTotalCount, setHistoryActiveOrdersTotalCount] = useState(0)
-  const [historyActiveOrdersHasMore, setHistoryActiveOrdersHasMore] = useState(false)
-  const [historyCheckHasMore, setHistoryCheckHasMore] = useState(false)
-  const [historyCheckNextBeforeId, setHistoryCheckNextBeforeId] = useState<number | null>(null)
-  const [historyChecksPagingBusy, setHistoryChecksPagingBusy] = useState(false)
-  const [historyChecksPageError, setHistoryChecksPageError] = useState('')
-  const [historyChecksUnavailable, setHistoryChecksUnavailable] = useState(false)
-  const [historyBusy, setHistoryBusy] = useState(false)
-  const [historyError, setHistoryError] = useState('')
-  const [historyHasMore, setHistoryHasMore] = useState(false)
-  const [historyNextBeforeId, setHistoryNextBeforeId] = useState<number | null>(null)
-  const [historyQuery, setHistoryQuery] = useState('')
-  const [historyStocktakeDetail, setHistoryStocktakeDetail] = useState<InventoryStocktakeSession | null>(null)
-  const [historyStocktakeDetailBusy, setHistoryStocktakeDetailBusy] = useState(false)
-  const historyRequestRef = useRef(0)
+  const {
+    formatHistoryMoment,
+    historyBusy,
+    historyCheckLabel,
+    historyCheckRows,
+    historyDisplayRows,
+    historyError,
+    historyHasMore,
+    historyMode,
+    historyQuery,
+    historyRows,
+    historyStocktakeDetail,
+    historyStocktakeDetailBusy,
+    historyVariantFilter,
+    loadHistoryChecks,
+    loadHistoryMovements,
+    openHistoryStocktake,
+    openSimpleStockHistory,
+    setHistoryMode,
+    setHistoryQuery,
+    setHistoryVariantFilter,
+  } = useInventoryHistoryWorkspace({
+    inventoryPanel,
+    loadInventoryHistory,
+    loadInventoryCheckHistory,
+    loadInventoryStocktakeSession,
+    openInventoryPanel,
+    clearStockDetail: () => setSimpleStockDetail(null),
+  })
   const simpleStockReservationsRequestRef = useRef(0)
   const [simpleStockOpenProductKey, setSimpleStockOpenProductKey] = useState('')
   const [simpleStockCatalogLoading, setSimpleStockCatalogLoading] = useState(false)
@@ -402,8 +386,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [movementSourceLoading, setMovementSourceLoading] = useState(false)
   const [movementSourceLoadError, setMovementSourceLoadError] = useState('')
   const [movementSourceRefreshToken, setMovementSourceRefreshToken] = useState(0)
-  const [attentionCorrectionTarget, setAttentionCorrectionTarget] = useState<{ token: number; source: 'warehouse' | 'boutique'; variantId: number; productId: number } | null>(null)
-  const [attentionCorrectionReadyToken, setAttentionCorrectionReadyToken] = useState<number | null>(null)
   const movementSourceRequestRef = useRef(0)
 
   const catalogReviewGroups = useMemo(() => {
@@ -550,7 +532,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     const question = affected > 1
       ? `Не добавлять «${itemLabel}» в каталог для ${affected} одинаковых текущих позиций? Они останутся в своих заказах как введённый текст и не будут участвовать в складском учёте.`
       : `Не добавлять «${itemLabel}» в каталог? Позиция останется в заказе как введённый текст и не будет участвовать в складском учёте.`
-    if (!await askActionConfirmation(question)) return
+    if (!window.confirm(question)) return
     const result = await excludeCatalogReviewItem(Number(catalogReviewActiveItem.orderItemId))
     if (result) {
       setCatalogReviewTaskIndex(0)
@@ -900,7 +882,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const currentStocktakeGroup = stocktakeGroups[stocktakeProductIndex] || null
   const stocktakeActiveForSelectedSource = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource) || null
   const cycleCountFilledCount = Object.values(cycleCountValues).filter((value) => value !== '').length
-  const submitRoutineCycleCount = (row: any, countedQuantity: number) => runRoutineCycleCount({ row, countedQuantity, source: simpleStockSource, busy: cycleCountBusy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions: refreshCycleCountSuggestions, onSuccess: refreshOrdersAfterPhysicalCheck, setBusy: setCycleCountBusy, setNotice: setCycleCountNotice, setData: setCycleCountData, setValues: setCycleCountValues })
+  const submitRoutineCycleCount = (row: any, countedQuantity: number) => runRoutineCycleCount({ row, countedQuantity, source: simpleStockSource, busy: cycleCountBusy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions: refreshCycleCountSuggestions, setBusy: setCycleCountBusy, setNotice: setCycleCountNotice, setData: setCycleCountData, setValues: setCycleCountValues })
 
   async function refreshCycleCountSuggestions(source: StocktakeSource = stocktakeSource, keepNotice = false, limit = 12) {
     const seq = ++cycleCountLoadSeq.current
@@ -955,7 +937,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         ? `Проверено ${selected.length}. Расхождений исправлено: ${result.changedCount}.`
         : `Проверено ${selected.length}. Остатки совпали.`)
       await refreshInventoryModule(true)
-      void refreshOrdersAfterPhysicalCheck?.()
       await refreshCycleCountSuggestions(stocktakeSource, true)
     } catch (error) {
       setCycleCountNotice(error instanceof Error ? error.message : 'Не удалось сохранить короткую сверку.')
@@ -963,6 +944,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setCycleCountBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (inventoryPanel === 'overview' && cycleCountData && cycleCountData.source !== simpleStockSource) {
+      setCycleCountData(null)
+      setCycleCountValues({})
+    }
+    if (inventoryPanel !== 'stocktake' || stocktakeSession || stocktakeStartMode !== 'selective') return
+    if (cycleCountLoading || cycleCountData?.source === stocktakeSource || (!cycleCountData && cycleCountNotice)) return
+    setCycleCountValues({})
+    void refreshCycleCountSuggestions(stocktakeSource)
+  }, [inventoryPanel, activeSector, simpleStockSource, stocktakeSource, stocktakeStartMode, stocktakeSession?.id, cycleCountData?.source, cycleCountLoading, cycleCountNotice])
 
   useEffect(() => {
     if (!stocktakeSession || !currentStocktakeGroup || stocktakeFoundOtherProduct) return
@@ -1171,7 +1163,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setStocktakeNotice('Для проверки нескольких товаров выберите хотя бы один товар.')
       return
     }
-    if (stocktakeStartMode === 'full' && stocktakeSourceStats[stocktakeSource] > 150 && !await askActionConfirmation(`Полная ревизия содержит ${stocktakeSourceStats[stocktakeSource]} позиций. Её можно закрыть и продолжить позже. Начать?`)) return
+    if (stocktakeStartMode === 'full' && stocktakeSourceStats[stocktakeSource] > 150 && !window.confirm(`Полная ревизия содержит ${stocktakeSourceStats[stocktakeSource]} позиций. Её можно закрыть и продолжить позже. Начать?`)) return
     setStocktakeBusy(true)
     setStocktakeNotice('')
     try {
@@ -1291,7 +1283,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setStocktakeNotice('У этого товара уже заполнены все позиции.')
       return
     }
-    if (!await askActionConfirmation(`Вы физически проверили весь товар «${currentStocktakeGroup.productName}»? Для ${rows.length} непосчитанных позиций будет записан 0.`)) return
+    if (!window.confirm(`Вы физически проверили весь товар «${currentStocktakeGroup.productName}»? Для ${rows.length} непосчитанных позиций будет записан 0.`)) return
     setStocktakeBusy(true)
     for (const row of rows) stocktakeTouchedIds.current.add(Number(row.id))
     setStocktakeFacts((current) => ({ ...current, ...Object.fromEntries(rows.map((row: any) => [String(row.id), '0'])) }))
@@ -1334,7 +1326,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function discardStocktake() {
     if (!stocktakeSession?.id || stocktakeBusy) return
-    if (!await askActionConfirmation('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.')) return
+    if (!window.confirm('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.')) return
     setStocktakeBusy(true)
     try {
       await cancelInventoryStocktakeSession(stocktakeSession.id)
@@ -1418,7 +1410,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       else { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(result.message || 'Проверка завершена.') }
       setStocktakeReviewMode(false)
       await Promise.allSettled([refreshInventoryModule(true), refreshActiveStocktakes()])
-      void refreshOrdersAfterPhysicalCheck?.()
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось завершить ревизию.')
     } finally {
@@ -1545,13 +1536,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   async function openFoundInventoryCatalog(item: any) {
     const productId = Number(item?.productId || 0)
     if (!Number.isSafeInteger(productId) || productId <= 0) {
-      setStocktakeNotice('У найденной вещи нет подтверждённого базового товара. Выберите товар через каталог вручную.')
+      setStocktakeNotice('У найденной вещи нет подтверждённого товара. Выберите его в каталоге вручную.')
       return
     }
     try {
-      // Always select the exact product from this physical find, not the last
-      // catalog selection (or the alphabetically first product). Filtering by
-      // category/search can otherwise silently show an unrelated product.
       const catalog = await loadCatalogData(true)
       const product = (catalog?.products || []).find((candidate: any) =>
         Number(candidate.id) === productId && candidate.isActive !== false)
@@ -1560,6 +1548,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         return
       }
       const category = getCatalogProductEffectiveCategory(product)
+      // Search/category filters must not take the operator to a different SKU.
       setCatalogAdminMode('catalog')
       setCatalogCategoryFilter('all')
       setCatalogOnlyWithoutVariants(false)
@@ -1569,8 +1558,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         id: productId, name: product.name, category,
         genderScope: product.genderScope || 'unisex',
       })
-      // Prefill only a DRAFT. Never create a SKU, receipt or physical movement
-      // just because the operator clicked "Разобрать".
+      // These are draft attributes of the physical find, never a new SKU or arrival.
       setCatalogVariantDraft({
         id: 0, productId: String(productId),
         category: item?.category === 'child' ? 'child' : 'adult',
@@ -1711,258 +1699,16 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     }
   }
 
-  const formatHistoryMoment = (value: unknown) => {
-    const text = String(value || '').trim()
-    if (!text) return '—'
-    const date = new Date(text)
-    if (Number.isNaN(date.getTime())) return text
-    return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
-  }
-
-  const historyCheckLabel = (row: any) => {
-    if (row.checkType === 'full_stocktake') return 'Полная ревизия'
-    if (row.checkType === 'selective_stocktake') return 'Выборочная ревизия'
-    if (row.checkType === 'cycle_count') return 'Плановая сверка'
-    if (row.checkType === 'order_observation') return 'Сверка при заказе'
-    if (row.checkType === 'exchange_observation') return 'Сверка при обмене'
-    if (row.checkType === 'transfer_observation') return 'Сверка при перемещении'
-    return 'Короткая сверка'
-  }
-
-  async function loadMoreHistoryAttempts() {
-    const requestId = historyRequestRef.current
-    if (!historyVariantFilter?.variantId || !historyAttemptCursor || historyAttemptsBusy) return
-    setHistoryAttemptsBusy(true)
-    setHistoryAttemptsError('')
-    try {
-      const data = await loadInventoryOperationAttempts({
-        source: historyVariantFilter.source,
-        variantId: historyVariantFilter.variantId,
-        beforeId: historyAttemptCursor,
-      })
-      if (requestId !== historyRequestRef.current) return
-      setHistoryAttempts((current) => [...current, ...(Array.isArray(data?.attempts) ? data.attempts : [])])
-      setHistoryAttemptsHasMore(Boolean(data?.hasMore))
-      setHistoryAttemptCursor(Number(data?.nextBeforeId || 0) || null)
-    } catch (error) {
-      if (requestId === historyRequestRef.current)
-        setHistoryAttemptsError(error instanceof Error ? error.message : 'Не удалось загрузить более ранние попытки.')
-    } finally {
-      if (requestId === historyRequestRef.current) setHistoryAttemptsBusy(false)
-    }
-  }
-
-  async function loadHistoryMovements(reset = true) {
-    const requestId = ++historyRequestRef.current
-    setHistoryBusy(true)
-    setHistoryError('')
-    if (reset) {
-      // Never render a previous SKU's cached events under a newly selected variant.
-      setHistoryRows([])
-      setHistoryAttempts([])
-      setHistoryAttemptsHasMore(false)
-      setHistoryAttemptCursor(null)
-      setHistoryAttemptsBusy(Boolean(historyVariantFilter?.variantId))
-      setHistoryAttemptsError('')
-      setHistoryCheckRows([])
-      setHistoryCheckEvidence(null)
-      setHistoryActiveOrders([])
-      setHistoryActiveOrdersTotalQuantity(0)
-      setHistoryActiveOrdersTotalCount(0)
-      setHistoryActiveOrdersHasMore(false)
-      setHistoryActiveOrdersBusy(Boolean(historyVariantFilter?.variantId))
-      setHistoryActiveOrdersError('')
-      setHistoryCheckHasMore(false)
-      setHistoryCheckNextBeforeId(null)
-      setHistoryChecksPageError('')
-      setHistoryHasMore(false)
-      setHistoryNextBeforeId(null)
-      setHistoryChecksUnavailable(false)
-    }
-    try {
-      const data = await loadInventoryHistory({
-        source: historyVariantFilter?.source || '',
-        variantId: Number(historyVariantFilter?.variantId || 0),
-        q: historyVariantFilter?.variantId ? '' : historyQuery,
-        beforeId: reset ? 0 : Number(historyNextBeforeId || 0),
-        limit: 50,
-      })
-      if (requestId !== historyRequestRef.current) return
-      const rows = Array.isArray(data?.movements) ? data.movements : []
-      setHistoryRows((current) => reset ? rows : [...current, ...rows])
-      setHistoryHasMore(Boolean(data?.hasMore))
-      setHistoryNextBeforeId(Number(data?.nextBeforeId || 0) || null)
-      if (reset && Number(historyVariantFilter?.variantId || 0) > 0) {
-        // HTTP attempts have their own independent evidence and pagination.
-        // Failure to load them must never be reported as no rejected attempts.
-        try {
-          const data = await loadInventoryOperationAttempts({
-            source: historyVariantFilter?.source || 'warehouse',
-            variantId: Number(historyVariantFilter?.variantId || 0),
-          })
-          if (requestId !== historyRequestRef.current) return
-          setHistoryAttempts(Array.isArray(data?.attempts) ? data.attempts : [])
-          setHistoryAttemptsHasMore(Boolean(data?.hasMore))
-          setHistoryAttemptCursor(Number(data?.nextBeforeId || 0) || null)
-        } catch (error) {
-          if (requestId !== historyRequestRef.current) return
-          setHistoryAttemptsError(error instanceof Error ? error.message : 'Не удалось загрузить журнал попыток.')
-        } finally {
-          if (requestId === historyRequestRef.current) setHistoryAttemptsBusy(false)
-        }
-        // Physical checks are stored separately from movements. Load exact
-        // source+variant facts alongside the focused timeline, read-only.
-        try {
-          const checks = await loadInventoryCheckHistory({
-            source: historyVariantFilter?.source || '',
-            variantId: Number(historyVariantFilter?.variantId || 0),
-            limit: 50,
-          })
-          if (requestId !== historyRequestRef.current) return
-          setHistoryCheckRows(Array.isArray(checks?.rows) ? checks.rows : [])
-          setHistoryCheckEvidence(checks)
-          setHistoryCheckHasMore(Boolean(checks?.hasMore))
-          setHistoryCheckNextBeforeId(Number(checks?.nextBeforeId || 0) || null)
-          setHistoryChecksUnavailable(false)
-        } catch {
-          if (requestId !== historyRequestRef.current) return
-          setHistoryCheckRows([])
-          setHistoryCheckEvidence(null)
-          setHistoryCheckHasMore(false)
-          setHistoryChecksUnavailable(true)
-        }
-        // Read exact live reservations after the same variant history load.
-        // Failure must never make historic movement/check data disappear.
-        try {
-          const source = historyVariantFilter?.source === 'boutique' ? 'boutique' : 'warehouse'
-          const variantId = Number(historyVariantFilter?.variantId || 0)
-          const active = await loadInventoryReservations(source, variantId, 0)
-          if (requestId !== historyRequestRef.current) return
-          const orders = Array.isArray(active?.reservations) ? active.reservations : []
-          setHistoryActiveOrders(orders.filter((order: InventoryReservation) =>
-            Number(order.variantId) === variantId && order.source === source && order.status === 'active'))
-          setHistoryActiveOrdersTotalQuantity(Number(active?.totalQuantity || 0))
-          setHistoryActiveOrdersTotalCount(Number(active?.totalCount ?? orders.length))
-          setHistoryActiveOrdersHasMore(Boolean(active?.hasMore))
-          setHistoryActiveOrdersError('')
-        } catch {
-          if (requestId !== historyRequestRef.current) return
-          setHistoryActiveOrders([])
-          setHistoryActiveOrdersTotalQuantity(0)
-          setHistoryActiveOrdersTotalCount(0)
-          setHistoryActiveOrdersHasMore(false)
-          setHistoryActiveOrdersError('Не удалось проверить действующие резервы. История движений доступна; обновите её для повторной попытки.')
-        } finally {
-          if (requestId === historyRequestRef.current) setHistoryActiveOrdersBusy(false)
-        }
-      }
-    } catch (err) {
-      if (requestId !== historyRequestRef.current) return
-      setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю склада.')
-      if (requestId === historyRequestRef.current) setHistoryActiveOrdersBusy(false)
-    } finally {
-      if (requestId === historyRequestRef.current) setHistoryBusy(false)
-    }
-  }
-
-  async function loadMoreHistoryChecks() {
-    if (!historyVariantFilter?.variantId || !historyCheckHasMore || !historyCheckNextBeforeId
-      || historyChecksPagingBusy) return
-    const requestId = historyRequestRef.current
-    const source = historyVariantFilter.source
-    const variantId = historyVariantFilter.variantId
-    setHistoryChecksPagingBusy(true)
-    setHistoryChecksPageError('')
-    try {
-      const older = await loadInventoryCheckHistory({
-        source, variantId, beforeId: historyCheckNextBeforeId, limit: 50,
-      })
-      if (requestId !== historyRequestRef.current) return
-      const rows: InventoryCheckHistoryRow[] = Array.isArray(older?.rows) ? older.rows : []
-      setHistoryCheckRows(current => {
-        const existing = new Set(current.map(row => row.id))
-        return [...current, ...rows.filter(row => !existing.has(row.id))]
-      })
-      setHistoryCheckHasMore(Boolean(older?.hasMore))
-      setHistoryCheckNextBeforeId(Number(older?.nextBeforeId || 0) || null)
-    } catch (err) {
-      if (requestId !== historyRequestRef.current) return
-      setHistoryChecksPageError(err instanceof Error ? err.message : 'Не удалось загрузить ранние сверки.')
-    } finally {
-      if (requestId === historyRequestRef.current) setHistoryChecksPagingBusy(false)
-    }
-  }
-
-  async function loadHistoryChecks() {
-    const requestId = ++historyRequestRef.current
-    setHistoryBusy(true)
-    setHistoryError('')
-    setHistoryStocktakeDetail(null)
-    try {
-      const data = await loadInventoryCheckHistory({ source: historyVariantFilter?.source || '', variantId: Number(historyVariantFilter?.variantId || 0), limit: 40 })
-      if (requestId !== historyRequestRef.current) return
-      setHistoryCheckRows(Array.isArray(data?.rows) ? data.rows : [])
-    } catch (err) {
-      if (requestId !== historyRequestRef.current) return
-      setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить ревизии и сверки.')
-    } finally {
-      if (requestId === historyRequestRef.current) setHistoryBusy(false)
-    }
-  }
-
-  async function openHistoryStocktake(sessionId: string) {
-    if (!sessionId || historyStocktakeDetailBusy) return
-    if (historyStocktakeDetail?.id === sessionId) { setHistoryStocktakeDetail(null); return }
-    setHistoryStocktakeDetailBusy(true)
-    setHistoryError('')
-    try {
-      const data = await loadInventoryStocktakeSession(sessionId)
-      setHistoryStocktakeDetail(data?.session || null)
-    } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : 'Не удалось открыть детали ревизии.')
-    } finally {
-      setHistoryStocktakeDetailBusy(false)
-    }
-  }
-
-  const historyDisplayRows = useMemo(() => {
-    const result: any[] = []
-    const seenTransfers = new Set<string>()
-    for (const row of historyRows) {
-      const transfer = ['transfer_in', 'transfer_out'].includes(String(row.referenceType || '')) && row.referenceId
-      if (!transfer) { result.push({ kind: 'movement', row }); continue }
-      const key = String(row.referenceId)
-      if (seenTransfers.has(key)) continue
-      seenTransfers.add(key)
-      const rows = historyRows.filter((candidate: any) => String(candidate.referenceId || '') === key && ['transfer_in', 'transfer_out'].includes(String(candidate.referenceType || '')))
-      const outgoing = rows.filter((candidate: any) => candidate.referenceType === 'transfer_out')
-      result.push({ kind: 'transfer', row, rows, variantCount: new Set(outgoing.map((candidate: any) => candidate.variantId)).size, totalQuantity: outgoing.reduce((sum: number, candidate: any) => sum + Math.abs(Number(candidate.quantityDelta || 0)), 0) })
-    }
-    return result
-  }, [historyRows])
-
-  useEffect(() => {
-    if (inventoryPanel !== 'history') return
-    if (historyMode === 'movements') void loadHistoryMovements(true)
-    else void loadHistoryChecks()
-  }, [inventoryPanel, historyMode, historyVariantFilter?.variantId, historyVariantFilter?.source])
-
-  function openSimpleStockHistory(detail: InventoryHistoryFilter) {
-    setHistoryVariantFilter(detail)
-    setHistoryMode('movements')
-    setHistoryQuery('')
-    setSimpleStockDetail(null)
-    openInventoryPanel('history')
-  }
-
   const {
     applyQuickStocktake,
     attentionCategory,
     attentionError,
     attentionIntakeBusyId,
     attentionLoading,
+    openAttentionCatalog,
     openAttentionHandover,
     openAttentionIntake,
+    openAttentionLifecycle,
     refreshWarehouseAttention,
     setAttentionCategory,
   } = useInventoryAttentionActions({
@@ -1989,35 +1735,29 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     openOrderStockHandoverById,
   })
 
-  // Only present active stock/reservation mismatches; historical shipping is available in SKU History.
-  const warehouseShortageCount = Number(warehouseAttention?.counts?.shortage || 0)
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
+    + Number(warehouseAttention?.counts?.lifecycle || 0)
+    + Number(warehouseAttention?.counts?.catalog || 0)
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
     if (activeSector !== 'inventory' || inventoryPanel !== 'movement') return
-
     const requestId = ++movementSourceRequestRef.current
-    const current = () => requestId === movementSourceRequestRef.current
+    const isCurrent = () => requestId === movementSourceRequestRef.current
       && activeSector === 'inventory' && inventoryPanel === 'movement'
-    const sources = inventoryDraft.movementType === 'transfer'
+    const sources: Array<'warehouse' | 'boutique'> = inventoryDraft.movementType === 'transfer'
       ? Array.from(new Set([inventoryDraft.source, inventoryDraft.targetSource]))
       : [inventoryDraft.source]
 
     setMovementSourceLoading(true)
-    setAttentionCorrectionReadyToken(null)
     setMovementSourceLoadError('')
     void loadOperationStockSources(
       sources,
       (source: 'warehouse' | 'boutique') => loadInventoryData(source, true, '', false),
-      current,
+      isCurrent,
     ).then((result) => {
-      if (!current() || result.status === 'cancelled') return
-      if (result.status === 'ready' && attentionCorrectionTarget !== null && attentionCorrectionTarget.source === inventoryDraft.source
-        && inventoryDraft.movementType === 'manual_set') {
-        setAttentionCorrectionReadyToken(attentionCorrectionTarget.token)
-      }
+      if (!isCurrent() || result.status === 'cancelled') return
       if (result.status === 'error') {
         const names = result.failedSources.map(sourceLabel).join(' и ')
         setMovementSourceLoadError(
@@ -2025,18 +1765,15 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         )
       }
     }).catch((error: unknown) => {
-      if (!current()) return
+      if (!isCurrent()) return
       setMovementSourceLoadError(error instanceof Error ? error.message : 'Не удалось загрузить остатки выбранной точки.')
     }).finally(() => {
-      if (current()) setMovementSourceLoading(false)
+      if (isCurrent()) setMovementSourceLoading(false)
     })
-
     return () => {
-      // Switches between Operations / other warehouse panels must not allow
-      // a late background response to repaint the next operation's error state.
-      if (current()) movementSourceRequestRef.current += 1
+      if (isCurrent()) movementSourceRequestRef.current += 1
     }
-  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken, attentionCorrectionTarget?.token])
+  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken])
 
   const operationVisibleRows = useMemo(() => {
     const rows = [...(selectedInventoryOperationGroup?.rows || [])]
@@ -2443,8 +2180,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     </div>
   )
 
-  // Do not turn a missing/pending inventory snapshot into a fake zero-count catalog.
-  // The catalog can be loaded while the physical/reservation fetch has failed.
+  // Missing pending/failed inventory cannot be represented by zeros from catalog variants.
   const simpleStockSnapshotReady = (inventorySourceRows || []).some(
     (row: any) => row.source === simpleStockSource && row.data?.ok === true
   ) && (simpleStockSourceRefresh?.source !== simpleStockSource || simpleStockSourceRefresh.status === 'ready')
@@ -2470,11 +2206,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     </button>
                   ))}
                 </div>
-                {(warehouseShortageCount > 0 || warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
+                {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
                   <div className="warehouse-w2-secondary">
-                    {warehouseShortageCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory === 'shortage' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('shortage'); openInventoryPanel('attention') }} title="Активные резервы превышают учтённый физический остаток">
-                      <span>Проверить остаток</span><b>{warehouseShortageCount}</b>
-                    </button> : null}
                     {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
                       <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
                     </button> : null}
@@ -2488,7 +2221,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
 
               {renderInventoryAttentionPanel({
-        openInventoryPanel,
         attentionCategory,
         attentionError,
         attentionIntakeBusyId,
@@ -2496,43 +2228,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         formatDateShort,
         inventoryPanelStyle,
         isAdmin,
+        openAttentionCatalog,
         openAttentionHandover,
         openAttentionIntake,
+        openAttentionLifecycle,
         openAttentionFoundCatalog: openFoundInventoryCatalog,
-        openAttentionOrder: (item: any) => void openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate }),
-        openAttentionArrival: (item: any) => { if (isAdmin) { setInventoryDraft((draft: any) => ({ ...draft, source: item.source, movementType: 'arrival' })); openInventoryPanel('movement') } },
-        openAttentionCorrection: (item: any) => {
-          const variantId = Number(item.variantId || 0)
-          if (!Number.isSafeInteger(variantId) || variantId <= 0) return
-          const source: 'warehouse' | 'boutique' = item.source === 'boutique' ? 'boutique' : 'warehouse'
-          // Navigating from an issue must not reuse a draft belonging to
-          // another operation or location. No physical count is inferred.
-          operationSourceDraftsRef.current = {}
-          resetInventoryOperationSelection()
-          setInventoryDraft((current: any) => ({
-            ...current, source, targetSource: source === 'warehouse' ? 'boutique' : 'warehouse',
-            movementType: 'manual_set', items: [createEmptyInventoryItem()], comment: '',
-          }))
-          setAttentionCorrectionTarget((previous) => ({
-            token: (previous?.token || 0) + 1,
-            source, variantId, productId: Number(item.productId || 0),
-          }))
-          openInventoryPanel('movement')
-        },
-        openAttentionHistory: (item: any) => {
-          if (!Number(item.variantId || 0)) return
-          openSimpleStockHistory({
-            source: item.source === 'boutique' ? 'boutique' : 'warehouse',
-            variantId: Number(item.variantId),
-            productId: Number(item.productId || 0),
-            productName: item.productName,
-            gender: item.gender,
-            color: item.color,
-            material: item.material,
-            length: item.length,
-            size: item.size,
-          })
-        },
         reconcileFoundInventoryStock: resolveFoundInventoryStock,
         refreshWarehouseAttention,
         setAttentionCategory,
@@ -2912,8 +2612,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
-        attentionCorrectionTarget: attentionCorrectionReadyToken === attentionCorrectionTarget?.token ? attentionCorrectionTarget : null,
-        clearAttentionCorrectionTarget: () => setAttentionCorrectionTarget(null),
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
         inventoryMovementError,
@@ -2971,25 +2669,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyBusy,
         historyCheckLabel,
         historyCheckRows,
-        historyCheckEvidence,
-        historyActiveOrders,
-        historyActiveOrdersBusy,
-        historyActiveOrdersError,
-        historyActiveOrdersTotalQuantity,
-        historyActiveOrdersTotalCount,
-        historyActiveOrdersHasMore,
-        historyAttempts,
-        historyAttemptsHasMore,
-        historyAttemptsBusy,
-        historyAttemptsError,
-        loadMoreHistoryAttempts,
-        openHistoryReserveOrder: (order: InventoryReservation) => void openOrderFromFinance({
-          orderId: order.orderId, externalId: order.externalOrderId, orderDate: order.orderDate,
-        }),
-        historyCheckHasMore,
-        historyChecksPagingBusy,
-        historyChecksPageError,
-        historyChecksUnavailable,
         historyDisplayRows,
         historyError,
         historyHasMore,
@@ -3003,7 +2682,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryPanelStyle,
         isAdmin,
         loadHistoryChecks,
-        loadMoreHistoryChecks,
         loadHistoryMovements,
         openHistoryStocktake,
         openInventoryPanel,

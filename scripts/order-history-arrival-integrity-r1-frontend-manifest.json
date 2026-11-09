@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "revision": "order-history-arrival-integrity-r1-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "bac4ea2d1080bc702574717a7728fbbc8fef329c",
+      "beforeLines": 8105,
+      "afterGitBlob": "64967548c2e223fec55979527a66281b53eb77fe",
+      "afterLines": 8105,
+      "replacements": [
+        {
+          "beforeBlock": "      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId)) {\n        throw new Error('Новый товар или новая характеристика требуют админ-режима. В рабочем режиме выберите готовый существующий вариант.')\n      }",
+          "afterBlock": "      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId && !Number(item.productId || 0))) {\n        throw new Error('Новый товар через «Приход» добавляет администратор. Для существующего товара можно принять новую вариацию — система проверит её перед сохранением.')\n      }"
+        }
+      ]
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "5461f2e1f6fc81956564b4be8dfbf0dbab2ad452",
+      "beforeLines": 1292,
+      "afterGitBlob": "656581b35dba35a376574c8e55b81c59ee3e75c8",
+      "afterLines": 1292,
+      "replacements": [
+        {
+          "beforeBlock": "      category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),\n      gender: automaticGender,\n",
+          "afterBlock": "      category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),\n      gender: automaticGender || first?.gender || position.gender,\n"
+        }
+      ]
+    }
+  }
+}

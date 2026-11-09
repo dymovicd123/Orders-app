@@ -1,0 +1,145 @@
+name: Stage03 Production migration 0072
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/stage03-production-migration-0072.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply 0072 to Production D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment or migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders-app-branch2' wrangler.jsonc || grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 binding detected. Refusing Production migration." >&2
+            exit 20
+          fi
+
+          migration='migrations/0072_v72_catalog_execution_prices.sql'
+          grep -Fq 'CREATE TABLE IF NOT EXISTS catalog_execution_prices' "$migration"
+          grep -Fq 'PRIMARY KEY (stock_position_id, category)' "$migration"
+          grep -Fq "CHECK (category IN ('adult', 'child'))" "$migration"
+          if grep -Eiq '\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE)\b' "$migration"; then
+            echo "Migration 0072 is no longer additive/no-backfill. Refusing migration." >&2
+            exit 21
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Capture Production finance fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM orders) AS orders_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM orders) AS orders_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM orders) AS orders_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM orders) AS orders_return,
+              (SELECT COUNT(*) FROM order_items) AS item_count,
+              (SELECT COALESCE(SUM(quantity), 0) FROM order_items) AS item_quantity,
+              (SELECT COALESCE(SUM(unit_price), 0) FROM order_items) AS item_unit_price_sum,
+              (SELECT COALESCE(SUM(line_total), 0) FROM order_items) AS item_line_total_sum,
+              (SELECT COUNT(*) FROM payments) AS payment_count,
+              (SELECT COALESCE(SUM(amount), 0) FROM payments) AS payment_amount,
+              (SELECT COUNT(*) FROM returns WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_return_count,
+              (SELECT COALESCE(SUM(amount), 0) FROM returns WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_return_amount,
+              (SELECT COUNT(*) FROM exchanges WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_exchange_count" \
+            --json)"
+          echo "$result"
+          fingerprint="$(jq -cS '.[0].results[0]' <<<"$result")"
+          [[ -n "$fingerprint" && "$fingerprint" != "null" ]] || {
+            echo "Could not capture Production pre-migration finance fingerprint." >&2
+            exit 22
+          }
+          printf '%s' "$fingerprint" > /tmp/stage03-prod-0072-before.json
+          echo "Pre-migration Production fingerprint: $fingerprint"
+
+      - name: Apply migration 0072 to Production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod \
+            --remote \
+            --config wrangler.jsonc \
+            --file migrations/0072_v72_catalog_execution_prices.sql
+
+      - name: Verify price schema starts empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT COUNT(*) AS price_rows FROM catalog_execution_prices" \
+            --json)"
+          echo "$result"
+          rows="$(jq -r '.[0].results[0].price_rows // empty' <<<"$result")"
+          [[ "$rows" == "0" ]] || {
+            echo "Expected zero Production current-price rows immediately after no-backfill migration; got: ${rows:-unknown}" >&2
+            exit 23
+          }
+
+      - name: Verify Production finance fingerprint unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM orders) AS orders_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM orders) AS orders_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM orders) AS orders_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM orders) AS orders_return,
+              (SELECT COUNT(*) FROM order_items) AS item_count,
+              (SELECT COALESCE(SUM(quantity), 0) FROM order_items) AS item_quantity,
+              (SELECT COALESCE(SUM(unit_price), 0) FROM order_items) AS item_unit_price_sum,
+              (SELECT COALESCE(SUM(line_total), 0) FROM order_items) AS item_line_total_sum,
+              (SELECT COUNT(*) FROM payments) AS payment_count,
+              (SELECT COALESCE(SUM(amount), 0) FROM payments) AS payment_amount,
+              (SELECT COUNT(*) FROM returns WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_return_count,
+              (SELECT COALESCE(SUM(amount), 0) FROM returns WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_return_amount,
+              (SELECT COUNT(*) FROM exchanges WHERE COALESCE(status, 'completed') <> 'cancelled') AS active_exchange_count" \
+            --json)"
+          echo "$result"
+          after="$(jq -cS '.[0].results[0]' <<<"$result")"
+          before="$(cat /tmp/stage03-prod-0072-before.json)"
+          [[ "$after" == "$before" ]] || {
+            echo "Production finance fingerprint changed during 0072 migration." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 24
+          }
+          echo "Stage03 migration 0072 verified on Production D1: empty price table created and historical finance aggregates unchanged."

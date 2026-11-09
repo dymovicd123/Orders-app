@@ -1,0 +1,49 @@
+name: Prepare isolated Main Stage3-5 selective candidate (NEVER PRODUCTION)
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - .github/workflows/candidate-main-stage345-prep-20261102.yml
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/candidate/main-stage345-port-20261102' && startsWith(github.event.head_commit.message, 'candidate(main345):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Exact baseline and selective staging on candidate branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
+          test "$(git rev-parse HEAD^)" = 'd4091fcf4212402cce4072df1c8efc49293b0a14'
+          git merge-base --is-ancestor '68eb304be61483145345ba0a9259a05398b9aecb' HEAD
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          bash scripts/prepare-main-stage345-port-20261102.sh
+          test -f migrations/0119_v72_order_dispatch_lineage.sql
+          test -f worker/domains/order-dispatch.ts
+          test -f src/features/orders/shippingSelection.ts
+          git commit -m 'candidate(main345): selective Stage5 integrated source for isolated checks'
+          git push origin HEAD:refs/heads/candidate/main-stage345-port-20261102
+          echo 'MAIN_STAGE5_CANDIDATE_PUSHED_NO_PRODUCTION'
+      - name: Candidate Main Stage5 business tests and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node --experimental-strip-types scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node --experimental-strip-types scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node --experimental-strip-types scripts/test-stage5b-http-routes-20261101.mjs
+          npm run build
+          npm audit --omit=dev --audit-level=high
+          echo 'STAGE5_MAIN_DERIVED_ISOLATED_PASS'

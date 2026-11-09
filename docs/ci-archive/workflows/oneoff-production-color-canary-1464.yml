@@ -1,0 +1,56 @@
+name: 'One-off cautious catalog-color canary 1464'
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ops/oneoff-production-color-canary-1464-20261016.mjs'
+      - '.github/workflows/oneoff-production-color-canary-1464.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-production-color-canary-1464.yml'
+permissions:
+  contents: read
+concurrency:
+  group: exact-oneoff-color-canary-1464
+  cancel-in-progress: false
+jobs:
+  inspect-or-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Read-only preflight before merging; oneoff live UPDATE only on main push
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/ops/oneoff-production-color-canary-1464-20261016.mjs
+          [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then
+            [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+            echo "APPLY_CANARY=yes" >> "$GITHUB_ENV"
+          else
+            echo "APPLY_CANARY=no" >> "$GITHUB_ENV"
+          fi
+          cat > "$RUNNER_TEMP/exact-prod-color-canary.jsonc" <<'CFG'
+          {
+            "name": "orders-app-color-canary-audit",
+            "compatibility_date": "2026-07-06",
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          CFG
+          echo "PROD_CANARY_CONFIG=$RUNNER_TEMP/exact-prod-color-canary.jsonc" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: Independent exact SKU checks, update guarded only after full merge
+        run: node scripts/ops/oneoff-production-color-canary-1464-20261016.mjs

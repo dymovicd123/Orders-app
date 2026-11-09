@@ -502,12 +502,14 @@ export function workshopCustomerIdentity(task: Pick<WorkshopTaskRecord, 'custome
 
 
 export function workshopDetailRows(task: WorkshopTaskRecord) {
+  const material = normalizeSuggestion(task.material) === 'СТАНДАРТ' ? '' : String(task.material || '').trim()
+  const length = normalizeSuggestion(task.length) === 'СТАНДАРТ' ? '' : String(task.length || '').trim()
   return [
     { label: 'Тип', value: workshopAudienceLabel(task) },
     { label: 'Пол', value: task.gender || 'Не указано' },
     { label: 'Цвет', value: task.color || 'Не указано' },
-    { label: 'Материал', value: task.material || 'Не указано' },
-    { label: 'Длина', value: task.length || 'Не указано' },
+    ...(material ? [{ label: 'Материал', value: material }] : []),
+    ...(length ? [{ label: 'Длина', value: length }] : []),
     { label: workshopAudienceLabel(task) === 'Детский' ? 'Возраст' : 'Размер', value: task.size || 'Не указано' },
   ]
 }
@@ -518,8 +520,8 @@ export function workshopInvoiceProductTitle(task: WorkshopTaskRecord) {
   const values = [
     task.productName,
     task.gender,
-    task.material,
-    task.length,
+    normalizeSuggestion(task.material) === 'СТАНДАРТ' ? '' : task.material,
+    normalizeSuggestion(task.length) === 'СТАНДАРТ' ? '' : task.length,
     workshopAudienceLabel(task),
   ]
     .map((value) => String(value || '').trim())
@@ -553,7 +555,11 @@ export function formatOrderItemDetails(item: Pick<OrderItem, 'audienceType' | 'g
   const normalizedGender = gender === 'МУЖ' || gender === 'ЖЕН' ? gender : ''
   const normalizedType = audienceType === 'ДЕТСКИЙ' || gender === 'ДЕТСКИЙ' ? 'ДЕТСКИЙ' : ''
 
-  return [normalizedType, normalizedGender, item.color, item.material, item.length, item.size]
+  const material = normalizeSuggestion(item.material) === 'СТАНДАРТ' ? '' : item.material
+  const length = normalizeSuggestion(item.length) === 'СТАНДАРТ' ? '' : item.length
+  const sizeValue = normalizeSuggestion(item.size)
+  const size = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(sizeValue) ? 'Без размера' : item.size
+  return [normalizedType, normalizedGender, item.color, material, length, size]
     .map((value) => String(value ?? '').trim())
     .filter(Boolean)
     .join(' · ')
@@ -748,6 +754,10 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       const stockStatus = String(item.stockWriteoffStatus || '').trim()
       const sentFallback = order?.shipping_status === 'sent' && (sourceType === 'workshop' || !stockStatus)
       const issuedToClient = issuedStockStatuses.has(stockStatus) || sentFallback
+      const maxQuantity = Math.max(0, Math.trunc(Number(item.availableOperationQuantity ?? item.quantity ?? 0) || 0))
+      // For a fully sent order, preselect only goods known to have reached the
+      // client. This is a draft selection, never an acknowledgement of receipt.
+      const initiallySelected = order?.shipping_status === 'sent' && issuedToClient
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
@@ -756,14 +766,8 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
         material: item.material,
         length: item.length,
         size: item.size,
-        // Preselect still-returnable issued units only if the WHOLE order was
-        // sent. An unshipped order requires explicit item selection even if
-        // an individual stock line has been fulfilled.
-        // Selection never confirms physical receipt or restocks inventory.
-        quantity: order?.shipping_status === 'sent' && issuedToClient
-          ? Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0))
-          : 0,
-        maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
+        quantity: initiallySelected ? maxQuantity : 0,
+        maxQuantity,
         sourceType,
         issuedToClient,
         restock: false,
@@ -995,6 +999,8 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
     items: order.items.length
         ? order.items.map((item) => ({
           orderItemId: Number(item.id || 0) || undefined,
+          catalogVariantId: Number(item.variantId || 0) || undefined,
+          manualCatalogEntry: !Number(item.variantId || 0),
           productName: item.productName,
           audienceType: item.audienceType
             ? (normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')

@@ -397,9 +397,7 @@ export async function listOrders(db: D1Database, url: URL) {
   } else if (status === 'closed') {
     baseWhereParts.push("o.order_status = 'closed'");
   } else if (status === 'returned') {
-    // A zero-money physical return is a real Return too. Filtering only by
-    // orders.return_amount silently hid goods-only returns from the table.
-    baseWhereParts.push("EXISTS (SELECT 1 FROM returns r WHERE r.order_id = o.id AND COALESCE(r.status, 'completed') <> 'cancelled')");
+    baseWhereParts.push('COALESCE(o.return_amount, 0) > 0');
   } else if (status === 'archived') {
     baseWhereParts.push("o.order_status = 'archived'");
   }
@@ -497,6 +495,7 @@ export async function listOrders(db: D1Database, url: URL) {
       o.shipping_status, o.shipping_date,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,
+      (SELECT COUNT(*) FROM order_items counted WHERE counted.order_id = o.id AND counted.quantity > 0) AS item_count,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id
     ${joins}
     ${pageWhereParts.length ? `WHERE ${pageWhereParts.join(' AND ')}` : ''}
@@ -686,7 +685,6 @@ export async function listOrders(db: D1Database, url: URL) {
       committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
       committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,
       has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(order.id) || false,
-      return_physical_summary: relations.returnPhysicalByOrderId.get(order.id) || null,
       catalog_review_required: (relations.itemsByOrderId.get(order.id) || []).some(raw => {
         const item = raw as Record<string, unknown>;
         const status = cleanText(item.stock_writeoff_status);

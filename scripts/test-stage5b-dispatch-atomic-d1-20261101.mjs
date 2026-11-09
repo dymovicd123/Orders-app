@@ -177,9 +177,23 @@ for(const [index,itemId] of [9965,9966].entries()){
  sql.prepare("INSERT INTO exchanges(id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,new_source_type,financial_action,financial_amount,status,created_at) VALUES(?,9053,'2026-11-01',9967,1,?,'warehouse','none',0,'completed','2026-11-01T00:00:00Z')").run(exchangeId,itemId)
  sql.prepare("INSERT INTO inventory_lifecycle_events(id,event_key,operation_type,operation_id,order_id,order_item_id,event_type,direction,inventory_source,quantity,product_id,variant_id,product_name_snapshot,status,pending_reason,created_at,updated_at) VALUES(? ,?,'exchange',?,9053,?,'exchange_new_out','out','warehouse',1,9021,9032,'DISPATCH REPLACEMENT','pending','awaiting_dispatch','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run(eventId,'test-exchange-'+exchangeId,exchangeId,itemId)
 }
-const previewSent=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9053))
+const {projectOrderShipmentDisplay,isOrderShipmentCompleteForActions}=await import('../src/app/orderShipmentProjection.ts')
+const {getOrder: getShipmentOrder}=await import('../worker/domains/orders-write.ts')
+const verifyShipmentView=async (orderId,expectedState,expectedComplete,expectedLineStates)=>{
+ const order=await getShipmentOrder(db,orderId)
+ assert(order,'Real SQLite order must remain available for shipping projection')
+ const projection=projectOrderShipmentDisplay(order)
+ assert.equal(projection.state,expectedState,'List status must reflect exact active order lines')
+ assert.equal(isOrderShipmentCompleteForActions(order),expectedComplete,
+   'Primary send button must close only when every active replacement has shipped')
+ if(expectedLineStates)assert.deepEqual(projection.lines.map(line=>line.state),expectedLineStates,
+   'Per-item shipment labels must follow the canonical ledger and pending exchanges')
+ return {order,projection}
+}
+const previewSent=await getShipmentOrder(db,9053)
 assert.equal(previewSent.shipping_status,'sent')
 assert.equal(previewSent.items.filter(i=>Number(i.pendingExchangeDispatchId)>0).length,2)
+await verifyShipmentView(9053,'not_sent',false,['not_sent','not_sent'])
 const exchangeBatch=await dispatchSelectedCompleteOrderLines(db,9053,{
  requestId:'stage5b-two-replacements-one-batch-0001',
  items:[{orderItemId:9965,quantity:1},{orderItemId:9966,quantity:1}],
@@ -187,6 +201,7 @@ const exchangeBatch=await dispatchSelectedCompleteOrderLines(db,9053,{
 })
 assert.equal(exchangeBatch.ok,true)
 assert.equal(exchangeBatch.shippedLines,2)
+await verifyShipmentView(9053,'sent',true,['sent','sent'])
 assert.deepEqual({...sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042").get()}, {quantity:3,reserved_quantity:0})
 const events=()=>sql.prepare("SELECT id,status,pending_reason,movement_id FROM inventory_lifecycle_events WHERE operation_id IN(9081,9082) ORDER BY id").all()
 assert(events().every(x=>x.status==='applied'&&x.movement_id>0))
@@ -199,6 +214,7 @@ const dispatchedA=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatc
 const undoneExchange=await cancelExactOrderDispatchItem(db,9053,{dispatchItemId:dispatchedA,requestId:'stage5b-undo-replacement-A-0001',actor:'QA manager',reason:'Error in shipment'})
 assert.equal(undoneExchange.ok,true)
 assert.equal(undoneExchange.physicalRestoredQuantity,1)
+await verifyShipmentView(9053,'partial',false,['not_sent','sent'])
 assert.deepEqual({...sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042").get()}, {quantity:4,reserved_quantity:1})
 assert.equal(events()[0].status,'pending')
 assert.equal(events()[0].pending_reason,'awaiting_dispatch')
@@ -206,6 +222,7 @@ assert.equal(events()[1].status,'applied')
 assert.equal(sql.prepare("SELECT quantity FROM order_items WHERE id=9967").get().quantity,0,'Original exchanged line must stay immutable')
 const lastOne=await dispatchSelectedCompleteOrderLines(db,9053,{requestId:'stage5b-replacement-A-again-0002',items:[{orderItemId:9965,quantity:1}],actor:'QA manager',dispatchDate:'2026-11-01'})
 assert.equal(lastOne.ok,true)
+await verifyShipmentView(9053,'sent',true,['sent','sent'])
 assert.equal(events()[0].status,'applied')
 assert.deepEqual({...sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042").get()}, {quantity:3,reserved_quantity:0})
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_dispatch_corrections WHERE dispatch_item_id=?').get(dispatchedA).n,1,'Exchange correction must be item-exact')
@@ -216,6 +233,7 @@ sql.prepare("UPDATE inventory_reservations SET reference_type='exchange_new',ref
 sql.prepare("INSERT INTO inventory_stock_checks(check_key,inventory_source,product_id,variant_id,expected_quantity,counted_quantity,difference_quantity,reserved_quantity,check_type,reference_type,reference_id,checked_by,checked_at,created_at) VALUES('stage5-replacement-after-count','warehouse',9021,9032,3,3,0,0,'quick_stocktake','quick_stocktake','stage5-count','QA','2099-01-01T00:00:00Z','2099-01-01T00:00:00Z')").run()
 const replacementDispatchItem=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(lastOne.dispatchId).id
 await cancelExactOrderDispatchItem(db,9053,{dispatchItemId:replacementDispatchItem,requestId:'stage5-counted-replacement-undo-001',actor:'QA',reason:'test'})
+await verifyShipmentView(9053,'partial',false,['not_sent','sent'])
 assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()},{quantity:3,reserved_quantity:0})
 const pendingReplacement=await inspectPendingReservation(db,9053,9965)
 assert.equal(pendingReplacement.pending,true)
@@ -237,6 +255,7 @@ const workshopOrder=await import('../worker/domains/orders-write.ts').then(m=>m.
 assert.equal(workshopOrder.shipping_status,'sent')
 const readyWorkshop=workshopOrder.items.find(x=>x.id===9970)
 assert.equal(readyWorkshop.pendingExchangeWorkshopId,9086)
+await verifyShipmentView(9054,'not_sent',false,['not_sent'])
 assert.equal(readyWorkshop.workshopTaskStatus,'done')
 const {buildOrderShipmentPlan}=await import('../worker/domains/order-shipment-plan.ts')
 const workshopPlan=buildOrderShipmentPlan(workshopOrder,[])
@@ -248,6 +267,7 @@ const workshopResult=await dispatchSelectedCompleteOrderLines(db,9054,{
  actor:'QA manager',dispatchDate:'2026-11-01',
 })
 assert.equal(workshopResult.shippedQuantity,1)
+await verifyShipmentView(9054,'sent',true,['sent'])
 assert.deepEqual({...stock()},snapshotBeforeWorkshop,'Workshop shipment must not consume physical stock')
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_dispatch_items WHERE order_item_id=9970 AND cancelled_quantity=0").get().n,1)
 const workshopRepeat=await dispatchSelectedCompleteOrderLines(db,9054,{
@@ -262,6 +282,7 @@ const workshopUndo=await cancelExactOrderDispatchItem(db,9054,{
 })
 assert.equal(workshopUndo.ok,true)
 assert.equal(workshopUndo.physicalRestoredQuantity,0)
+await verifyShipmentView(9054,'not_sent',false,['not_sent'])
 assert.deepEqual({...stock()},snapshotBeforeWorkshop,'Undo workshop dispatch is never stock movement')
 const again=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9054))
 assert.equal(again.items.find(x=>x.id===9970).pendingExchangeWorkshopId,9086)
@@ -274,82 +295,198 @@ const workshopAgain=await dispatchSelectedCompleteOrderLines(db,9054,{
  actor:'QA manager',dispatchDate:'2026-11-01',
 })
 assert.equal(workshopAgain.ok,true)
+await verifyShipmentView(9054,'sent',true,['sent'])
 assert.deepEqual({...stock()},snapshotBeforeWorkshop)
 const setWorkshopLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(workshopAgain.dispatchId).id
 await cancelExactOrderDispatchItem(db,9054,{dispatchItemId:setWorkshopLine,requestId:'stage5-set-v2-workshop-undo-01',actor:'QA',reason:'test'})
+await verifyShipmentView(9054,'not_sent',false,['not_sent'])
 assert.deepEqual({...stock()},snapshotBeforeWorkshop)
 
-// A corrected dispatch cannot put back more physical stock than the exact
-// outgoing movement recorded; the remaining obligation stays unresolved.
-// Exercise the real Worker domain against disposable SQLite, not a string assertion.
-sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9045,'boutique',9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',4,2)").run()
-sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9055,'TEST-BOUNDED-UNDO','2026-11-01',1,'active','boutique','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
-sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(9973,9055,9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',2,1000,2000,0,'boutique','reserved','2026-11-01T00:00:00Z')").run()
-sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9055,9973,'boutique',9021,9031,2,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
-const boutiqueStock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9045').get()})
-const boundedSend=await dispatchSelectedCompleteOrderLines(db,9055,{
- requestId:'stage5b-bounded-real-send-01',
- items:[{orderItemId:9973,quantity:2}],actor:'QA',dispatchDate:'2026-11-01',
+// Post-Stage-5 order: old physical handover remains a regular selectable
+// shipment line. Only the genuinely reserved sibling affects inventory.
+sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(9909,'PRE ISSUED DISPATCH TEST','adult',1)").run()
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9910,9909,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9911,'warehouse',9909,9910,'PRE ISSUED DISPATCH TEST','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',5,1)").run()
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9912,'ORD-NEW-MIXED-PREISSUED','2026-11-04',1,'active','warehouse','ready','not_sent','2026-11-04T09:00:00Z','2026-11-04T09:00:00Z')").run()
+for(const [id,status] of [[9913,'fulfilled'],[9914,'reserved']]) {
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,9912,9909,9910,'PRE ISSUED DISPATCH TEST','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'warehouse',?,'2026-11-04T09:00:00Z')").run(id,status)
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9912,?,'warehouse',9909,9910,1,?,'2026-11-04T09:00:00Z','2026-11-04T09:00:00Z')").run(id,status==='fulfilled'?'fulfilled':'active')
+}
+sql.prepare("INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,title,created_at) VALUES('order_stock_issued_before_full_shipping','order_item',9913,9912,'Prior issue','2026-11-04T09:01:00Z')").run()
+const newOrder=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9912))
+const newReservations=sql.prepare('SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=9912').all()
+const {readPriorIssuedItemIds}=await import('../worker/domains/order-prior-issued-origin.ts')
+const provenance=await readPriorIssuedItemIds(db,9912)
+assert(provenance.has(9913))
+const newPlan=buildOrderShipmentPlan(newOrder,newReservations,provenance)
+assert.equal(newPlan.canConfirmIssuedOnly,false,'No extra confirmation for new orders')
+assert.equal(newPlan.selectedQuantity,2)
+assert.equal(newPlan.lines.find(x=>x.orderItemId===9913).dispatchPriorIssued,true)
+const priorSent=await dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-status-only-001',items:[{orderItemId:9913,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
 })
-assert.equal(boundedSend.shippedQuantity,2)
-assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
-const boundedLine=sql.prepare('SELECT id,movement_id FROM order_dispatch_items WHERE dispatch_id=?').get(boundedSend.dispatchId)
-const actualMovement=sql.prepare('SELECT movement_type,quantity_delta FROM inventory_movements WHERE id=?').get(boundedLine.movement_id)
-assert.equal(actualMovement.movement_type,'sale')
-assert.equal(actualMovement.quantity_delta,-2)
-// Inconsistent historical movement proof: fail closed without any mutation.
-sql.prepare("UPDATE inventory_movements SET movement_type='manual_set' WHERE id=?").run(boundedLine.movement_id)
-await assert.rejects(cancelExactOrderDispatchItem(db,9055,{
- dispatchItemId:boundedLine.id,requestId:'stage5b-invalid-sale-proof-01',actor:'QA',reason:'Test invalid proof',
-}),/Складское движение отправки изменилось/)
-assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
-assert.equal(sql.prepare('SELECT cancelled_quantity FROM order_dispatch_items WHERE id=?').get(boundedLine.id).cancelled_quantity,0)
-// A legacy anomaly recorded only -1 while the customer-facing dispatch says 2.
-// Never restore +2 to the tracked stock without proof of a second physical unit.
-sql.prepare("UPDATE inventory_movements SET movement_type='sale',quantity_delta=-1 WHERE id=?").run(boundedLine.movement_id)
-const boundedUndo=await cancelExactOrderDispatchItem(db,9055,{
- dispatchItemId:boundedLine.id,requestId:'stage5b-limited-restoration-01',actor:'QA',reason:'Test exact refund',
+assert.equal(priorSent.shippedQuantity,1)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:5,reserved_quantity:1})
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'not_sent')
+const priorLedger=sql.prepare('SELECT id,movement_id,reservation_id FROM order_dispatch_items WHERE dispatch_id=?').get(priorSent.dispatchId)
+assert.equal(priorLedger.movement_id,null)
+assert(priorLedger.reservation_id>0)
+const laterSent=await dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-remaining-002',items:[{orderItemId:9914,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
 })
-assert.equal(boundedUndo.physicalRestoredQuantity,1)
-assert.equal(boundedUndo.needsStockCheck,true)
-assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:0})
-assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9973").get().status,'unresolved')
-assert.equal(sql.prepare("SELECT stock_writeoff_status FROM order_items WHERE id=9973").get().stock_writeoff_status,'pending_reservation')
-assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_type='order_dispatch_correction' AND reference_id='dispatch_cancel:stage5b-limited-restoration-01:item:9973'").get().quantity_delta,1)
-const boundedReplay=await cancelExactOrderDispatchItem(db,9055,{
- dispatchItemId:boundedLine.id,requestId:'stage5b-limited-restoration-01',actor:'QA',reason:'Repeat',
+assert.equal(laterSent.shippedQuantity,1)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:4,reserved_quantity:0})
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'sent')
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9910 AND reference_type='order_dispatch'").get().n,1)
+await assert.rejects(dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-double-003',items:[{orderItemId:9913,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
+}),/Товар изменился|не готов/)
+const priorCorrection=await cancelExactOrderDispatchItem(db,9912,{
+ dispatchItemId:priorLedger.id,requestId:'stage5b-prior-issue-undo-004',
+ actor:'QA',reason:'Status-only correction',
 })
-assert.equal(boundedReplay.alreadyCorrected,true)
-assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:0})
+assert.equal(priorCorrection.statusOnly,true)
+assert.equal(priorCorrection.physicalRestoredQuantity,0)
+assert.equal(priorCorrection.needsStockCheck,false)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:4,reserved_quantity:0})
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9913').get().status,'fulfilled')
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'not_sent')
+// Cancelled status-only lines are again available through the ordinary dispatch.
+const readyAgain=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9912))
+const againPlan=buildOrderShipmentPlan(readyAgain,newReservations,await readPriorIssuedItemIds(db,9912))
+assert.equal(againPlan.lines.find(x=>x.orderItemId===9913).selectable,true)
 
-// Even with a full -1 sale, a competing reservation may already use all
-// available units. Cancellation must not fabricate an additional reservation.
-sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9056,'TEST-RESERVE-BOUND','2026-11-01',1,'active','boutique','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
-sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(9974,9056,9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'boutique','reserved','2026-11-01T00:00:00Z')").run()
-sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9056,9974,'boutique',9021,9031,1,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
-sql.prepare('UPDATE inventory_stock SET reserved_quantity=1 WHERE id=9045').run()
-const reserveBoundSend=await dispatchSelectedCompleteOrderLines(db,9056,{
- requestId:'stage5b-reserve-bound-send-01',items:[{orderItemId:9974,quantity:1}],
+
+// A historical order may still be order-wide "not_sent" even though its NEW
+// replacement was explicitly marked "sent" during an Exchange. The applied
+// Exchange lifecycle is shipment evidence, not an invitation to write stock twice.
+sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(9937,'EXCHANGE DIRECT SENT','adult',1)").run()
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9936,9937,'ЖЕН','БЕЖ','СТАНДАРТ','СТАНДАРТ','46',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES(9938,'warehouse',9937,9936,'EXCHANGE DIRECT SENT',7,1)").run()
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9930,'ORD-EXCHANGE-APPLIED-NOT-SENT','2026-11-01',1,'active','warehouse','ready','not_sent','2026-11-01T08:00:00Z','2026-11-01T08:00:00Z')").run()
+for (const [id,status] of [[9931,'fulfilled'],[9932,'reserved']]) {
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,9930,9937,9936,'EXCHANGE DIRECT SENT',1,5000,5000,0,'warehouse',?,'2026-11-01T08:00:00Z')").run(id,status)
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,reference_type,reference_id,created_at,fulfilled_at,updated_at) VALUES(9930,?,'warehouse',9937,9936,1,?,'exchange_new','9933','2026-11-01T08:00:00Z',?,'2026-11-01T08:00:00Z')").run(id,status==='fulfilled'?'fulfilled':'active',status==='fulfilled'?'2026-11-01T08:05:00Z':null)
+}
+sql.prepare("INSERT INTO exchanges(id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,new_source_type,financial_action,financial_amount,status,created_at) VALUES(9933,9930,'2026-11-01',NULL,0,NULL,'warehouse','none',0,'completed','2026-11-01T08:00:00Z')").run()
+sql.prepare("INSERT INTO exchange_items(exchange_id,role,order_item_id,product_name_snapshot,quantity,inventory_source,created_at) VALUES(9933,'new',9931,'EXCHANGE DIRECT SENT',1,'warehouse','2026-11-01T08:00:00Z')").run()
+const directMovement=sql.prepare("INSERT INTO inventory_movements(inventory_source,movement_type,product_id,variant_id,product_name_snapshot,quantity_delta,quantity_after,reference_type,reference_id,created_at) VALUES('warehouse','sale',9937,9936,'EXCHANGE DIRECT SENT',-1,7,'exchange_new','9933','2026-11-01T08:05:00Z')").run().lastInsertRowid
+sql.prepare("INSERT INTO inventory_lifecycle_events(id,event_key,operation_type,operation_id,order_id,order_item_id,event_type,direction,inventory_source,quantity,product_id,variant_id,product_name_snapshot,status,applied_at,movement_id,created_at,updated_at) VALUES(9934,'exchange:9933:new:1','exchange',9933,9930,9931,'exchange_new_out','out','warehouse',1,9937,9936,'EXCHANGE DIRECT SENT','applied','2026-11-01T08:05:00Z',?,'2026-11-01T08:00:00Z','2026-11-01T08:05:00Z')").run(directMovement)
+
+// Read-only shipment projection was loaded above; use it against real order snapshots.
+const directOrder=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+const directLine=directOrder.items.find(i=>i.id===9931)
+assert.equal(directOrder.shipping_status,'not_sent')
+assert.equal(directLine.shipmentSentQuantity,1,'Applied Exchange must be visible as an item shipment')
+assert.equal(projectOrderShipmentDisplay(directOrder).lines.find(x=>x.quantity===1).state,'sent')
+assert.equal(projectOrderShipmentDisplay(directOrder).state,'partial')
+await verifyShipmentView(9930,'partial',false,['sent','not_sent'])
+const directReservations=sql.prepare('SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=9930').all()
+const directPlan=buildOrderShipmentPlan(directOrder,directReservations)
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9931).selectable,false)
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9931).reason,'Уже отправлен')
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9932).selectable,true)
+const directBefore=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()
+await assert.rejects(dispatchSelectedCompleteOrderLines(db,9930,{
+ requestId:'stage5b-exchange-direct-no-repeat-01',items:[{orderItemId:9931,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-01',
+}),/не готов|Товар изменился|не больше доступного/)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()},{...directBefore})
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9936").get().n,1)
+
+const directSiblingDispatch=await dispatchSelectedCompleteOrderLines(db,9930,{
+ requestId:'stage5b-exchange-direct-other-line-02',items:[{orderItemId:9932,quantity:1}],
  actor:'QA',dispatchDate:'2026-11-01',
 })
-assert.equal(reserveBoundSend.shippedQuantity,1)
-assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
-sql.prepare('UPDATE inventory_stock SET reserved_quantity=3 WHERE id=9045').run()
-const reserveBoundLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(reserveBoundSend.dispatchId).id
-const reserveBoundUndo=await cancelExactOrderDispatchItem(db,9056,{
- dispatchItemId:reserveBoundLine,requestId:'stage5b-reserve-bound-undo-01',
- actor:'QA',reason:'Another order holds available stock',
+assert.equal(directSiblingDispatch.ok,true)
+assert.equal(sql.prepare("SELECT shipping_status FROM orders WHERE id=9930").get().shipping_status,'sent',
+ 'Completing the other line must recognize the already shipped Exchange replacement')
+await verifyShipmentView(9930,'sent',true,['sent','sent'])
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()},{quantity:6,reserved_quantity:0})
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9936").get().n,2,
+ 'Only the newly dispatched sibling creates a new stock movement')
+const directSiblingDispatchItem=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(directSiblingDispatch.dispatchId).id
+await cancelExactOrderDispatchItem(db,9930,{
+ dispatchItemId:directSiblingDispatchItem,requestId:'stage5b-exchange-direct-other-undo-03',
+ actor:'QA',reason:'Correction',
 })
-assert.equal(reserveBoundUndo.physicalRestoredQuantity,1)
-assert.equal(reserveBoundUndo.needsStockCheck,true)
-assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:3},
- 'Actual physical movement restored; the conflicting hold belongs to other orders')
-assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9974").get().status,'unresolved')
-assert.equal(sql.prepare("SELECT stock_writeoff_status FROM order_items WHERE id=9974").get().stock_writeoff_status,'pending_reservation')
-console.log('STAGE5B_BRANCH2_BOUNDED_CANCEL_PASS: movement proof, one-unit restore, no phantom hold, idempotent replay')
+const directAfterUndo=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+assert.equal(directAfterUndo.shipping_status,'not_sent')
+assert.equal(directAfterUndo.items.find(i=>i.id===9931).shipmentSentQuantity,1,
+ 'Canceling a different dispatch must not revoke the earlier Exchange shipment')
+assert.equal(projectOrderShipmentDisplay(directAfterUndo).state,'partial')
+await verifyShipmentView(9930,'partial',false,['sent','not_sent'])
+
+sql.prepare("UPDATE exchanges SET status='cancelled' WHERE id=9933").run()
+const cancelledExchange=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+assert.equal(cancelledExchange.items.find(i=>i.id===9931).shipmentSentQuantity,null,
+ 'A cancelled Exchange cannot provide historical shipment evidence')
+assert.equal(projectOrderShipmentDisplay(cancelledExchange).lines[0].state,'not_sent')
+await verifyShipmentView(9930,'not_sent',false,['not_sent','not_sent'])
+console.log('STAGE5B_EXCHANGE_CHAIN_REAL_SQLITE_SHIPMENT_UI_STATE_PASS')
+console.log('STAGE5B_APPLIED_EXCHANGE_SHIPMENT_COMPAT_NO_DOUBLE_STOCK_PASS')
+
+
+const {ensureExchangeWorkshopReplacementTask: publicWorkshopTask}=await import('../worker/domains/returns-exchanges.ts')
+const {ensureExchangeWorkshopReplacementTask: isolatedWorkshopTask}=await import('../worker/domains/order-exchange-workshop-task.ts')
+assert.strictEqual(publicWorkshopTask,isolatedWorkshopTask,
+ 'The existing Exchange API and internal callers must use the exact extracted workshop task helper')
+// Exercise both paths of the real extracted SQL on the same full-migration
+// disposable SQLite database: an existing task is updated, a missing task
+// is inserted. Replaying either must never create duplicate active tasks.
+const beforeTaskStock={...stock()}
+const beforeTaskReplacementStock={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()}
+const beforeTaskMovements=sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+for(const [orderId,orderItemId,exchangeId,withExistingTask] of [
+ [9101,91011,91021,true],[9102,91012,91022,false],
+]){
+ const externalId='ORD-EXCHANGE-WORKSHOP-HELPER-'+orderId
+ const stamp='2026-11-01T10:00:00Z'
+ sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-11-01',1,'active','warehouse','in_workshop','not_sent',?,?)")
+  .run(orderId,externalId,stamp,stamp)
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9021,9032,'WORKSHOP REPLACEMENT','МУЖ','ЧЕРНЫЙ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'warehouse','reserved',?)")
+  .run(orderItemId,orderId,stamp)
+ sql.prepare("INSERT INTO exchanges(id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,new_source_type,financial_action,financial_amount,status,created_at) VALUES(?,?,'2026-11-01',NULL,0,NULL,'warehouse','none',0,'completed',?)")
+  .run(exchangeId,orderId,stamp)
+ sql.prepare("INSERT INTO exchange_items(exchange_id,role,order_item_id,product_name_snapshot,quantity,inventory_source,created_at) VALUES(?,'new',?,'WORKSHOP REPLACEMENT',1,'warehouse',?)")
+  .run(exchangeId,orderItemId,stamp)
+ if(withExistingTask){
+  sql.prepare("INSERT INTO workshop_tasks(order_id,external_order_id,order_item_id,product_name_snapshot,quantity,status,created_at,updated_at) VALUES(?,?,?,'OLD TASK',1,'done',?,?)")
+   .run(orderId,externalId,orderItemId,stamp,stamp)
+ }
+ const taskBefore=sql.prepare('SELECT id FROM workshop_tasks WHERE order_id=? AND order_item_id=?').get(orderId,orderItemId)
+ const input={exchangeId,orderId,externalId,orderItemId,timestamp:stamp}
+ await publicWorkshopTask(db,input)
+ const active=sql.prepare("SELECT id,quantity,status,product_name_snapshot,external_order_id FROM workshop_tasks WHERE order_id=? AND order_item_id=? AND status='active'")
+  .all(orderId,orderItemId)
+ assert.equal(active.length,1,'Exactly one active task must be linked to exchanged item')
+ assert.equal(active[0].quantity,1)
+ assert.equal(active[0].external_order_id,externalId)
+ assert.equal(active[0].product_name_snapshot,'WORKSHOP REPLACEMENT')
+ if(withExistingTask)assert.equal(active[0].id,taskBefore.id,'Existing task is updated in place')
+ assert.equal(sql.prepare('SELECT is_workshop,source_type,stock_writeoff_status FROM order_items WHERE id=?').get(orderItemId).is_workshop,1)
+ assert.deepEqual({...sql.prepare('SELECT new_source_type,new_order_item_id FROM exchanges WHERE id=?').get(exchangeId)},
+  {new_source_type:'workshop',new_order_item_id:orderItemId})
+ assert.equal(sql.prepare("SELECT inventory_source FROM exchange_items WHERE exchange_id=? AND role='new'").get(exchangeId).inventory_source,'workshop')
+ await publicWorkshopTask(db,input)
+ const afterReplay=sql.prepare("SELECT id FROM workshop_tasks WHERE order_id=? AND order_item_id=? AND status='active'")
+  .all(orderId,orderItemId)
+ assert.deepEqual(afterReplay.map(x=>x.id),[active[0].id],
+  'Retry must update the same task without a second active work item')
+}
+assert.deepEqual({...stock()},beforeTaskStock,'Task synchronization never adjusts physical warehouse stock')
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()},beforeTaskReplacementStock,
+ 'Task synchronization never adjusts replacement stock or reserved quantities')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,beforeTaskMovements,
+ 'No inventory movement is allowed during workshop task synchronization')
+console.log('STAGE5_EXCHANGE_WORKSHOP_TASK_CREATION_UPDATE_REPLAY_SQLITE_PASS')
 
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
+console.log('STAGE5B_NEW_ORDER_PREISSUED_NORMAL_DISPATCH_NO_DOUBLE_STOCK_PASS')
 console.log('STAGE5B_TWO_EXCHANGE_REPLACEMENTS_ONE_BATCH_PASS')
 console.log('STAGE5B_WORKSHOP_REPLACEMENT_AFTER_SENT_AND_EXACT_CANCEL_PASS')
 

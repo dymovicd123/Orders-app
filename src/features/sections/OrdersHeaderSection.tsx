@@ -40,7 +40,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
           ))}
         </div>
       )}
-
     </article>
   )
 }

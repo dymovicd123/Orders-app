@@ -1,16 +1,18 @@
 import fs from 'node:fs'
 
 const read = (path) => fs.readFileSync(path, 'utf8')
-const worker = read('worker/domains/returns-exchanges.ts')
+const worker = read('worker/domains/order-exchange-financial-correction.ts')
+const existingExports=await import('../worker/domains/returns-exchanges.ts')
+const extractedExports=await import('../worker/domains/order-exchange-financial-correction.ts')
+if(existingExports.correctExchangeFinancials!==extractedExports.correctExchangeFinancials){throw new Error('Original Exchange PATCH route must use the same extracted finance correction implementation')}
 const router = read('worker/index.ts')
 const app = read('src/App.tsx')
+const aftercare = read('src/features/orders/returnExchangeAftercareActions.ts')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 
 const check = (condition, message) => { if (!condition) throw new Error(message) }
-const fnStart = worker.indexOf('export async function correctExchangeFinancials(')
-const fnEnd = worker.indexOf('export async function listExchanges(', fnStart)
-check(fnStart >= 0 && fnEnd > fnStart, 'A5 correction function missing')
-const fn = worker.slice(fnStart, fnEnd)
+check(worker.includes('export async function correctExchangeFinancials('), 'A5 correction function missing')
+const fn = worker
 
 check(fn.includes("beginCriticalOperation(db, 'exchange_financial_correction'"), 'A5 correction must be idempotent')
 check(fn.includes('CriticalOperationConflictError'), 'A5 correction must stale-check the opened exchange snapshot')
@@ -22,7 +24,7 @@ check(fn.includes("eventType: financialAction === 'extra_payment' ? 'exchange_ex
 check(fn.includes("entry_type") && fn.includes("exchange_financial_correction") && fn.includes('cashDelta'), 'A5 must reconcile the cash-register delta')
 check(!fn.includes('inventory_stock') && !fn.includes('inventory_lifecycle_events') && !fn.includes('workshop_tasks'), 'A5 finance correction must not mutate physical exchange state')
 check(router.includes('/financials') && router.includes('correctExchangeFinancials'), 'A5 PATCH route missing')
-check(app.includes('correctExchangeFinancialEntry') && app.includes('expectedFinancialAmount') && app.includes('expectedPaymentMethod'), 'A5 browser stale snapshot payload missing')
+check(app.includes('createReturnExchangeAftercareActions({') && aftercare.includes('correctExchangeFinancialEntry') && aftercare.includes('expectedFinancialAmount') && aftercare.includes('expectedPaymentMethod'), 'A5 browser stale snapshot payload missing')
 check(ui.includes('Исправить деньги') && ui.includes('Товары, остатки и Цех не затрагиваются'), 'A5 dedicated correction UI missing')
 check(ui.includes("entry.financialAction !== 'none'"), 'A5 correction control must not appear for no-money exchanges')
 

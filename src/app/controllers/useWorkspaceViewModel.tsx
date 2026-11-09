@@ -401,11 +401,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       size: selected.sizeLabel || '',
       stockObservationEnabled: false,
       observedPhysicalQuantity: null,
-      // A product picker bypasses updateCreateItem/updateEditorItem. Never
-      // carry a confirmation for a different SKU into the new product.
-      shortageAcknowledged: false,
-      shortageDecision: null,
-      serverShortage: undefined,
     }
   }
 
@@ -905,7 +900,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       currentReserved: serverShortage.reservedQuantity,
     } : null)
     if (!availability) return null
-    const needsStockAttention = Boolean(serverShortage) || Boolean('needsAttention' in availability && availability.needsAttention)
+    const needsShortageDecision = Boolean(serverShortage) || Boolean('needsAttention' in availability && availability.needsAttention)
     const physical = serverShortage ? Number(serverShortage.physicalQuantity || 0) : Number(availability.currentPhysical || 0)
     const reserved = serverShortage ? Math.max(0, Number(serverShortage.reservedQuantity || 0)) : Math.max(0, Number(availability.currentReserved || 0))
     const requested = serverShortage ? Math.max(1, Number(serverShortage.requestedQuantity || 1)) : Math.max(1, requiredInOrder)
@@ -913,7 +908,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     const free = Math.max(0, physical - reserved)
     const existingReservationDeficit = Math.max(0, reserved - Math.max(0, physical))
     return (
-      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsStockAttention ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsStockAttention || undefined}>
+      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsShortageDecision ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsShortageDecision || undefined}>
         <summary>
           <span className="order-source-availability-dot" aria-hidden="true" />
           <span>{serverShortage ? 'Недостаточно свободного остатка' : availability.label}</span>
@@ -930,8 +925,8 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
               ) : null}
             </>
           ) : <p>{availability.note}</p>}
-          {needsStockAttention ? (
-            <p className="field-hint">Заказ можно сохранить без подтверждения физического наличия. Если свободного остатка не хватает, резерв будет ожидать уточнения. Физический остаток автоматически не изменится.</p>
+          {needsShortageDecision ? (
+            <p className="field-hint">Заказ можно сохранить. Физический остаток автоматически не изменится. Если учёт неверный, количество исправляют отдельно в «Склад → Остатки».</p>
           ) : null}
           {availability.rows.length ? (
             <div className="order-source-availability-list">

@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orders-app-branch2",
+  "main": "worker/index.ts",
+  "build": { "command": "npm run build" },
+  "compatibility_date": "2026-07-06",
+  "workers_dev": true,
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "orders_db_branch2_mirror_20261027",
+    "database_id": "0904a573-21ff-44d8-93b0-c9200f771702"
+  }],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "compatibility_flags": ["nodejs_compat"]
+}

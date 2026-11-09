@@ -1390,7 +1390,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   };
 }
 
- 
 // Read-on-demand details; business dates and city grouping intentionally match the aggregate.
 export async function listCityReportOrders(db: D1Database, url: URL) {
   const { startDate, endDate } = parseReportDateRange(url);

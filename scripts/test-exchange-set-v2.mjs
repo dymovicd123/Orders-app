@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 
 const check = (condition, message) => { if (!condition) throw new Error(message) }
-const exchange = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const exchange = fs.readFileSync('worker/domains/order-exchange-set-v2.ts', 'utf8')
 const routes = fs.readFileSync('worker/index.ts', 'utf8')
 
 const setStart = exchange.indexOf('export async function createExchangeSetV2(')

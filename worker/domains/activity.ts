@@ -123,12 +123,12 @@ export async function listReturnHistory(db: D1Database, url: URL) {
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
   const status = cleanText(url.searchParams.get('status')).toLowerCase();
+  const where: string[] = [];
+  const bindings: unknown[] = [];
   // Work #733: a LIVE receipt inbox is never filtered by the History search.
   // The oldest unreceived physical item must remain discoverable even if it
   // happened months ago and is not in the default newest 50 history rows.
   const pendingOnly = url.searchParams.get('pendingOnly') === '1';
-  const where: string[] = [];
-  const bindings: unknown[] = [];
   if (pendingOnly) where.push(`COALESCE(r.status,'completed') <> 'cancelled'
     AND EXISTS (SELECT 1 FROM return_items pending_ri WHERE pending_ri.return_id = r.id
       AND pending_ri.physical_tracking = 1 AND pending_ri.physical_received_at IS NULL)
@@ -209,7 +209,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
      LEFT JOIN inventory_lifecycle_events lifecycle ON lifecycle.id = (
        SELECT e.id FROM inventory_lifecycle_events e WHERE e.operation_type = 'return' AND e.operation_id = r.id AND e.operation_item_id = ri.id ORDER BY e.id DESC LIMIT 1
      )
-     ORDER BY r.return_date ${pendingOnly ? 'ASC' : 'DESC'}, r.id ${pendingOnly ? 'ASC' : 'DESC'}, ri.id ASC`
+     ORDER BY r.return_date DESC, r.id DESC, ri.id ASC`
   ).bind(...bindings, limit, offset).all<any>();
 
   const rowsById = new Map<number, any>();

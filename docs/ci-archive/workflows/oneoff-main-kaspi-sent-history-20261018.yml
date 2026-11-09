@@ -1,0 +1,137 @@
+name: One-off production Kaspi sent-order history settlement
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-main-kaspi-sent-history-20261018.yml'
+      - 'scripts/ops/kaspi-sent-history-recovery-20261018.sql'
+      - 'scripts/test-main-kaspi-sent-backfill-20261018.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-main-kaspi-sent-history-20261018.yml'
+      - 'scripts/ops/kaspi-sent-history-recovery-20261018.sql'
+permissions:
+  contents: read
+  statuses: read
+jobs:
+  isolate:
+    name: Test exact recovery SQL on disposable SQLite (no remote writes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/test-main-kaspi-sent-backfill-20261018.mjs
+  apply:
+    name: Guarded once-only Kaspi historical finance repair (production)
+    needs: isolate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Hard-stop without exact Production database binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          ! grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - name: Wait for exact commit Production Cloudflare deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=pending
+          for attempt in $(seq 1 72); do
+            payload="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status")"
+            state="$(jq -r '[.statuses[] | select(.context=="cloudflare-deploy/main")][0].state // "pending"' <<<"$payload")"
+            if [[ "$state" == success ]]; then break; fi
+            if [[ "$state" == failure || "$state" == error ]]; then
+              echo "Production deployment failed. No historical money mutation attempted." >&2; exit 41
+            fi
+            sleep 10
+          done
+          [[ "$state" == success ]] || { echo "Production deployment not confirmed." >&2; exit 42; }
+      - run: npm ci
+      - name: Preflight SELECT only — bound candidate cohort and check schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='payments') AS payments_table,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='financial_events') AS financial_events_table,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='critical_operations') AS critical_operations_table;
+          " --json)"
+          echo "$schema" | jq -c '.[0].results'
+          [[ "$(jq -r '.[0].results[0].payments_table' <<<"$schema")" == 1 ]]
+          [[ "$(jq -r '.[0].results[0].financial_events_table' <<<"$schema")" == 1 ]]
+          [[ "$(jq -r '.[0].results[0].critical_operations_table' <<<"$schema")" == 1 ]]
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS orders,COALESCE(SUM(
+              MAX(0,COALESCE(o.total_amount,0)-COALESCE((
+                SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0))),0) AS debt
+            FROM orders o
+            WHERE UPPER(TRIM(COALESCE(o.order_payment_method,'')))='КАСПИ МАГАЗИН'
+              AND COALESCE(o.order_status,'active')='active'
+              AND COALESCE(o.archived_at,'')=''
+              AND COALESCE(o.shipping_status,'not_sent')='sent'
+              AND COALESCE(o.total_amount,0)>COALESCE((
+                SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0);
+          " --json)"
+          echo "$result" | jq -c '.[0].results'
+          n="$(jq -r '.[0].results[0].orders // -1' <<<"$result")"
+          debt="$(jq -r '.[0].results[0].debt // -1' <<<"$result")"
+          # Audited 18 Oct 2026 preflight: at most 58 / 1,299,500 KZT.
+          # Smaller cohorts are valid if regular Kaspi recovery already paid some.
+          [[ "$n" =~ ^[0-9]+$ && "$debt" =~ ^[0-9]+$ ]]
+          (( n <= 58 && debt <= 1299500 )) || {
+            echo "Kaspi cohort changed above audited bound; no writes allowed." >&2; exit 43;
+          }
+      - name: Execute once-only idempotent payment and money-history reconciliation
+        run: npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file scripts/ops/kaspi-sent-history-recovery-20261018.sql
+      - name: Verify exact financial events and no remaining active sent Kaspi debt
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+             (SELECT COUNT(*) FROM payments WHERE comment='kaspi_sent_history_recovery_v1') AS recovery_payments,
+             (SELECT COALESCE(SUM(amount),0) FROM payments WHERE comment='kaspi_sent_history_recovery_v1') AS recovery_amount,
+             (SELECT COUNT(*) FROM financial_events WHERE reason='kaspi_sent_history_recovery' AND is_backfill=1) AS recovery_events,
+             (SELECT COUNT(*) FROM orders o WHERE UPPER(TRIM(COALESCE(o.order_payment_method,'')))='КАСПИ МАГАЗИН'
+               AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
+               AND COALESCE(o.shipping_status,'not_sent')='sent'
+               AND COALESCE(o.total_amount,0)>COALESCE((
+                 SELECT SUM(p.amount) FROM payments p WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0)) AS sent_still_owed,
+             (SELECT COUNT(*) FROM orders o JOIN payments p ON p.order_id=o.id
+                WHERE p.comment='kaspi_sent_history_recovery_v1' AND COALESCE(o.debt_amount,-1)<>0) AS recovered_stale_debt;
+          " --json)"
+          echo "$result" | jq -c '.[0].results'
+          p="$(jq -r '.[0].results[0].recovery_payments // -1' <<<"$result")"
+          e="$(jq -r '.[0].results[0].recovery_events // -2' <<<"$result")"
+          owed="$(jq -r '.[0].results[0].sent_still_owed // -1' <<<"$result")"
+          stale="$(jq -r '.[0].results[0].recovered_stale_debt // -1' <<<"$result")"
+          [[ "$p" == "$e" && "$owed" == 0 && "$stale" == 0 ]] || {
+            echo "Kaspi history reconciliation requires follow-up; rerun same idempotent SQL after review." >&2; exit 44;
+          }
+          echo 'KASPI HISTORICAL SENT PAYMENTS RECONCILED WITHOUT STOCK/ORDER DELETION'

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "revision": "arrival-admin-only-r1-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "64967548c2e223fec55979527a66281b53eb77fe",
+      "beforeLines": 8105,
+      "afterGitBlob": "e071008be95f7e6185035cae7583932bcb43588c",
+      "afterLines": 8105,
+      "replacements": [
+        {
+          "beforeBlock": "      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId && !Number(item.productId || 0))) {\n        throw new Error('Новый товар через «Приход» добавляет администратор. Для существующего товара можно принять новую вариацию — система проверит её перед сохранением.')\n      }",
+          "afterBlock": "      if (!isAdmin && inventoryDraft.movementType === 'arrival') {\n        throw new Error('Приход товара доступен только администратору.')\n      }"
+        }
+      ]
+    },
+    "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
+      "beforeGitBlob": "16925e91b69ae1b3ad3bef6e941964d95cdfa007",
+      "beforeLines": 497,
+      "afterGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
+      "afterLines": 499,
+      "replacements": [
+        {
+          "beforeBlock": "  | 'inventoryPanelStyle'\n",
+          "afterBlock": "  | 'inventoryPanelStyle'\n  | 'isAdmin'\n"
+        },
+        {
+          "beforeBlock": "    inventoryPanelStyle,\n",
+          "afterBlock": "    inventoryPanelStyle,\n    isAdmin,\n"
+        },
+        {
+          "beforeBlock": "                          {[\n                            ['arrival', 'Приход'],\n                            ['writeoff', 'Списание'],\n                            ['manual_set', 'Исправить количество'],\n",
+          "afterBlock": "                          {[\n                            ...(isAdmin ? [['arrival', 'Приход']] : []),\n                            ['writeoff', 'Списание'],\n                            ['manual_set', 'Исправить количество'],\n"
+        }
+      ]
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
+      "beforeLines": 2623,
+      "afterGitBlob": "c3ba07c011ef9b68b5fa3cb0a52471851877eed8",
+      "afterLines": 2625,
+      "replacements": [
+        {
+          "beforeBlock": "  const selectInventoryOperationMode = (mode: any) => {\n",
+          "afterBlock": "  const selectInventoryOperationMode = (mode: any) => {\n    if (mode === 'arrival' && !isAdmin) return\n"
+        },
+        {
+          "beforeBlock": "{ value: 'movement' as const, label: 'Операции', hint: 'Приход, списание и перемещение' },",
+          "afterBlock": "{ value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },"
+        },
+        {
+          "beforeBlock": "        inventoryPanelStyle,\n        movementSourceLoadError,\n",
+          "afterBlock": "        inventoryPanelStyle,\n        isAdmin,\n        movementSourceLoadError,\n"
+        }
+      ]
+    }
+  }
+}

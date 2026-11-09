@@ -345,8 +345,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const retiredRecovery = Boolean(item?.retiredRecovery || context?.retiredRecovery || item?.stockWriteoffStatus === 'catalog_retired')
   const pendingKnownShortage = !retiredRecovery && isRecognizedPendingCatalogReservation(item)
   const canLegacy = !retiredRecovery && isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
-  // A concrete opposite-gender SKU is valid. Ask only genuinely missing or
-  // unrecognized facts; product gender scope is a suggestion, not a blocker.
   const disabled = busy || resolving || needsRecheck
   const approveReference = (field: Field, value = clean(draft?.[field])) => {
     if (!draft || !clean(value)) return
@@ -382,8 +380,8 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (!draft || !context) return null
     if (pendingKnownShortage) {
       return <div className="resolution-admin-required">
-        <p>Товар уже определён в каталоге, но его резерв ожидает проверки нехватки. Повторный выбор того же SKU не создаст свободный остаток и не разрешит отправку.</p>
-        <p>Проверьте наличие вещи, затем измените количество или источник в заказе. Если вещь есть физически, используйте действие подтверждения резерва при нехватке в заказе.</p>
+        <p>Товар уже распознан, но свободного остатка недостаточно для резерва. Повторное распознавание не создаст товар.</p>
+        <p>После прихода повторите отправку: система проверит остаток и восстановит прежний резерв. При необходимости измените количество или источник заказа.</p>
         {onEditOrder
           ? <button type="button" className="primary-button" disabled={disabled} onClick={() => void onEditOrder(order!)}>Изменить заказ</button>
           : <button type="button" className="secondary-button" onClick={onClose}>Вернуться к заказу</button>}

@@ -226,8 +226,7 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
   return { kind: options.legacy ? 'legacy' : 'ready' }
 }
 
-// A canonical SKU with pending_reservation is a *stock shortage*, not an
-// unresolved catalog identity. Re-selecting the same variant cannot create stock.
+// An already recognized SKU lacking free stock is not a catalog identity issue.
 export function isRecognizedPendingCatalogReservation(item: {
   stockWriteoffStatus?: string | null
   productId?: number | null

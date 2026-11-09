@@ -22,27 +22,5 @@
   outline:3px solid #eabf57;outline-offset:2px
 }
 .stock-v14-page .stock-v14-refresh{align-self:end;margin-bottom:4px}
-.inventory-attention-simple-guide{
-  margin:10px 18px 4px;padding:12px 14px;
-  background:#f5f8fc;border:1px solid #e3eaf2;border-radius:10px;
-  font-size:13px;color:#4b5c72;line-height:1.45
-}
-.inventory-attention-group.is-shortage .inventory-attention-actions{max-width:465px}
-.inventory-attention-group.is-shortage .inventory-attention-actions .primary{
-  background:#2e66ab;border-color:#2e66ab;color:#fff
-}
-.w16-correction-focus-hint{
-  margin:10px 0;padding:12px 14px;border:1px solid #bbd6f7;
-  border-radius:10px;background:#f0f7ff;font-size:13px;color:#28496e
-}
-.stocktake-size-cell.w16-target-variant{
-  border:2px solid #2770bc!important;background:#f0f7ff!important;
-  box-shadow:0 0 0 3px rgba(59,130,246,.13)
-}
-.stocktake-size-cell.w16-target-variant .stocktake-size-system{color:#2a5f9b}
-@media(max-width:680px){
-  .stock-v14-page .stock-v14-location-tools{width:100%;justify-content:space-between}
-  .stock-v14-page .stock-v16-source-switch button{min-width:82px}
-  .stock-v14-page .stock-v14-refresh{margin:0}
-  .inventory-attention-simple-guide{margin:8px 11px 3px}
-}
+
+/* Only the stock source picker is ported; attention and history remain unchanged in main. */

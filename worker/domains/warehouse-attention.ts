@@ -77,11 +77,14 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     details ? Promise.resolve(null) : db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
+            SELECT s.inventory_source, s.variant_id
+            FROM inventory_stock s
+            WHERE s.quantity < 0
+            UNION
             SELECT r.inventory_source, r.variant_id
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
             WHERE r.status = 'active' AND r.variant_id IS NOT NULL
-              AND (s.quantity IS NULL OR s.quantity >= 0)
             GROUP BY r.inventory_source, r.variant_id
             HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
           )) AS shortage_count,
@@ -89,7 +92,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          (SELECT COUNT(*) FROM inventory_lifecycle_events e
           WHERE e.status = 'pending' AND e.direction = 'in'
             AND COALESCE(e.pending_reason, '') <> 'retired_historical'
-            AND COALESCE(e.operation_type, '') <> 'workshop_intake'
             AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
          (SELECT COUNT(*) FROM (
             SELECT 1
@@ -162,7 +164,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     }
     return {
       ok: true,
-      total: counts.shortage + counts.intake + counts.handover + counts.stocktake + counts.found,
+      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
       counts,
     }
   }
@@ -175,21 +177,13 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          FROM inventory_reservations
          WHERE status = 'active' AND variant_id IS NOT NULL
          GROUP BY inventory_source, variant_id
-       ), latest_order_context AS (
-         SELECT r.inventory_source, r.variant_id, oi.order_id, o.external_id, o.order_date,
-                ROW_NUMBER() OVER (PARTITION BY r.inventory_source, r.variant_id ORDER BY o.order_date DESC, oi.id DESC) AS row_rank
-         FROM inventory_reservations r
-         JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
-         JOIN orders o ON o.id = oi.order_id
-         WHERE r.status = 'active' AND r.variant_id IS NOT NULL
-           AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived')
-           AND COALESCE(o.archived_at, '') = ''
        ), problem_keys AS (
+         SELECT inventory_source, variant_id FROM inventory_stock WHERE quantity < 0 AND variant_id IS NOT NULL
+         UNION
          SELECT rt.inventory_source, rt.variant_id
          FROM reservation_totals rt
          LEFT JOIN inventory_stock s ON s.inventory_source = rt.inventory_source AND s.variant_id = rt.variant_id
          WHERE rt.reserved > COALESCE(s.quantity, 0)
-           AND (s.quantity IS NULL OR s.quantity >= 0)
        )
        SELECT pk.inventory_source, pk.variant_id,
               COALESCE(v.product_id, s.product_id) AS product_id,
@@ -201,14 +195,10 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
               COALESCE(NULLIF(v.length, ''), NULLIF(s.length_snapshot, ''), 'СТАНДАРТ') AS length,
               COALESCE(v.size_label, s.size_snapshot, '') AS size_label,
               COALESCE(s.quantity, 0) AS physical,
-              COALESCE(rt.reserved, 0) AS reserved,
-              context.order_id AS latest_order_id, context.external_id AS latest_external_id,
-              context.order_date AS latest_order_date
+              COALESCE(rt.reserved, 0) AS reserved
        FROM problem_keys pk
        LEFT JOIN inventory_stock s ON s.inventory_source = pk.inventory_source AND s.variant_id = pk.variant_id
        LEFT JOIN reservation_totals rt ON rt.inventory_source = pk.inventory_source AND rt.variant_id = pk.variant_id
-       LEFT JOIN latest_order_context context ON context.inventory_source = pk.inventory_source
-         AND context.variant_id = pk.variant_id AND context.row_rank = 1
        LEFT JOIN catalog_variants v ON v.id = pk.variant_id
        LEFT JOIN catalog_products p ON p.id = v.product_id
        ORDER BY (COALESCE(rt.reserved, 0) - COALESCE(s.quantity, 0)) DESC,
@@ -218,7 +208,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     ).bind(shortageFetchLimit).all<Record<string, unknown>>(),
     db.prepare(
       `WITH pending_lifecycle AS (
-         SELECT e.id, e.event_type, e.operation_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
+         SELECT e.id, e.event_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
                 e.product_id, e.variant_id, e.product_name_snapshot, e.audience_type, e.gender_snapshot,
                 e.color_snapshot, e.material_snapshot, e.length_snapshot, e.size_snapshot, e.is_workshop,
                 e.pending_reason, e.created_at, o.external_id, o.order_date, ${exactLifecycleVariantSql} AS exact_variant_id
@@ -279,20 +269,20 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
+            SELECT s.inventory_source, s.variant_id
+            FROM inventory_stock s
+            WHERE s.quantity < 0
+            UNION
             SELECT r.inventory_source, r.variant_id
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
             WHERE r.status = 'active' AND r.variant_id IS NOT NULL
-              AND (s.quantity IS NULL OR s.quantity >= 0)
             GROUP BY r.inventory_source, r.variant_id
             HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
           )) AS shortage_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status = 'pending') AS lifecycle_total_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events e
-          WHERE e.status = 'pending' AND e.direction = 'in'
-             AND COALESCE(e.pending_reason, '') <> 'retired_historical'
-             AND COALESCE(e.operation_type, '') <> 'workshop_intake'
-             AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
+          WHERE e.status = 'pending' AND e.direction = 'in' AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
          (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
     ).first<Record<string, unknown>>(),
   ])
@@ -341,7 +331,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   }
   const response: Record<string, unknown> = {
     ok: true,
-    total: counts.shortage + counts.intake + counts.handover + counts.stocktake + counts.found,
+    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
     counts,
   }
 
@@ -355,9 +345,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     return {
       source,
       variantId,
-      orderId: toInt(row.latest_order_id, 0) || null,
-      externalId: cleanText(row.latest_external_id),
-      orderDate: cleanText(row.latest_order_date),
       productId: toInt(row.product_id, 0),
       productName: cleanText(row.product_name),
       category: normalizeAudienceCategory(row.category, row.size_label),
@@ -372,7 +359,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       countRelevantReserved,
       free: physical - reserved,
     }
-  }).filter((row) => row.countRelevantReserved > row.physical).slice(0, limit)
+  }).filter((row) => row.physical < 0 || row.countRelevantReserved > row.physical).slice(0, limit)
 
   const lifecycleItems = (lifecycleResult.results || []).map((row) => {
     const exactVariantId = toInt(row.exact_variant_id, 0)
@@ -380,7 +367,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       exactVariantId
       && cleanText(row.direction) === 'in'
       && cleanText(row.pending_reason) !== 'retired_historical'
-      && cleanText(row.operation_type) !== 'workshop_intake'
     )
     return {
       id: toInt(row.id, 0),

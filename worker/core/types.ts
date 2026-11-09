@@ -33,6 +33,8 @@ export type OrderInput = {
   comment?: string;
   items?: Array<{
     productName?: string;
+    catalogVariantId?: number;
+    manualCatalogEntry?: boolean;
     gender?: string;
     color?: string;
     material?: string;
@@ -49,13 +51,6 @@ export type OrderInput = {
     workshopDueTime?: string;
     observedPhysicalQuantity?: number | null;
     shortageAcknowledged?: boolean;
-    shortageDecision?: {
-      inventorySource: 'warehouse' | 'boutique';
-      variantId: number;
-      requestedQuantity: number;
-      physicalQuantity: number;
-      reservedQuantity: number;
-    } | null;
   }>;
   payments?: Array<{
     paymentDate?: string;

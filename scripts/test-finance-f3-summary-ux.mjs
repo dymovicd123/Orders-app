@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 import path from 'node:path'
 
 const root = process.cwd()
@@ -35,6 +37,76 @@ try {
   check(renderer.includes("if (row.traceSeverity === 'review') bucket.reviewCount += 1"), 'Day review does not use trace severity')
   check(renderer.includes("row.traceSeverity === 'info' && visibleTraceInfoIds.has"), 'Hidden legacy info can still affect current-period day status')
   check(renderer.includes('По датам без замечаний'), 'No neutral date-review empty state')
+
+
+  // Execute the moved shared report printer without a browser or file download.
+  const compiled = await build({
+    entryPoints: ['src/features/export/reportExportActions.ts'], bundle: true,
+    platform: 'node', format: 'esm', target: 'es2022', write: false, logLevel: 'silent',
+  })
+  const { createReportExportActions } = await import(
+    'data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64')
+  )
+  const exports = []
+  const printed = []
+  let exportError = null
+  const htmlDoc = {
+    open: () => {},
+    write: (html) => { printed.push(html) },
+    close: () => {},
+  }
+  globalThis.document = {
+    getElementById: (id) => id === 'selectedFinanceReportExport' || id === 'planReportExport' || id === 'teamPlanReportExport' || id === 'inventoryStocktakePrint'
+      ? { innerHTML: '<p>Сводка</p>' } : null,
+    createElement: (tag) => {
+      assert.equal(tag, 'iframe')
+      const iframe = {
+        title: '', style: {}, contentWindow: {
+          document: htmlDoc, focus: () => {}, print: () => { exports.push('printed') },
+        },
+        remove: () => { exports.push('removed') },
+      }
+      exports.push(iframe)
+      return iframe
+    },
+    body: { appendChild: () => {} },
+  }
+  globalThis.window = { setTimeout: (fn) => { fn(); return 1 } }
+  const newExports = (financeReportType) => createReportExportActions({
+    planDateFrom: '2026-11-01', planDateTo: '2026-11-30',
+    financeReportType, financeDateFrom: '2026-11-01', financeDateTo: '2026-11-30',
+    setError: (value) => { exportError = value },
+  })
+  for (const [type,title] of [
+    ['payments','Отчёт по способам оплаты'],
+    ['managers','Отчёт менеджеров'],
+    ['products','Отчёт по товарам'],
+    ['cities','Отчёт по городам'],
+    ['returns','Отчёт по возвратам'],
+    ['debts','Отчёт по закрытым долгам'],
+    ['leads','Отчёт по лидам'],
+    ['callCentre','Отчёт Call Centre'],
+  ]) {
+    assert.equal(newExports(type).getSelectedFinanceReportExportTitle(), title)
+  }
+  newExports('payments').printSelectedFinanceReportPdf()
+  assert(printed.at(-1).includes('Отчёт по способам оплаты'))
+  assert(printed.at(-1).includes('<p>Сводка</p>'))
+  assert(exports.includes('printed'))
+  newExports('payments').printPlanReportPdf()
+  assert(printed.at(-1).includes('План и зарплата'))
+  newExports('payments').printInventoryStocktakePdf()
+  assert(printed.at(-1).includes('Ревизия остатков'))
+  newExports('payments').printTeamPlanReportPdf()
+  assert(printed.at(-1).includes('Выполнение плана команды'))
+  const beforeMissing = printed.length
+  newExports('payments').printSelectedFinanceReportPdf()
+  assert(printed.length > beforeMissing)
+  globalThis.document.getElementById = () => null
+  const beforeEmpty = printed.length
+  newExports('payments').printSelectedFinanceReportPdf()
+  assert.equal(printed.length,beforeEmpty)
+  assert.match(exportError,/Сначала сформируй отчёт/)
 
   console.log('FINANCE F3 SUMMARY UX TESTS PASSED — business chronology is primary, reconciliation is compact on success, and review details stay available without dominating the page.')
 } catch (error) {

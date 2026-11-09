@@ -1,0 +1,79 @@
+name: Stage3 Return Exchange atomic backport on Main candidate ONLY
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - '.github/workflows/main-stage3-atomic-backport-20261102.yml'
+permissions:
+  contents: write
+jobs:
+  stage3:
+    if: github.ref == 'refs/heads/candidate/main-stage345-port-20261102' && startsWith(github.event.head_commit.message, 'candidate(stage3):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Exact Main-derived branch and two bounded Stage3 patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
+          test "$(git rev-parse HEAD^)" = 'b0138625501a93d1894b13e8ad21cf97b66aa224'
+          git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
+          git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
+          git fetch -q origin +refs/pull/717/head:refs/remotes/origin/pr717 +refs/pull/718/head:refs/remotes/origin/pr718
+          test "$(git rev-parse origin/pr717)" = 3396d91eb981fd0387b914bf9df3b09623989b4c
+          test "$(git rev-parse origin/pr718)" = 260ffb46e0a4bcae3e80e0e90e0870ce7a0f1dcb
+          git diff --binary 12419412abca5308a174448caa7232219b93d697 origin/pr717 -- worker/domains/critical.ts worker/domains/returns-exchanges.ts >/tmp/stage3-set-v2.patch
+          if ! git apply --3way --index /tmp/stage3-set-v2.patch; then
+            echo 'STAGE3_SET_V2_MERGE_REVIEW_REQUIRED'
+            git status --short
+            exit 21
+          fi
+          git diff --binary deabaaee315d8c649ee67f928f95d8e266346449 origin/pr718 -- worker/domains/returns-exchanges.ts >/tmp/stage3-legacy.patch
+          if ! git apply --3way --index /tmp/stage3-legacy.patch; then
+            echo 'STAGE3_LEGACY_MERGE_REVIEW_REQUIRED'
+            git status --short
+            exit 22
+          fi
+          for x in scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs scripts/order-manager-schema-reconciliation-20261030.mjs; do
+            git show "origin/branch2:$x" > "$x"
+            git add "$x"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs')
+          s=p.read_text()
+          needle="assert.equal(stocks().old,before.old+1"
+          assert s.count(needle)>=1
+          diagnostic="  console.log('RACE_DIAGNOSTIC',JSON.stringify({winner,returns,exchanges,before,after:stocks(),moves:sql.prepare(\"SELECT id,reference_type,reference_id,movement_type,quantity_delta FROM inventory_movements ORDER BY id DESC LIMIT 6\").all(),events:sql.prepare(\"SELECT id,operation_type,event_type,status,quantity FROM inventory_lifecycle_events WHERE order_id=? ORDER BY id\").all(orderId)}))"
+          s=s.replace(needle,diagnostic+"\n"+needle)
+          p.write_text(s)
+          PY
+          echo 'STAGE3_ATOMIC_MAIN_CANDIDATE_APPLIED'
+          git diff --cached --stat
+      - name: Execute both winner orders, old Main safety and production build (disposable SQLite ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node --experimental-strip-types scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs
+          node scripts/test-main-current-business-release-20261031.mjs
+          npm run build
+          echo 'STAGE3_CONCURRENT_RETURN_EXCHANGE_MAIN_CANDIDATE_PASS'
+      - name: Save only candidate source after real tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'candidate(stage3): atomic Return and Set V2/legacy Exchange original-item claims'
+          git push origin HEAD:refs/heads/candidate/main-stage345-port-20261102

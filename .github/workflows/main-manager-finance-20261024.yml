@@ -1,0 +1,32 @@
+name: main Manager Finance Access
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/app/managerWorkspaceAccess.ts'
+      - 'scripts/test-main-manager-three-workspaces-20261022.mjs'
+      - 'scripts/test-finance-f3-summary-ux.mjs'
+      - '.github/workflows/main-manager-finance-20261024.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-manager-finance-20261024.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Manager menu and deep links
+        run: |
+          node --experimental-strip-types scripts/test-main-manager-three-workspaces-20261022.mjs
+          node scripts/test-finance-f3-summary-ux.mjs
+      - name: Full application build
+        run: npm run build

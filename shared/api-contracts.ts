@@ -27,10 +27,6 @@ export type CatalogResolutionFacts = {
 export type WarehouseAttentionShortageItem = {
   source: InventorySource
   variantId: number
-  // Last linked active-reservation order; not evidence of a physical receipt.
-  orderId?: number | null
-  externalId?: string
-  orderDate?: string
   productId: number
   productName: string
   category: AudienceCategory
@@ -265,8 +261,6 @@ export type InventoryReservationsResponse = ApiOkResponse & {
   variantId: number
   productId: number
   totalQuantity: number
-  totalCount?: number
-  hasMore?: boolean
   reservations: InventoryReservation[]
 }
 

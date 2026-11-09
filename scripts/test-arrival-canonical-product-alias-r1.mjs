@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 
-const source = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')
+const source = fs.readFileSync('worker/domains/inventory-arrival-materialization.ts', 'utf8')
 const start = source.indexOf('export async function resolveInventoryCreatableItemsBulk(')
-const end = source.indexOf('\n\nexport async function applyInventoryMovement(', start)
+const end = source.length
 if (start < 0 || end < 0) throw new Error('Cannot isolate inventory materializer')
 const body = source.slice(start, end)
 const check = (value, message) => { if (!value) throw new Error(message) }

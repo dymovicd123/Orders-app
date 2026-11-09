@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import ts from 'typescript'
+import {execFileSync} from 'node:child_process'
 
 const root = process.cwd()
 const manifestPath = path.join(root, 'scripts/step1906c-dead-code-manifest.json')
@@ -9,19 +10,6 @@ const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
-const h1ItemizedManifest = JSON.parse(read('scripts/stage03-h1-itemized-money-worker-manifest.json'))
-check(h1ItemizedManifest?.version === 1 && h1ItemizedManifest?.revision === 'stage03-h1-itemized-money-calculator', 'H1 itemized structural manifest invalid in 1906C')
-const h1InactiveWorkerContracts = h1ItemizedManifest.addedFiles || {}
-check(Object.keys(h1InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H1 inactive Worker contract allow-list widened')
-const h2ItemizedManifest = JSON.parse(read('scripts/stage03-h2-itemized-write-plan-worker-manifest.json'))
-check(h2ItemizedManifest?.version === 1 && h2ItemizedManifest?.revision === 'stage03-h2-itemized-write-plan', 'H2 itemized structural manifest invalid in 1906C')
-const h2InactiveWorkerContracts = h2ItemizedManifest.files || {}
-check(Object.keys(h2InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H2 inactive Worker contract allow-list widened')
-const gitBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-
 
 function walk(dir, predicate = () => true) {
   const result = []
@@ -43,7 +31,7 @@ function resolveModule(fromFile, specifier, fileSet) {
   return candidates.map((candidate) => path.resolve(candidate)).find((candidate) => fileSet.has(candidate)) || null
 }
 
-function assertAllReachable(directory, entryRelative, exactInactiveContracts = {}) {
+function assertAllReachable(directory, entryRelative) {
   const files = walk(path.join(root, directory), (file) => /\.(ts|tsx)$/.test(file)).map((file) => path.resolve(file))
   const fileSet = new Set(files)
   const graph = new Map(files.map((file) => [file, []]))
@@ -74,19 +62,7 @@ function assertAllReachable(directory, entryRelative, exactInactiveContracts = {
   }
   visit(entry)
   const unreachable = files.filter((file) => !reachable.has(file)).map((file) => path.relative(root, file).replaceAll('\\', '/'))
-  const unexplained = []
-  for (const relative of unreachable) {
-    const expected = exactInactiveContracts[relative]
-    if (!expected) {
-      unexplained.push(relative)
-      continue
-    }
-    const absolute = path.join(root, relative)
-    const actual = fs.readFileSync(absolute, 'utf8')
-    check(gitBlobSha(actual) === expected.afterGitBlob, `Inactive Worker contract changed beyond exact manifest: ${relative}`)
-    check(actual.split(/\r?\n/).length === expected.afterLines, `Inactive Worker contract line count changed beyond exact manifest: ${relative}`)
-  }
-  check(unexplained.length === 0, `${directory}: unreachable runtime modules remain: ${unexplained.join(', ')}`)
+  check(unreachable.length === 0, `${directory}: unreachable runtime modules remain: ${unreachable.join(', ')}`)
   return files.length
 }
 
@@ -97,7 +73,7 @@ try {
 
   for (const relative of manifest.removedRuntimeFiles || []) check(!fs.existsSync(path.join(root, relative)), `Retired runtime file returned: ${relative}`)
   const srcFiles = assertAllReachable('src', 'src/main.tsx')
-  const workerFiles = assertAllReachable('worker', 'worker/index.ts', h2InactiveWorkerContracts)
+  const workerFiles = assertAllReachable('worker', 'worker/index.ts')
 
   const app = read('src/App.tsx')
   const types = read('src/app/types.ts')
@@ -176,8 +152,47 @@ try {
   acceptedAdditiveMigrations.push('0080_v72_auth_login_identity.sql')
   acceptedAdditiveMigrations.push('0081_v72_auth_hardening.sql')
   acceptedAdditiveMigrations.push('0082_v72_kaspi_order_payment_method.sql')
-  acceptedAdditiveMigrations.push('0083_v72_workshop_settlement_foundation.sql')
-  acceptedAdditiveMigrations.push('0084_v72_workshop_settlement_status_capture.sql')
+  // Exact, independently audited catalog/reference migrations. Stage04 0083/0084
+  // intentionally remain absent; legacy historical snapshots are unchanged.
+  acceptedAdditiveMigrations.push('0090_v72_catalog_variant_consolidations.sql')
+  acceptedAdditiveMigrations.push('0091_v72_catalog_variant_stock_consolidation.sql')
+  acceptedAdditiveMigrations.push('0092_v72_catalog_variant_reservation_consolidation.sql')
+  acceptedAdditiveMigrations.push('0093_v72_reference_value_choice_merges.sql')
+  acceptedAdditiveMigrations.push('0094_v72_reference_payment_method_merges.sql')
+  acceptedAdditiveMigrations.push('0095_v72_catalog_stock_reconciliation_journal.sql')
+  acceptedAdditiveMigrations.push('0096_v72_catalog_atomic_stock_finalization.sql')
+  acceptedAdditiveMigrations.push('0097_v72_consolidated_sku_active_order_guard.sql')
+  acceptedAdditiveMigrations.push('0098_v72_consolidated_sku_stock_guard.sql')
+  acceptedAdditiveMigrations.push('0099_v72_catalog_merge_generation_events.sql')
+  acceptedAdditiveMigrations.push('0100_v72_catalog_zero_stock_undo_validation.sql')
+  acceptedAdditiveMigrations.push('0101_v72_catalog_zero_stock_remerge_validation.sql')
+  acceptedAdditiveMigrations.push('0102_v72_catalog_positive_stock_undo_validation.sql')
+  acceptedAdditiveMigrations.push('0103_v72_catalog_counted_undo_validation.sql')
+  acceptedAdditiveMigrations.push('0104_v72_catalog_reserved_undo_validation.sql')
+  acceptedAdditiveMigrations.push('0105_v72_reference_reason_choice_merges.sql')
+  for(const [filename,expectedSha] of [
+    ['0090_v72_catalog_variant_consolidations.sql','b4405429db17fbca0f7e212b3dd47cc6ca800ae8'],
+    ['0091_v72_catalog_variant_stock_consolidation.sql','3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7'],
+    ['0092_v72_catalog_variant_reservation_consolidation.sql','894164a039a76abfdf8d7ac8a49109329b9bc66d'],
+    ['0093_v72_reference_value_choice_merges.sql','d3afb62545f1cca2fc195244db13d42ac7b6471b'],
+    ['0094_v72_reference_payment_method_merges.sql','fd6d34164f59ac3856b113701e47a81e681e95f7'],
+    ['0095_v72_catalog_stock_reconciliation_journal.sql','0a35ae87effae25fd1e5d0d5befafd9aff0270f1'],
+    ['0096_v72_catalog_atomic_stock_finalization.sql','0f6cde970b9cb535d28e762e4002a87820625a2e'],
+    ['0097_v72_consolidated_sku_active_order_guard.sql','7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d'],
+    ['0098_v72_consolidated_sku_stock_guard.sql','700db59c2b37e6db43f3b9a9dc378b44b96858c6'],
+    ['0099_v72_catalog_merge_generation_events.sql','af2d04967b27f750384a62ba7513ff8ff17e69db'],
+    ['0100_v72_catalog_zero_stock_undo_validation.sql','94937dd3b455e11742bc363ddfd267fc0c2dd466'],
+    ['0101_v72_catalog_zero_stock_remerge_validation.sql','2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3'],
+    ['0102_v72_catalog_positive_stock_undo_validation.sql','9c26b192223a32d068d3e0e1cefebbe29959fdda'],
+    ['0103_v72_catalog_counted_undo_validation.sql','ce925e9d87473a5490f4bbb5e9652d5c10d194e3'],
+    ['0104_v72_catalog_reserved_undo_validation.sql','5a03ea7ab8bc51afe90b18de502e2053b427c90d'],
+    ['0105_v72_reference_reason_choice_merges.sql','6a3314e903349049740ccbe661f60f896a6e8a5b']
+  ]){
+    const actualSha=execFileSync('git',['hash-object','migrations/'+filename],{encoding:'utf8'}).trim()
+    check(actualSha===expectedSha,'Reference migration changed: '+filename)
+  }
+  check(!migrationFiles.some(x=>/^008[34]_/.test(x)), 'Stage04 is out of scope')
+
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)

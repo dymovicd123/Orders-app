@@ -1,0 +1,76 @@
+name: "Read-only diagnosis - main VOROTNIK size 0 vs no size (20261107)"
+on:
+  push:
+    branches: [feature/main-source-first-order-picker-20261106]
+    paths:
+      - .github/workflows/diagnose-main-vorotnik-no-size-readonly-20261107.yml
+permissions:
+  contents: read
+jobs:
+  product-only:
+    if: github.ref == 'refs/heads/feature/main-source-first-order-picker-20261106'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify production database and do not deploy
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - run: npm ci
+      - name: SELECT only - collar variants and stock/reserves (no customer data)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="$(cat <<'SQL'
+          SELECT v.id AS sku, v.product_id, v.size_label AS sku_size, v.category, v.gender, v.color, v.material, v.length,
+            s.inventory_source AS source, s.quantity AS physical, s.reserved_quantity AS cached_reserved,
+            (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r WHERE r.variant_id=v.id AND r.inventory_source=s.inventory_source AND r.status='active') AS active_reservations
+          FROM catalog_variants v
+          JOIN catalog_products p ON p.id=v.product_id
+          LEFT JOIN inventory_stock s ON s.variant_id=v.id
+          WHERE UPPER(p.name) LIKE '%ВОРОТНИК%'
+            AND UPPER(COALESCE(v.color,'')) LIKE '%ГОЛУБ%'
+          ORDER BY v.id, s.inventory_source LIMIT 35;
+          SQL
+          )"
+          if echo "$SQL" | grep -Eiq '\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM)\b'; then exit 47; fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
+          echo 'PRODUCT_STOCK_READ_ONLY_PASS'
+      - name: SELECT only - recent collar order snapshots and linked reservation (no PII)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="$(cat <<'SQL'
+          SELECT o.order_date AS date, oi.id AS order_line_id, oi.product_name_snapshot AS name, oi.gender_snapshot AS sex,
+            oi.color_snapshot AS color, oi.material_snapshot AS material, oi.length_snapshot AS length,
+            oi.size_snapshot AS entered_size, oi.source_type AS source, oi.variant_id AS linked_variant_id,
+            v.size_label AS linked_size, oi.quantity AS ordered_qty,
+            r.status AS reserve_status, r.variant_id AS reserved_variant_id,
+            r.inventory_source AS reserve_source, r.quantity AS reserved_qty
+          FROM order_items oi
+          JOIN orders o ON o.id=oi.order_id
+          LEFT JOIN catalog_variants v ON v.id=oi.variant_id
+          LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+          WHERE UPPER(oi.product_name_snapshot) LIKE '%ВОРОТНИК%'
+            AND UPPER(COALESCE(oi.color_snapshot,'')) LIKE '%ГОЛУБ%'
+            AND o.order_date >= '2026-11-05'
+          ORDER BY oi.id DESC LIMIT 15;
+          SQL
+          )"
+          if echo "$SQL" | grep -Eiq '\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM)\b'; then exit 47; fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
+          echo 'ORDER_RESERVATION_READ_ONLY_PASS'
+      - name: Read-only audit completed
+        run: echo 'PRODUCTION_DATABASE_UNCHANGED_NO_WORKER_DEPLOY_NO_MIGRATIONS'

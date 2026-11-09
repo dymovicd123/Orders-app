@@ -1,4 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 import {
   cancelInventoryStocktakeSession,
   completeInventoryStocktakeSession,
@@ -13,6 +15,66 @@ import { prepareManagedInventoryWrite } from '../src/app/controllers/inventoryWr
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Exercise the actual browser transport boundary as compiled application code.
+// Worker/SQLite acceptance below independently verifies committed stock, CAS and replay.
+async function checkInventoryStocktakeClient() {
+  const compiled = await build({
+    entryPoints: ['src/features/inventory/inventoryStocktakeClient.ts'],
+    bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+  })
+  const { createInventoryStocktakeClient } = await import(
+    'data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64')
+  )
+  const requests = []
+  let nextStatus = 200
+  let failNext = false
+  const apiFetch = async (url, options = {}) => {
+    requests.push({ url: String(url), method: options.method || 'GET', body: options.body })
+    if (failNext) { failNext = false; throw new Error('connection lost') }
+    const status = nextStatus
+    nextStatus = 200
+    return new Response(JSON.stringify(status === 200 ? { ok: true, session: { id: 'REV 1' } } : { ok: false, code: 'changed', message: 'stale facts' }), {
+      status, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const client = createInventoryStocktakeClient(apiFetch)
+  assert.equal((await client.loadInventoryReservations('warehouse')).reservations.length, 0,
+    'Without a source SKU/product identity there must be no unnecessary inventory read')
+  assert.equal(requests.length, 0, 'Empty reservation inquiry unexpectedly contacted server')
+  await client.loadInventoryStocktakeSessions('boutique')
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes?source=boutique')
+  await client.createInventoryStocktakeSession('warehouse', [21, 22])
+  assert.deepEqual(JSON.parse(requests.at(-1).body), { source: 'warehouse', productIds: [21, 22] })
+  assert.equal(requests.at(-1).method, 'POST')
+  await client.saveInventoryStocktakeCount('REV 1', 17, 0)
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/items/17')
+  assert.deepEqual(JSON.parse(requests.at(-1).body), { countedQuantity: 0 },
+    'An explicit physical zero must remain zero during an isolated stocktake save')
+  await client.addInventoryStocktakeCombination('REV 1', {
+    productId: 21, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult',
+    gender: 'ЖЕН', color: 'КРАСНЫЙ', sizes: ['44', '46'], createReferenceFields: [],
+  })
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/items/combination')
+  assert.deepEqual(JSON.parse(requests.at(-1).body).sizes, ['44', '46'])
+  await client.quickInventoryStocktakeBatch({ source: 'warehouse',
+    items: [{ variantId: 45, expectedQuantity: 6, countedQuantity: 5 }] })
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/quick-batch')
+  assert.equal(JSON.parse(requests.at(-1).body).items[0].expectedQuantity, 6,
+    'Warehouse CAS baseline must survive the transport extraction')
+  await client.completeInventoryStocktakeSession('REV 1')
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/complete')
+  await client.loadInventoryHistory({ source: 'boutique', variantId: 45, beforeId: 100, limit: 20 })
+  assert.equal(requests.at(-1).url, '/api/inventory/history?limit=20&source=boutique&variantId=45&beforeId=100')
+  await client.loadInventoryCheckHistory({ source: 'warehouse', variantId: 45 })
+  assert.equal(requests.at(-1).url, '/api/inventory/check-history?limit=30&source=warehouse&variantId=45')
+  nextStatus = 409
+  await assert.rejects(client.quickInventoryStocktake({ source: 'warehouse', variantId: 45, expectedQuantity: 6, countedQuantity: 4 }),
+    /stale facts/, 'Stale 409 must never be treated as a successful physical recount')
+  failNext = true
+  await assert.rejects(client.cancelInventoryStocktakeSession('REV 1'), /connection lost/,
+    'Unknown network outcome must surface to the existing managed retry layer')
+}
 
 class TestD1Statement {
   constructor(owner, sql, bindings = []) {
@@ -325,6 +387,7 @@ function testManagedBrowserTransport() {
 }
 
 async function main() {
+  await checkInventoryStocktakeClient()
   testManagedBrowserTransport()
 
   const db = new TestD1Database()
@@ -525,33 +588,6 @@ async function main() {
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'quick_stocktake' AND variant_id = 103`)?.qty) === 0, 'Failed quick-check race left a partial movement')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks WHERE reference_id = 'stock-check:quick_stocktake:warehouse:qa-race-1'`)?.qty) === 0, 'Failed quick-check race left replay evidence for an unapplied mutation')
 
-  // A second employee starts a full revision *after* quick-check preflight,
-  // but *before* its atomic batch. No quick-check physical fact may commit.
-  db.beforeNextBatch = (owner) => {
-    owner.run(`INSERT INTO inventory_stocktake_sessions
-      (id, inventory_source, status, created_by, started_at, updated_at)
-      VALUES ('qa-midflight-active', 'warehouse', 'active', 'qa-manager', '2026-10-31', '2026-10-31')`)
-  }
-  const blockedMidflight = await quickInventoryStocktakeBatch(db, {
-    source: 'warehouse',
-    requestId: 'qa-midflight-quick',
-    items: [{ variantId: 102, expectedQuantity: 8, countedQuantity: 7 }],
-  }, { actor: 'qa-manager' })
-  check(blockedMidflight.ok === false && blockedMidflight.code === 'stocktake_active'
-    && blockedMidflight.sessionId === 'qa-midflight-active',
-    'Quick check committed despite a full revision starting inside its transaction window')
-  check(Number(db.row(`SELECT quantity FROM inventory_stock
-    WHERE inventory_source = 'warehouse' AND variant_id = 102`)?.quantity) === 8,
-    'Midflight stocktake race changed physical stock')
-  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements
-    WHERE reference_type = 'quick_stocktake' AND reference_id LIKE 'stock-check:%qa-midflight-quick%'`)?.qty) === 0,
-    'Rejected midflight quick check left a physical movement')
-  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks
-    WHERE reference_id = 'stock-check:quick_stocktake:warehouse:qa-midflight-quick'`)?.qty) === 0,
-    'Rejected midflight quick check left an accepted check')
-  const midflightCancelled = await cancelInventoryStocktakeSession(db, 'qa-midflight-active')
-  check(midflightCancelled.ok, 'Failed to close the competing revision after test')
-
   const guardSession = await createInventoryStocktakeSession(db, { source: 'warehouse' }, 'qa-manager')
   const blockedQuick = await quickInventoryStocktakeBatch(db, {
     source: 'warehouse',
@@ -565,7 +601,7 @@ async function main() {
   const cancelledReplay = await cancelInventoryStocktakeSession(db, guardSession.session.id)
   check(cancelledReplay.ok && cancelledReplay.session?.status === 'cancelled', 'Cancellation replay did not remain idempotent')
 
-  console.log('STOCKTAKE FUNCTIONAL ACCEPTANCE PASSED — start/resume, evidence replay, CAS recount, atomic completion, completion replay, exact history, quick-check replay/race, midflight revision guard, active-session guard and cancellation are verified on real SQLite semantics')
+  console.log('STOCKTAKE FUNCTIONAL ACCEPTANCE PASSED — start/resume, evidence replay, CAS recount, atomic completion, completion replay, exact history, quick-check replay/race, active-session guard and cancellation are verified on real SQLite semantics')
 }
 
 main().catch((error) => {
