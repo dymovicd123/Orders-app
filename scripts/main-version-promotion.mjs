@@ -23,7 +23,8 @@ function verifyConfig(raw) {
   check((raw.match(/"database_id"\s*:/g) || []).length === 1, 'Ambiguous D1 bindings')
 }
 
-function latestDeployment(list) {
+function latestDeployment(response) {
+  const list = Array.isArray(response) ? response : response?.deployments
   check(Array.isArray(list) && list.length > 0, 'No Cloudflare deployment history')
   const sorted = [...list].sort((a, b) => Date.parse(b.created_on) - Date.parse(a.created_on))
   const current = sorted[0]
@@ -78,6 +79,11 @@ async function main() {
     assert.deepEqual(latestDeployment([{ id: '11111111-1111-4111-8111-111111111111', created_on: '2026-11-09T10:00:00Z',
       versions: [{ version_id: '22222222-2222-4222-8222-222222222222', percentage: 100 }] }]),
     { deploymentId: '11111111-1111-4111-8111-111111111111', versionId: '22222222-2222-4222-8222-222222222222' })
+    assert.deepEqual(latestDeployment({deployments:[{
+      id:'11111111-1111-4111-8111-111111111111',created_on:'2026-11-09T10:00:00Z',
+      versions:[{version_id:'22222222-2222-4222-8222-222222222222',percentage:100}]
+    }]}), {deploymentId:'11111111-1111-4111-8111-111111111111',
+      versionId:'22222222-2222-4222-8222-222222222222'})
     verifyBinding({id:'33333333-3333-4333-8333-333333333333',resources:{bindings:[
       {type:'d1',name:'DB',database_id:DB_ID}]}},'33333333-3333-4333-8333-333333333333')
     assert.deepEqual(versionIdsFromLog(['Version ID: 33333333-3333-4333-8333-333333333333']),
