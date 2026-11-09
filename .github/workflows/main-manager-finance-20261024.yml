@@ -26,7 +26,7 @@ jobs:
       - run: npm ci
       - name: Manager menu and deep links
         run: |
-          node --experimental-strip-types scripts/test-manager-finance-access-20261024.mjs
+          node --experimental-strip-types scripts/test-main-manager-three-workspaces-20261022.mjs
           node scripts/test-finance-f3-summary-ux.mjs
       - name: Full application build
         run: npm run build
