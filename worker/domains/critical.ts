@@ -257,6 +257,38 @@ export async function criticalOperationEntityId(db: D1Database, requestId: strin
 }
 
 
+// D1 batch is atomic, but an INSERT that changes zero rows does not fail.
+// Gate the *business row itself* on the current lease AND missing entity key,
+// so a late owner or a concurrent duplicate cannot commit an unmapped row.
+export function prepareCriticalMappedInsert(
+  db: D1Database,
+  sql: string,
+  values: unknown[],
+  handle: CriticalOperationHandle | null | undefined,
+  entityType: string,
+  entityKey: string,
+): D1PreparedStatement {
+  if (!handle) return db.prepare(sql).bind(...values);
+  if (!handle.leaseToken) throw new CriticalOperationBusyError('Операция уже завершена.');
+  const match = /\bVALUES\s*\(([\s?,]+)\)\s*$/i.exec(sql);
+  if (!match || (match[1].match(/\?/g) || []).length !== values.length) {
+    throw new Error('Критическая вставка должна иметь точное соответствие параметров.');
+  }
+  const guardedSql = sql.slice(0, match.index) + `SELECT ${match[1]}
+    WHERE EXISTS (
+      SELECT 1 FROM critical_operations
+      WHERE request_id = ? AND status = 'started' AND lease_token = ?
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM critical_operation_entities
+      WHERE request_id = ? AND entity_type = ? AND entity_key = ?
+    )`;
+  return db.prepare(guardedSql).bind(
+    ...values, handle.requestId, handle.leaseToken, handle.requestId, entityType, entityKey,
+  );
+}
+
+
 export async function insertCriticalMappedEntity(
   db: D1Database,
   handle: CriticalOperationHandle,
@@ -267,19 +299,33 @@ export async function insertCriticalMappedEntity(
   const existing = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
   if (existing) return { id: existing, created: false };
   const now = new Date().toISOString();
-  const [insertResult] = await db.batch([
+  const [insertResult, mapResult] = await db.batch([
     insertStatement,
     db.prepare(
       `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
-       VALUES (?, ?, ?, last_insert_rowid(), ?)
-       ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
-    ).bind(handle.requestId, entityType, entityKey, now),
+       SELECT ?, ?, ?, last_insert_rowid(), ?
+       WHERE changes() = 1
+         AND EXISTS (
+           SELECT 1 FROM critical_operations
+           WHERE request_id = ? AND status = 'started' AND lease_token = ?
+         )`
+    ).bind(handle.requestId, entityType, entityKey, now, handle.requestId, handle.leaseToken),
   ]);
-  const insertedId = toInt(insertResult.meta?.last_row_id, 0);
-  const mappedId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
-  const id = mappedId || insertedId;
-  if (!id) throw new Error(`Не удалось безопасно сохранить ${entityType}.`);
-  return { id, created: Boolean(insertedId && mappedId === insertedId) };
+  const inserted = toInt(insertResult.meta?.changes, 0);
+  const mapped = toInt(mapResult.meta?.changes, 0);
+  const id = toInt(insertResult.meta?.last_row_id, 0);
+  // D1's meta.changes can include trigger/cumulative effects, so a SQL
+  // changes()=1 inside the same batch is the direct-row guard. Verify its
+  // resulting exact request/entity mapping, not an assumed aggregate count.
+  const linkedId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
+  if (inserted > 0 && mapped > 0 && id > 0 && linkedId === id) {
+    return { id, created: true };
+  }
+  if (inserted === 0 && mapped === 0) {
+    if (linkedId) return { id: linkedId, created: false };
+    throw new CriticalOperationBusyError('Действие было перехвачено другим запросом. Обновите страницу и повторите.');
+  }
+  throw new Error(`Не согласованы запись и привязка ${entityType}; требуется проверка операции.`);
 }
 
 
@@ -294,21 +340,35 @@ export async function updateCriticalOperationTargetFromLastInsert(
 ) {
   const now = new Date().toISOString();
   const leaseUntil = Date.now() + 45_000;
-  const [insertResult] = await db.batch([
+  const [insertResult, updateResult] = await db.batch([
     insertStatement,
     db.prepare(
       `UPDATE critical_operations
        SET target_type = ?, target_id = last_insert_rowid(), target_ref = ?, step = ?, lease_until_ms = ?, updated_at = ?, last_error = NULL
-       WHERE request_id = ? AND status = 'started' AND lease_token = ?`
+       WHERE request_id = ? AND status = 'started' AND lease_token = ? AND step = 'validated' AND changes() = 1`
     ).bind(targetType, targetRef, nextStep, leaseUntil, now, handle.requestId, handle.leaseToken),
     // An itemized Exchange must claim all original units in this same
     // transaction as its header, before Return can observe an unclaimed item.
     // A zero-row claim deliberately aborts the entire batch, including header.
     ...atomicClaims,
   ]);
+  // D1 meta.changes includes auxiliary trigger changes (1 order INSERT may report 4).
+  // SQLite changes() inside this SAME batch is the precise direct-row count and
+  // guards the lease update against a zero-row/multiple-row business INSERT.
+  if (toInt(insertResult.meta?.changes, 0) < 1 || toInt(updateResult.meta?.changes, 0) !== 1) {
+    throw new CriticalOperationBusyError('Сохранение заказа было перехвачено другим запросом. Обновите страницу и повторите действие.');
+  }
   const id = toInt(insertResult.meta?.last_row_id, 0);
   await refreshCriticalOperation(db, handle);
-  const targetId = toInt(handle.row.target_id, 0) || id;
-  if (!targetId) throw new Error(`Не удалось безопасно создать ${targetType}.`);
+  const targetId = toInt(handle.row.target_id, 0);
+  if (!id || !targetId || targetId !== id || handle.row.step !== nextStep || handle.row.target_type !== targetType || handle.row.target_ref !== targetRef) {
+    throw new CriticalOperationBusyError('Сохранение заказа потеряло подтверждение записи. Повторите действие после обновления.');
+  }
+  if (targetType === 'order') {
+    const proof = await db.prepare(
+      'SELECT id FROM orders WHERE id = ? AND external_id = ? LIMIT 1'
+    ).bind(targetId, targetRef).first<{ id: number }>();
+    if (toInt(proof?.id, 0) !== targetId) throw new CriticalOperationBusyError('Связь нового заказа с безопасной операцией не подтверждена.');
+  }
   return targetId;
 }
