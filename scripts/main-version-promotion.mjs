@@ -73,7 +73,7 @@ function validateReleaseInputs(env) {
 
 async function main() {
   const env = process.env
-  if (env.RELEASE_MODE === 'self-test') {
+  if (process.argv.length === 3 && process.argv[2] === '--self-test') {
     verifyConfig(readFileSync('wrangler.jsonc', 'utf8'))
     assert.deepEqual(latestDeployment([{ id: '11111111-1111-4111-8111-111111111111', created_on: '2026-11-09T10:00:00Z',
       versions: [{ version_id: '22222222-2222-4222-8222-222222222222', percentage: 100 }] }]),
