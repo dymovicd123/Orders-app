@@ -4,8 +4,8 @@ on:
     branches: [main]
     paths:
       - 'src/app/managerWorkspaceAccess.ts'
-      - 'scripts/test-manager-finance-access-20261024.mjs'
-      - 'scripts/test-manager-three-workspaces-20261022.mjs'
+      - 'scripts/test-main-manager-three-workspaces-20261022.mjs'
+      - 'scripts/test-finance-f3-summary-ux.mjs'
       - '.github/workflows/main-manager-finance-20261024.yml'
   push:
     branches: [main]
