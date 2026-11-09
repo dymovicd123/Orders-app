@@ -19,9 +19,18 @@ const workerIndex = read('worker/index.ts')
 const batchWorker = read('worker/domains/exchange-batch.ts')
 const exchangeRequests = read('src/app/legacyExchangeCriticalRequests.ts')
 
-check(wrangler.includes('"name": "orders-app"'), 'H9C Production Worker identity drifted')
-check(wrangler.includes('"database_name": "orders_db_prod"') && wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'H9C Production D1 identity drifted')
-check(!wrangler.includes('orders_db_branch2') && !wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301'), 'H9C Branch2 D1 identity leaked into Production')
+const branch2 = wrangler.includes('"name": "orders-app-branch2"')
+if (branch2) {
+  check(wrangler.includes('"database_name": "orders_db_branch2_mirror_20261027"')
+    && wrangler.includes('"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"'),
+    'H9C Branch2 isolated D1 identity drifted')
+  check(!wrangler.includes('orders_db_prod') && !wrangler.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'),
+    'H9C Production D1 leaked into Branch2 test')
+} else {
+  check(wrangler.includes('"name": "orders-app"'), 'H9C Production Worker identity drifted')
+  check(wrangler.includes('"database_name": "orders_db_prod"') && wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'H9C Production D1 identity drifted')
+  check(!wrangler.includes('orders_db_branch2') && !wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301'), 'H9C Branch2 D1 identity leaked into Production')
+}
 
 check(app.includes('createReturnExchangeCreationActions({'), 'App no longer delegates Exchange to the guarded creation module')
 const saveExchange = between(creation, 'async function saveExchange()', '\n  return { saveReturn, saveExchange }')
