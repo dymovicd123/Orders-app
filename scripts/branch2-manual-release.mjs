@@ -54,7 +54,9 @@ function verifyConfiguration(){
   if((cfg.match(/"binding"\s*:\s*"DB"/g)||[]).length!==1
     ||(cfg.match(/"database_id"\s*:/g)||[]).length!==1
     ||(cfg.match(/"name"\s*:/g)||[]).length!==1)fail('Ambiguous Worker or database binding.')
-  if(cfg.includes('"directory"'))fail('Unexpected assets override: review config before release.')
+  const assetDirectories=[...cfg.matchAll(/"directory"\s*:\s*"([^"]+)"/g)].map(x=>x[1])
+  if(assetDirectories.length>1 || assetDirectories.some(directory=>directory!=='./dist/client'))
+    fail('Unexpected assets directory override: only ./dist/client is allowed.')
   return cfg
 }
 const cfg=verifyConfiguration()
@@ -98,8 +100,8 @@ if(existsSync('.wrangler/deploy/config.json'))fail('An unexpected generated Wran
 
 console.log('Running Branch2 build and package safety checks before any remote Cloudflare operation')
 run(npm,['ci'])
-if(mode==='--ci-preview')run(npm,['run','build'])
-else run(npm,['run','release:check'])
+if(mode!=='--ci-preview')run(npm,['run','release:check'])
+run(npm,['run','build'])
 if(!existsSync('dist/client/assets'))fail('Required built frontend assets are missing.')
 // Only a build-produced redirect is allowed here: preexisting redirect files
 // were rejected before npm ci. Remove the single generated pointer so Wrangler
@@ -110,7 +112,7 @@ if(existsSync('.wrangler/deploy/config.json')){
   if(existsSync('.wrangler/deploy/config.json'))fail('Cannot remove implicit Wrangler deploy redirect.')
   console.log('BRANCH2_BUILD_REDIRECT_REMOVED: explicit isolated --config enforced')
 }
-writeFileSync(CONFIG,cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'),{flag:'wx'})
+writeFileSync(CONFIG,cfg.includes('"directory"')?cfg:cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'),{flag:'wx'})
 try{
   run(npx,['--no-install','wrangler','deploy','--dry-run','--outdir',DRY_DIR,'--config',CONFIG])
   console.log('BRANCH2_MANUAL_RELEASE_DRY_RUN_PASS: worker+assets package, no deployment')
