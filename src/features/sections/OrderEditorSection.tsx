@@ -1,5 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import {useState} from 'react'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
+import {ItemizedOrderEditorWorkspace} from '../orders/ItemizedOrderEditorWorkspace'
 type SectionContext = Record<string, any>
 
 export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
@@ -42,6 +44,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     updateEditorPayment,
   } = ctx
 
+  const [itemPickerBlocking,setItemPickerBlocking]=useState(false)
+  const [editorPickerRevision,setEditorPickerRevision]=useState(0)
   const projection = selectedOrder ? projectOrderOperationalState(selectedOrder, { isAdmin }) : null
   const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'
   const editedItemizedTotal = itemizedMode && editorDraft
@@ -80,7 +84,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                 <>
                   <div className="card-meta">
                     {itemizedMode
-                      ? 'Редактируйте заказ прямо в форме: реквизиты, состав, количество, источник, цену продажи и проведённые оплаты. Отдельные подтверждения не нужны; сервер при сохранении сам проверит актуальность данных, остатки и деньги.'
+                      ? 'Здесь можно изменить сведения о клиенте, состав заказа, количество, цены и оплаты. Перед сохранением проверьте выбранные товары и суммы.'
                       : 'Можно быстро исправить данные выбранного заказа. Оплаты и товары подставляются из базы и сохраняются безопасно; отправка, удаление и статусы Цеха меняются отдельными штатными действиями.'}
                   </div>
     
@@ -184,7 +188,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       <small>КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi. Это не создаёт оплату само по себе.</small>
                     </label>
                     {itemizedMode ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Итого заказа</span>
                         <strong>{formatMoney(editedItemizedTotal)}</strong>
                         <small>Пересчитывается автоматически из количества и цены продажи по позициям.</small>
@@ -202,14 +206,14 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       </label>
                     )}
                     {projection?.hasWorkshopItems ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Цех</span>
                         <strong>{projection.workshopLabel || 'Цех: нет активной работы'}</strong>
                         <small>Состояние меняется по конкретным позициям в разделе «Цех».</small>
                       </div>
                     ) : null}
                     {itemizedMode ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Статус</span>
                         <strong>{projection?.lifecycleLabel || 'Активен'}</strong>
                         <small>Жизненный цикл меняется только отдельными штатными действиями.</small>
@@ -238,8 +242,21 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     </label>
                   </div>
     
-                  <div className="editor-columns">
-                    <section className="mini-panel">
+                  {itemizedMode&&<ItemizedOrderEditorWorkspace
+                    key={selectedOrder.id+'-'+editorPickerRevision}
+                    orderId={selectedOrder.id}
+                    draft={editorDraft}
+                    setDraft={setEditorDraft}
+                    updateItem={updateEditorItem}
+                    removeItem={removeEditorItem}
+                    saving={savingOrder}
+                    formatMoney={formatMoney}
+                    sourceLabel={sourceLabel}
+                    suggestions={suggestionValues}
+                    onBlockedChange={setItemPickerBlocking}
+                  />}
+                  <div className={'editor-columns'+(itemizedMode?' editor-columns-itemized':'')}>
+                    {!itemizedMode&&<section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Товары</h3>
                         <button className="secondary compact" type="button" onClick={addEditorItem} disabled={savingOrder}>
@@ -423,8 +440,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         ))}
                       </div>
-                    </section>
-    
+                    </section>}
+
                     <section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Оплаты</h3>
@@ -438,7 +455,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         </div>
                       </div>
                       <p className="mini-panel-note">
-                        Проведённые оплаты редактируются прямо в полях ниже: дата, сумма, способ, смысл и комментарий сохраняются вместе с заказом, ID оплаты не меняется. Если первичную оплату забыли внести, при создании она относится к дате заказа. Доплата, связанная с обменом, исправляется через операцию обмена; здесь для неё доступен только способ оплаты.
+                        Здесь можно исправить дату, способ, сумму и комментарий оплаты. Новые оплаты проводятся отдельно. Доплату за обмен меняйте в самом обмене.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -507,7 +524,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                               <p className="mini-panel-note">
                                 {payment.paymentKind === 'extra'
                                   ? 'Эта доплата связана с обменом. Здесь можно исправить только способ оплаты; сумму, дату и смысл меняйте через операцию обмена.'
-                                  : 'Оплата уже проведена. Дату, сумму, способ, смысл и комментарий можно исправить; ID оплаты сохранится, а изменение будет отражено в денежной истории.'}
+                                  : 'Оплата уже проведена. Если исправить её данные, изменение сохранится в истории.'}
                               </p>
                             ) : (
                               <div className="actions">
@@ -526,10 +543,10 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                   </div>
     
                   <div className="actions form-bottom-actions">
-                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder}>
+                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder||Boolean(itemizedMode&&itemPickerBlocking)}>
                       {savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}
                     </button>
-                    <button className="secondary" type="button" onClick={() => selectedOrder && setEditorDraft(createEditorDraft(selectedOrder))} disabled={savingOrder}>
+                    <button className="secondary" type="button" onClick={() => { if(selectedOrder) setEditorDraft(createEditorDraft(selectedOrder));setEditorPickerRevision(v=>v+1);setItemPickerBlocking(false) }} disabled={savingOrder}>
                       Сбросить форму
                     </button>
                     <button className="secondary back-action" type="button" onClick={closeOrderEditor} disabled={savingOrder}>

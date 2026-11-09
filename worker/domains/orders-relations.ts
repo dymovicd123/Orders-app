@@ -3,6 +3,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
 import { fetchOrderStockHandoverRows } from './order-reservations.ts'
+import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts'
 
 export async function isOrderPricingFoundationEnabled(db: D1Database) {
   try {
@@ -72,30 +73,18 @@ export function orderItemAvailableOperationQuantity(item: Record<string, unknown
 }
 
 
-// Summarize what return records actually certify. A money refund never proves
-// a physical receipt; physical_tracking=0 means legacy receipt is unknown.
-export type OrderReturnPhysicalSummary = {
-  moneyOnlyCount: number
-  moneyAndGoodsCount: number
-  goodsOnlyCount: number
-  pendingQuantity: number
-  receivedStockQuantity: number
-  receivedNoStockQuantity: number
-  legacyUnknownQuantity: number
-}
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
   const committedExchangeCountByOrderId = new Map<number, number>();
   const hasCommittedItemReturnByOrderId = new Map<number, boolean>();
-  const returnPhysicalByOrderId = new Map<number, OrderReturnPhysicalSummary>();
   const workshopTasksByOrderId = new Map<number, unknown[]>();
   const handoverReviewByOrderId = new Map<number, unknown[]>();
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, returnPhysicalByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -117,10 +106,13 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const placeholders = chunk.map(() => '?').join(',');
     const requestedOrderValues = chunk.map(() => '(?)').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult, returnPhysicalResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
-                (SELECT SUM(di.quantity - di.cancelled_quantity) FROM order_dispatch_items di WHERE di.order_item_id=oi.id) AS shipment_sent_quantity,
+                COALESCE(
+                  (SELECT SUM(di.quantity - di.cancelled_quantity) FROM order_dispatch_items di WHERE di.order_item_id=oi.id),
+                  CASE WHEN ${recordedExchangeShipmentSql('oi')} THEN oi.quantity ELSE NULL END
+                ) AS shipment_sent_quantity,
                 (SELECT e.id FROM inventory_lifecycle_events e
                  JOIN exchanges exchange_row ON exchange_row.id=e.operation_id
                  WHERE e.order_item_id=oi.id AND e.operation_type='exchange'
@@ -193,54 +185,8 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
          LEFT JOIN standalone_returns sr ON sr.order_id = ro.order_id
          LEFT JOIN exchange_counts ec ON ec.order_id = ro.order_id`
       ).bind(...chunk).all<Record<string, unknown>>(),
-      db.prepare(`
-        WITH per_return AS (
-          SELECT r.order_id, r.id, r.amount,
-                 COALESCE(SUM(ri.quantity), 0) AS goods_quantity,
-                 COALESCE(SUM(CASE WHEN ri.physical_tracking = 1
-                    AND ri.physical_received_at IS NULL THEN ri.quantity ELSE 0 END), 0) AS pending_quantity,
-                 COALESCE(SUM(CASE WHEN ri.physical_tracking = 1
-                    AND ri.physical_received_at IS NOT NULL
-                    AND ri.inventory_source IN ('warehouse','boutique') THEN ri.quantity ELSE 0 END), 0) AS received_stock_quantity,
-                 COALESCE(SUM(CASE WHEN ri.physical_tracking = 1
-                    AND ri.physical_received_at IS NOT NULL
-                    AND ri.inventory_source IS NULL THEN ri.quantity ELSE 0 END), 0) AS received_no_stock_quantity,
-                 COALESCE(SUM(CASE WHEN ri.id IS NOT NULL
-                    AND COALESCE(ri.physical_tracking, 0) = 0 THEN ri.quantity ELSE 0 END), 0) AS legacy_unknown_quantity
-          FROM returns r
-          LEFT JOIN return_items ri ON ri.return_id = r.id
-          WHERE r.order_id IN (${placeholders})
-            AND COALESCE(r.status, 'completed') <> 'cancelled'
-            AND NOT EXISTS (SELECT 1 FROM exchanges e
-              WHERE e.refund_return_id = r.id
-                AND COALESCE(e.status, 'completed') <> 'cancelled')
-          GROUP BY r.id
-        )
-        SELECT order_id,
-               SUM(CASE WHEN amount > 0 AND goods_quantity = 0 THEN 1 ELSE 0 END) AS money_only_count,
-               SUM(CASE WHEN amount > 0 AND goods_quantity > 0 THEN 1 ELSE 0 END) AS money_and_goods_count,
-               SUM(CASE WHEN amount = 0 AND goods_quantity > 0 THEN 1 ELSE 0 END) AS goods_only_count,
-               SUM(pending_quantity) AS pending_quantity,
-               SUM(received_stock_quantity) AS received_stock_quantity,
-               SUM(received_no_stock_quantity) AS received_no_stock_quantity,
-               SUM(legacy_unknown_quantity) AS legacy_unknown_quantity
-        FROM per_return GROUP BY order_id
-      `).bind(...chunk).all<Record<string, unknown>>(),
     ]);
 
-    for (const raw of returnPhysicalResult.results || []) {
-      const orderId = toInt(raw.order_id, 0);
-      if (!orderId) continue;
-      returnPhysicalByOrderId.set(orderId, {
-        moneyOnlyCount: Math.max(0, toInt(raw.money_only_count, 0)),
-        moneyAndGoodsCount: Math.max(0, toInt(raw.money_and_goods_count, 0)),
-        goodsOnlyCount: Math.max(0, toInt(raw.goods_only_count, 0)),
-        pendingQuantity: Math.max(0, toInt(raw.pending_quantity, 0)),
-        receivedStockQuantity: Math.max(0, toInt(raw.received_stock_quantity, 0)),
-        receivedNoStockQuantity: Math.max(0, toInt(raw.received_no_stock_quantity, 0)),
-        legacyUnknownQuantity: Math.max(0, toInt(raw.legacy_unknown_quantity, 0)),
-      });
-    }
     const activeStandaloneReturnedByItem = new Map<number, number>();
     for (const row of standaloneReturnedResult.results || []) {
       const orderId = toInt(row.order_id, 0);
@@ -277,7 +223,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, returnPhysicalByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 

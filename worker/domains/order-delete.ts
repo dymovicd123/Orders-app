@@ -210,13 +210,13 @@ export async function deleteOrderSafely(
          WHERE EXISTS (
            SELECT 1 FROM inventory_stock_checks
            WHERE inventory_source = ? AND variant_id = ?
-             AND julianday(checked_at) > julianday(?)
+             AND datetime(checked_at) > datetime(?)
          ) OR EXISTS (
            SELECT 1 FROM inventory_stocktake_sessions
            WHERE inventory_source = ? AND status = 'completed'
              AND completed_at IS NOT NULL
              AND id NOT LIKE 'REV-%-P-%'
-             AND julianday(completed_at) > julianday(?)
+             AND datetime(completed_at) > datetime(?)
          )
          LIMIT 1`
       ).bind(source, variantId, fulfilledAt, source, fulfilledAt).first<{ found: number }>()

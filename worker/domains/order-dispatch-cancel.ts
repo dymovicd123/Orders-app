@@ -1,5 +1,6 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { CriticalOperationConflictError } from './critical.ts'
+import { priorIssueEvidenceSql } from './order-prior-issued-origin.ts'
 
 const fail = (message:string):never => { throw new CriticalOperationConflictError(message) }
 
@@ -84,7 +85,23 @@ export async function cancelExactOrderDispatchItem(
   let accountedQuantity=0
   const reservationId=toInt(line.reservation_id,0)
   const movementId=toInt(line.movement_id,0)
-  if(!isWorkshop){
+  const statusOnlyPriorIssue=!isWorkshop && movementId===0 && reservationId>0
+  if(statusOnlyPriorIssue){
+    // The actual stock handover pre-dates this dispatch. A cancelled customer
+    // shipping marker must never reverse that older physical movement.
+    const proof=await db.prepare(`
+      SELECT r.id FROM order_items oi
+      JOIN inventory_reservations r ON r.order_id=oi.order_id AND r.order_item_id=oi.id
+      WHERE oi.id=? AND oi.order_id=? AND oi.stock_writeoff_status='fulfilled'
+        AND oi.quantity=? AND r.id=? AND r.status='fulfilled'
+        AND r.quantity=? AND r.variant_id=? AND r.inventory_source=?
+        AND ${priorIssueEvidenceSql('oi','r')}
+      LIMIT 1
+    `).bind(itemId,orderId,quantity,reservationId,quantity,
+      toInt(line.variant_id,0),cleanText(line.source_type)).first<{id:number}>()
+    if(!proof?.id)fail('Не удалось подтвердить исходную складскую выдачу. Ничего не изменено.')
+  }
+  if(!isWorkshop && !statusOnlyPriorIssue){
     const r=await db.prepare(
       'SELECT id,order_item_id,quantity,status,inventory_source,variant_id FROM inventory_reservations WHERE id=?'
     ).bind(reservationId).first<Record<string,unknown>>()
@@ -118,9 +135,11 @@ export async function cancelExactOrderDispatchItem(
     restorePhysical=!toInt(recent?.newer_check,0)&&!toInt(recent?.newer_revision,0)
   }
 
-  // Only a physical decrement that is evidenced by the original outbound movement
-  // may be restored. Never add an unrecorded unit or reserve other buyers' stock.
+  // A corrected shipment must not invent physical inventory units that were
+  // never deducted from tracked stock during shortage confirmation.
   const restoreQty=restorePhysical?accountedQuantity:0
+  // A stock return restores only what was actually deducted. Never reactivate
+  // a cancelled shortage reservation when another buyer still holds those pieces.
   const reactivateReservation=restorePhysical && accountedQuantity===quantity && Boolean(stock)
     && stock!.quantity + accountedQuantity >= stock!.reserved_quantity + quantity
   const statements:D1PreparedStatement[]=[]
@@ -136,7 +155,7 @@ export async function cancelExactOrderDispatchItem(
           WHERE ri.order_item_id=oi.id AND ri.quantity>0 AND COALESCE(r.status,'completed')<>'cancelled')
      )`
   ).bind(stamp,dispatchItemId,orderId,quantity,quantity))
-  if(!isWorkshop){
+  if(!isWorkshop && !statusOnlyPriorIssue){
     statements.push(
       db.prepare(
         `INSERT INTO inventory_model_meta(key,value,updated_at)
@@ -223,5 +242,6 @@ export async function cancelExactOrderDispatchItem(
   }
   return {ok:true,dispatchItemId,cancelledQuantity:quantity,
     physicalRestoredQuantity:restoreQty,
-    needsStockCheck:!isWorkshop&&!reactivateReservation}
+    needsStockCheck:!isWorkshop&&!statusOnlyPriorIssue&&!reactivateReservation,
+    statusOnly:statusOnlyPriorIssue}
 }

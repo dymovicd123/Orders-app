@@ -1,11 +1,9 @@
 # Warehouse current context — canonical continuation
 
-> **NEW PRODUCT DECISION — 2026-10-22:** Full warehouse UX redesign is agreed. Read [WAREHOUSE_COMPLETE_PRODUCT_REDESIGN_PLAN_20261022.md](./WAREHOUSE_COMPLETE_PRODUCT_REDESIGN_PLAN_20261022.md) first for current product direction, urgent Stage05 SKU/color/size report, the unified stock-check/correction experience, humane stock history, and the user's explicit lifting of the old Arrival UI freeze. Earlier “Arrival frozen” and W9-only notes below are historical UX constraints; existing backend stock/money/D1 safety invariants remain in force.
-
 > **STATUS UPDATE — 2026-09-26:** Stage02 transactional stock truth is complete, reviewed and promoted to Production through PR #145. Phase2C, Phase2D, Phase2E and the post-review fixes are **not pending work** anymore. Any older checkpoint below that says “current Phase2C/2D/2E” is historical only. The stock-truth semantics remain authoritative. W9 is only an optional future product/UX audit after real usage, not an unfinished Stage02 phase. Current cross-project status lives in `PROJECT_CONTINUATION.md`.
 
 
-Updated: 2026-09-23
+Updated: 2026-09-22
 Repository: `dymovicd123/Orders-app`
 
 ## CRITICAL environment invariant — Branch2 / Production D1 must never mix
@@ -37,371 +35,35 @@ Permanent rule:
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
-## Checkpoint 2026-09-23 — Stage03-H6 pre-client technical preparation COMPLETE on Branch2
 
-Final green code baseline: `f6906a2b6d28b30d1e3ce179b295e2e729b45a71`.
-Cloudflare monitor: `35843997644` — **success**.
-
-This checkpoint closes the technical preparation that can be completed without choosing unresolved client pricing policy.
-
-H6A-H6J establish and regress the following boundaries:
-- future `itemized_v1` orders cannot be opened/saved through the legacy full-order editor; backend PATCH and frontend entry/stale-save paths fail closed;
-- the current Catalog resolver is runtime-reachable and maintains hidden recommendation/snapshot state for accepted base price dimensions, while the visible Create UI and request still remain legacy;
-- end-to-end itemized Create/read/report contracts are covered without turning them on for users;
-- legacy exchange arithmetic is blocked for itemized orders until exchange policy is defined;
-- debt-close stays on persisted order/payment facts and manual returns remain manual; neither path reprices from Catalog;
-- all commercial order/item SQL write surfaces are constrained by regression to reviewed order-write and legacy exchange code;
-- frontend itemized readiness can derive line totals, order total, received money, debt and overpayment, while missing/invalid prices fail closed and explicit zero remains technically representable pending policy;
-- long-term storage cleanup now preserves `pricing_mode` in `retained_order_summaries`;
-- additive migration `0074_v72_retained_order_pricing_mode.sql` is applied and verified on **Branch2 D1 only**;
-- final H6I readiness matrix spans Create, Edit, Exchange, Returns, debt, delete, archive/restore, shipping, Finance, retained history and Branch2 environment identity;
-- H6J additionally locks Workshop, Clients, Cash/Finance-day and physical inventory lifecycle against hidden Catalog repricing or commercial price mutation.
-
-Branch2 migration 0074 workflow: `35841644818` — **success** against:
-- Worker `orders-app-branch2`;
-- D1 `orders_db_branch2`;
-- id `40065052-854e-44b8-bcd5-251bdd488301`.
-
-Verification at migration time:
-- retained compact-history rows: 0;
-- live orders: 13;
-- live order total aggregate: 20000;
-- live received aggregate: 20000;
-- live debt/return aggregates: 0;
-- before/after financial fingerprint matched exactly.
-Production D1 was not touched.
-
-### Deliberate stop boundary
-
-Do **not** activate visible itemized Create/autofill in Production or widen itemized Edit/Exchange/Return semantics until the remaining business decisions are answered.
-
-Still-open client decisions from Stage03-E:
-- whether gender/color/size/age affect price;
-- whether delivery has its own price;
-- whether a product with no Catalog recommendation may be sold with a manually entered price;
-- whether zero-price/free items are allowed;
-- exact discount UI model: final price / amount / percent;
-- whether manager override requires a reason;
-- what happens to a manual override after changing price-driving characteristics;
-- return refund defaults;
-- exchange price policy;
-- explicit discount reporting requirements.
-
-All reasonable preparatory engineering that does not decide those questions is complete at this checkpoint. Further Stage03 pricing activation is client-policy dependent.
-
-Canonical note: `docs/continuation/STAGE03_H6_PRE_CLIENT_READINESS_20260923.md`.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-H3/H4/H5 itemized Create foundation GREEN
-
-Final green Branch2 baseline: `07718e7ad04ec00091e97be9f6a016fbbe01d333`.
-Cloudflare monitor: `35767177144` — **success**.
-
-H3 connected the pure H2 write plan to the real server Create path only when the request explicitly asks for `pricingMode: itemized_v1`:
-- omitted pricing mode still defaults to `legacy_manual_total`;
-- the current Create UI still sends no itemized mode;
-- itemized totals, received money and debt are server-derived from line prices + payment facts;
-- a separate manual `orderTotal` is rejected for itemized mode;
-- `orders.pricing_mode = itemized_v1` and nullable per-line `catalog_price_snapshot` are persisted only on the guarded itemized path;
-- migration/foundation capability is checked before itemized SQL is used, so legacy/pre-0073 compatibility remains intact;
-- retry/idempotency keeps the validated itemized write plan frozen in critical-operation context;
-- existing-order Edit, Return and Exchange semantics were not switched.
-
-H4 made exact product gross revenue possible for future itemized orders:
-- exact itemized product revenue = persisted `order_items.line_total`;
-- mutable current Catalog price and `catalog_price_snapshot` are not used as revenue;
-- legacy order allocation remains explicitly ambiguous and is not invented;
-- the old compatibility `order_sales = SUM(o.total_amount)` field remains untouched and hidden from UI;
-- pre-0073 report reads remain safe.
-Final H4 green checkpoint before H5: `13ed605ad3629f79f72cb59b001f0b3ad7695229`, monitor `35764445435` — **success**.
-
-H5 prepared deterministic Catalog recommendation lookup for the future Create UI without activating it:
-- frontend Catalog types now understand the existing backend `executionPrices` payload;
-- pure resolver key is the accepted Stage03 base key: product + material + length + adult/child;
-- active canonical product names and known product aliases are supported;
-- empty material/length reuse the existing `СТАНДАРТ` execution identity;
-- a single valid current sale price returns both recommendation and future Catalog snapshot value;
-- missing product/price returns no invented price;
-- conflicting recommendations fail closed;
-- the resolver performs no fetches and mutates no draft;
-- CreateOrderSection/App do not import or call it yet.
-
-H5 required two regression-boundary repairs:
-- Step 190.6B now has an exact H5 frontend normalization layer before replaying historical F1/C baselines;
-- Step 190.6C permits only the exact manifested inactive `src/app/order-pricing.ts` resolver while it is deliberately not connected to `src/main.tsx`; every other unexplained dormant frontend module still fails.
-
-No Production change, no Production D1 mutation, no current Create UI activation, no Catalog autofill and no client-policy decision in H3/H4/H5.
-
-Next technical work is intentionally deferred: prepare/activate the new-order UI only within the already accepted base pricing scope, harden itemized orders against legacy edit semantics, and add end-to-end coverage before any wider rollout. Open client decisions remain separate.
-
-Canonical note: `docs/continuation/STAGE03_H3_H5_ITEMIZED_CREATE_FOUNDATION_20260922.md`.
-
----
-
-
-## Checkpoint 2026-09-22 — Stage03-H1/H2 pure itemized pricing core GREEN
-
-Final green Branch2 baseline: `40e3d39d1fc3b13c00f6e10811279e712ca40ad4`.
-Cloudflare monitor: `35761143468` — **success**.
-
-H1 added a pure, database-independent `itemized_v1` money calculator:
-- total = Σ(quantity × actual sold unit price);
-- payment rows remain independent money facts;
-- debt/overpayment are derived from total vs received payments;
-- missing final unit price is rejected instead of silently becoming zero;
-- explicit zero remains technically representable until client policy decides whether free/zero-price sales are allowed;
-- mutable Catalog prices, manual order-total overrides and D1 access are absent from the arithmetic.
-
-H2 added a pure save-ready write plan on top of H1:
-- every line carries server-derived `lineTotal`;
-- the order carries server-derived `totalAmount`, `receivedAmount` and `debtAmount`;
-- `catalogPriceSnapshot` is kept separate from actual sold `unitPrice`;
-- missing Catalog recommendation stays `NULL`, never zero;
-- overpayment and empty itemized orders are rejected before a write plan can be produced.
-
-Both modules remain deliberately inactive from the real Create/Edit runtime. No UI autofill, order creation switch, D1 mutation, historical repricing, Return/Exchange behavior, or Production change was introduced.
-
-Regression hardening was required because these are intentionally inactive backend contracts:
-- Step 190.6A now normalizes exact H1/H2 pricing layers before historical Worker structural baselines;
-- Step 190.6C permits only the exact manifested inactive pricing module while continuing to reject every unexplained unreachable Worker module;
-- the first H2 deploy correctly exposed that the H1 focused gate was too broad and searched the whole shared module for Catalog snapshot vocabulary; the final fix scopes H1 isolation checks to the H1 arithmetic function itself, while H2 is allowed to carry the immutable snapshot separately.
-
-Next bounded technical step: audit and prepare the server-side **new-order** integration path that can consume the H2 write plan only when an explicit `itemized_v1` mode is requested. Keep current legacy Create UI/default behavior unchanged and do not enable Catalog autofill yet.
-
----
-
-
-## Checkpoint 2026-09-22 — Stage03-G2 price-only order edit isolation GREEN
-
-Green Branch2 baseline: `ef43358c71bc2fe688364b794b88cc69048a7586`.
-Cloudflare monitor: `35756878923` — **success**.
-
-Price-only correction of an existing order line is now separated from physical/content rewrite:
-- changing only `unitPrice` preserves the existing active `order_items.id`;
-- `unit_price` + `line_total` update in place together with order money totals in one D1 batch;
-- `catalog_price_snapshot` is preserved;
-- no stock reversal, reservation release/re-reservation, item retirement/reinsert or Workshop-task recreation occurs for a pure price-only edit.
-
-Safety policy was deliberately not widened: sent orders, fulfilled partial handovers and orders with completed returns/exchanges still use the existing edit guards because those guards key from any item change, including price.
-
-The first G2 deploy at `4ad7886e782a57aa4b3db42d892a0eb33ff18b65` / monitor `35756301567` failed only at the historical Step 190.6A exact structural manifest after the focused G2 gate had passed. A dedicated G2 structural normalization layer was added, and the final deploy is green.
-
-No migration, D1 data mutation/backfill, Production change, Catalog autofill, itemized-order activation or client-policy decision in G2.
-
-Focused regression: `scripts/test-stage03-g2-price-only-edit-isolation.mjs`.
-Structural layer: `scripts/stage03-g2-price-only-edit-worker-manifest.json`.
-Canonical note: `docs/continuation/STAGE03_G2_PRICE_ONLY_EDIT_ISOLATION_20260922.md`.
-
-Next bounded technical step: pure backend `itemized_v1` calculator/validator contract only; do not connect it to real Create/Edit UI yet.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-G1 report / pricing isolation GREEN
-
-Green code baseline: `branch2` `f290648f8ffbc43eb2bebbcacafbaa26a568cef9`.
-Cloudflare monitor: `35753441638` — **success**.
-
-Audited Finance, payment-method, manager, city, product, return, debt, Finance-day, cash, team plan/activity, dashboard and Orders debt/summary reporting paths.
-
-Locked result:
-- current Catalog price table is absent from all audited report/dashboard paths;
-- sales/average-check reporting remains on persisted `orders.total_amount`;
-- payment-method reporting remains on actual `payments`;
-- debt remains on persisted order debt;
-- returns/exchanges/cash/team-plan facts remain on their own historical ledgers;
-- future itemized pricing therefore does not require reports to read mutable Catalog prices.
-
-Existing pre-Stage03 product-report defect confirmed: backend `order_sales = SUM(o.total_amount)` grouped through order items is not exact product revenue for multi-product orders. Current UI does not display this unsafe field, and G1 now guards against silently exposing it as exact revenue.
-
-Focused regression: `scripts/test-stage03-g1-report-price-isolation.mjs`.
-Canonical audit: `docs/continuation/STAGE03_G1_REPORT_PRICE_ISOLATION_20260922.md`.
-
-No report arithmetic, order behavior, UI or D1 data changed in G1.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-F3 Branch2 migration 0073 GREEN
-
-Migration source: `branch2` `5721d1d0151910f2c24bf17d94a44e5b5eeb807d`.
-
-Branch2-only migration workflow `35744456098` completed **successfully** against:
-- Worker `orders-app-branch2`;
-- D1 `orders_db_branch2`;
-- id `40065052-854e-44b8-bcd5-251bdd488301`.
-
-Migration 0073 is now actually applied on Branch2 D1.
-
-Verification:
-- all 13 existing Branch2 orders are `legacy_manual_total`;
-- 0 existing orders are `itemized_v1`;
-- all 18 existing order items keep `catalog_price_snapshot = NULL`;
-- the pre/post aggregate fingerprint for orders, items, payments, returns and exchanges matched exactly;
-- therefore historical totals, received money, debt, payment-method facts and existing item financial values were not changed by the migration.
-
-Cloudflare deploy monitor `35744455130` for the same commit also passed.
-
-Production D1 remains untouched. No autofill/itemized write behavior is enabled.
-
-Canonical note: `docs/continuation/STAGE03_F3_BRANCH2_MIGRATION_0073_20260922.md`.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-F2 pricing metadata read compatibility GREEN
-
-Code baseline: `branch2` `c089ce43bc4ce079eaffb88af717cea3d601d80c`.
-Cloudflare monitor: `35742609404` — **success**.
-
-F2 adds pre-migration-safe read plumbing only:
-- narrow shared probe detects both candidate 0073 columns;
-- before 0073, ordinary order APIs explicitly expose `legacy_manual_total` and nullable Catalog snapshot without selecting missing columns;
-- after 0073, persisted pricing mode and item Catalog snapshot can surface through existing order reads;
-- retained historical summaries remain explicit legacy mode.
-
-No pricing metadata write path, no autofill, no Create/Edit behavior change, no report repricing, no Return/Exchange change.
-
-The cumulative gate passed after two regression-test compatibility repairs:
-- F2 focused guard was scoped so `catalog_price_snapshot == null` is not mistaken for SQL assignment;
-- old D1 R5.9 cursor test was made compile-time-type-agnostic while preserving its exact cursor/OFFSET semantic assertion.
-
-Migration 0073 is still **not applied to any D1**.
-
-Canonical F2 note: `docs/continuation/STAGE03_F2_PRICING_READ_COMPAT_20260922.md`.
-
-Next boundary: if continuing, use a separately guarded workflow to apply/verify 0073 on **Branch2 D1 only**, then stop before any item-price autofill/write activation.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-F1 pricing compatibility foundation
-
-Baseline: `branch2` `63ce9bc1e4f922a256959d2f8667b8d61956fcab`.
-
-Added candidate migration `0073_v72_order_item_pricing_foundation.sql`:
-- explicit `orders.pricing_mode`, defaulting to `legacy_manual_total`;
-- nullable non-negative `order_items.catalog_price_snapshot`.
-
-Historical safety:
-- no INSERT/UPDATE/DELETE backfill;
-- no Catalog-to-history price copy;
-- no historical total/unit-price/payment/debt recalculation.
-
-Type vocabulary now understands the future fields, but Stage03-F1 deliberately does not activate them through Create/Edit inputs or runtime pricing behavior.
-
-No Create Order UI/autofill/report/return/exchange change.
-No D1 migration executed in this step.
-
-Focused regression: `scripts/test-stage03-f1-pricing-foundation.mjs`.
-
-Design/implementation note: `docs/continuation/STAGE03_F1_PRICING_FOUNDATION_20260922.md`.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-E Pricing Contract v1
-
-Baseline: `branch2` `b5b2744b20076c38f9c92276092060f6751079fe`.
-
-Design contract recorded in:
-`docs/continuation/STAGE03_E_PRICING_CONTRACT_V1_20260922.md`.
-
-Locked architecture for the next implementation phase:
-- four separate truths: current Catalog recommendation, actual sold line price, payments, debt;
-- explicit order pricing mode is mandatory; never infer from zero item prices;
-- proposed modes: `legacy_manual_total` and `itemized_v1`;
-- all existing orders remain legacy/manual and must never be repriced from current Catalog;
-- proposed new line snapshot: nullable `catalog_price_snapshot`;
-- existing `unit_price` remains actual sold unit price;
-- itemized total formula = sum of quantity × actual unit price;
-- `orders.total_amount` remains persisted for historical/report compatibility but becomes server-derived for itemized orders;
-- payments remain manual independent money facts and are never silently rewritten by price changes;
-- existing Finance/payment-method history continues from orders/payments/returns snapshots, not current Catalog;
-- new-order creation is the first eventual itemized UI target;
-- existing-order price correction, returns and exchanges remain separate later compatibility work.
-
-Proposed next bounded code step, only after this contract is accepted: additive schema/backend foundation for pricing mode + Catalog price snapshot, with no autofill/UI/report/return/exchange behavior change.
-
-No code, migration or D1 mutation in Stage03-E.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-D pricing/finance compatibility audit
-
-Baseline: `branch2` `3831c51e388e525323eff7fe5de040e7f6eb5153`.
-
-Read-only architecture audit completed and recorded in:
-`docs/continuation/STAGE03_D_PRICING_FINANCE_COMPATIBILITY_AUDIT_20260922.md`.
-
-User's proposed target is accepted as the working direction:
-- Catalog prefills a per-item price;
-- manager changes/discounts each item when needed;
-- order total derives from final item prices;
-- payment rows remain manual independent money facts;
-- debt is final order total minus received payments.
-
-Audit found mandatory protections before implementation:
-- old orders need explicit legacy/manual vs itemized pricing mode; never infer from zero unit prices;
-- new lines should likely preserve Catalog sale-price snapshot separately from actual sold `unit_price`;
-- high-level Finance/payment-method reports can remain based on order/payment snapshots and must never reprice from current Catalog;
-- current product report cannot be reused as exact product revenue because it groups items while summing whole-order totals;
-- price-only edits currently count as item rewrites and would churn inventory/reservations, so existing-order price correction needs a separate commercial path;
-- current exchange flow inserts replacement items at price 0 and manually changes order total by exchange difference, so exchange semantics must be redesigned before itemized pricing becomes universal;
-- current returns remain manually valued and can stay separate until client refund policy is decided;
-- gender/color/size-age influence on price is still unresolved.
-
-No code, UI, migration or D1 mutation in this audit step.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-C2 price UI polish
-
-Baseline: `branch2` `abac6d232df69bb7c28c02f4203ada9ff3e672d7`.
-
-Visual acceptance showed that the price editor worked but looked like a separate nested admin form inside the execution card.
-
-Polish is CSS-only:
-- price editor is now an integrated strip between execution header and color/size content;
-- nested rounded-card appearance removed;
-- input, audience marker and save-button sizing aligned with the surrounding Catalog controls;
-- existing labels and behavior are unchanged;
-- no extra explanatory copy or new business semantics added;
-- responsive behavior retained.
-
-No API, order, stock or D1 change. Branch2 only pending visual acceptance.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-C1 SKU card layout repair
-
-Baseline: `branch2` `2b6337747dbffc51d630989481c7d4cab0c9e2a4`.
-
-Visual acceptance found that opening an exact SKU card inside a color/gender subgroup collapsed the card into the narrow left label column, leaving most of the detail pane blank. Root cause: `.catalog-color-subgroup` is a two-column CSS Grid and the third child (`.catalog-sku-card`) had no explicit grid-column, so auto-placement put it in column 1 of the next row.
-
-Fix is CSS-only:
-- `.catalog-color-subgroup > .catalog-sku-card { grid-column: 1 / -1; width: 100%; min-width: 0; }`;
-- compact top spacing retained;
-- no catalog, price, stock, order or D1 semantics changed.
-
-This repair is Branch2-only pending visual acceptance.
-
----
-
-## Checkpoint 2026-09-22 — Stage03-C catalog price UI
-
-Baseline: `branch2` `29c1b7009242da884c74b8704ded159d508bcc79`. Branch2 Worker/D1 identity was verified before UI work; Production binding absent. Migration 0072 is already present only in Branch2 D1 and had zero backfilled price rows.
-
-Implemented in Branch2 UI:
-- price editing lives inside each execution card (product + material + length), above color/size details;
-- rows are shown only for adult/child categories actually present in that execution;
-- cost and sale price remain admin-only in Catalog;
-- blank input maps to `NULL`; zero remains an explicit zero;
-- save uses the existing full-pair admin `PUT /api/catalog/execution-prices`;
-- ambiguous lost-response handling tells the admin to refresh/check before retrying;
-- phone layout is included.
-
-No gender/color/size/age price rule is invented.
-
-Client requirement clarified by user: the catalog sale price must later prefill the order form, while managers need a way to apply a discount/price adjustment when necessary. That is **recorded but deliberately deferred** until after the base price-setting UI is accepted. Stage03-C does not touch order creation/editing, `unit_price`, or discount semantics.
-
-No D1 mutation is performed by this UI commit.
+## Checkpoint 2026-09-22 — Production Catalog price editor release
+
+Production migration 0072 was applied first through guarded workflow `35749849349` against:
+- Worker `orders-app`;
+- D1 `orders_db_prod`;
+- id `17e68a41-1d58-4a36-8a63-47c3e32443c4`.
+
+Migration verification:
+- `catalog_execution_prices` started with 0 rows;
+- the pre/post Production finance fingerprint matched exactly;
+- historical orders, received money, debt, payments, returns, exchanges and old item financial fields were unchanged.
+
+This release promotes the accepted Branch2 Stage03-C/C1/C2 Catalog pricing UI only:
+- admin can set current cost and sale prices per canonical execution + adult/child;
+- current price editor is integrated into the execution card;
+- exact SKU card keeps the full-width layout repair;
+- blank means unset; zero remains an explicit zero;
+- write remains the existing admin-only full-pair PUT contract.
+
+Deliberately not included:
+- order price autofill;
+- itemized order creation;
+- discounts;
+- Production migration 0073;
+- report repricing;
+- return/exchange pricing changes.
+
+This gives Production users time to populate Catalog prices before order autofill is designed.
 
 ---
 

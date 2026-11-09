@@ -5,60 +5,29 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
-const kaspiWorkshopInvoiceR1WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-workshop-invoice-r1-runtime-manifest.json'), 'utf8'))
-if (kaspiWorkshopInvoiceR1WorkerManifest?.version !== 1 || kaspiWorkshopInvoiceR1WorkerManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 Worker manifest invalid')
-const kaspiWorkshopInvoiceR1WorkerBlobSha = (value) => {
+const workshopMainSyncManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/workshop-main-sync-20261007-runtime-manifest.json'), 'utf8'))
+if (workshopMainSyncManifest?.version !== 1 || workshopMainSyncManifest?.revision !== 'workshop-main-sync-20261007') throw new Error('Workshop main sync Worker manifest invalid')
+const workshopMainSyncWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.KASPI_WORKSHOP_INVOICE_R1_WORKER_NORMALIZED) {
+if (!process.env.WORKSHOP_MAIN_SYNC_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(kaspiWorkshopInvoiceR1WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(workshopMainSyncManifest.files || {})) {
       if (!relative.startsWith('worker/')) continue
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiWorkshopInvoiceR1WorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Workshop invoice R1 Worker drifted: ' + relative)
+      if (workshopMainSyncWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Workshop main sync Worker drifted: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiWorkshopInvoiceR1WorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Workshop invoice R1 Worker predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_WORKSHOP_INVOICE_R1_WORKER_NORMALIZED: '1' } })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI WORKSHOP INVOICE R1 WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const kaspiSharedOrdersR2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-shared-orders-r2-20261006-runtime-manifest.json'), 'utf8'))
-if (kaspiSharedOrdersR2WorkerManifest?.version !== 1 || kaspiSharedOrdersR2WorkerManifest?.revision !== 'kaspi-shared-orders-r2-20261006-runtime') throw new Error('Kaspi shared Orders R2 Worker manifest invalid')
-const kaspiSharedOrdersR2WorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.KASPI_SHARED_ORDERS_R2_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(kaspiSharedOrdersR2WorkerManifest.files || {})) {
-      if (!relative.startsWith('worker/')) continue
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiSharedOrdersR2WorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi shared Orders R2 Worker drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiSharedOrdersR2WorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi shared Orders R2 Worker predecessor fixture drifted: ' + relative)
+      if (workshopMainSyncWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Workshop main sync Worker predecessor fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_SHARED_ORDERS_R2_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, WORKSHOP_MAIN_SYNC_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -66,7 +35,38 @@ if (!process.env.KASPI_SHARED_ORDERS_R2_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI SHARED ORDERS R2 WORKER STRUCTURAL LAYER PASSED')
+  console.log('WORKSHOP MAIN SYNC WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
+const kaspiProductionRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-production-runtime-20261007-manifest.json'), 'utf8'))
+if (kaspiProductionRuntimeManifest?.version !== 1 || kaspiProductionRuntimeManifest?.revision !== 'kaspi-production-runtime-20261007') throw new Error('Kaspi Production runtime manifest invalid')
+const kaspiProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.KASPI_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiProductionRuntimeManifest.files || {})) {
+      if (!relative.startsWith('worker/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (kaspiProductionWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Production Worker drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (kaspiProductionWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Production Worker predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_PRODUCTION_WORKER_NORMALIZED: '1' } })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI PRODUCTION WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 
@@ -134,176 +134,28 @@ if (!process.env.ARRIVAL_CHILD_AUDIENCE_WORKER_NORMALIZED) {
   process.exit(0)
 }
 
-const kaspiSeparationWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'))
-if (kaspiSeparationWorkerManifest?.version !== 1 || kaspiSeparationWorkerManifest?.revision !== 'kaspi-order-separation-20261006-runtime') throw new Error('Kaspi order separation Worker manifest invalid')
-const kaspiSeparationWorkerBlobSha = (value) => {
+const returnExchangeProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-production-final-20261006-worker-manifest.json'), 'utf8'))
+if (returnExchangeProductionWorkerManifest?.version !== 1 || returnExchangeProductionWorkerManifest?.revision !== 'return-exchange-production-final-20261006-worker') throw new Error('Return/Exchange Production worker manifest invalid')
+const returnExchangeProductionWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.KASPI_ORDER_SEPARATION_WORKER_NORMALIZED) {
+if (!process.env.RETURN_EXCHANGE_PRODUCTION_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(kaspiSeparationWorkerManifest.files || {})) {
-      if (!relative.startsWith('worker/')) continue
+    for (const [relative, delta] of Object.entries(returnExchangeProductionWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiSeparationWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi order separation Worker drifted: ' + relative)
+      if (returnExchangeProductionWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange Production worker drifted: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiSeparationWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi order separation Worker predecessor fixture drifted: ' + relative)
+      if (returnExchangeProductionWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange Production worker predecessor fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_ORDER_SEPARATION_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI ORDER SEPARATION WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const sourceDefaultsWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-worker-manifest.json'), 'utf8'))
-if (sourceDefaultsWorkerManifest?.version !== 1 || sourceDefaultsWorkerManifest?.revision !== 'return-exchange-source-defaults-20261005-worker') throw new Error('Return/Exchange source-default Worker manifest invalid')
-const sourceDefaultsWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.RETURN_EXCHANGE_SOURCE_DEFAULTS_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(sourceDefaultsWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (sourceDefaultsWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange source-default Worker drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (sourceDefaultsWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange source-default Worker predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, RETURN_EXCHANGE_SOURCE_DEFAULTS_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('RETURN / EXCHANGE SOURCE DEFAULTS WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const returnAuditRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-ux-audit-20261005-runtime-manifest.json'), 'utf8'))
-if (returnAuditRuntimeManifest?.version !== 1 || returnAuditRuntimeManifest?.revision !== 'return-ux-audit-20261005-runtime') throw new Error('Return UX audit runtime manifest invalid')
-const returnAuditBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.RETURN_UX_AUDIT_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(returnAuditRuntimeManifest.files || {})) {
-      if (!relative.startsWith('worker/')) continue
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (returnAuditBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return UX audit Worker drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (returnAuditBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return UX audit predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, RETURN_UX_AUDIT_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('RETURN UX AUDIT WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const exchangeSetV2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-worker-manifest.json'), 'utf8'))
-if (exchangeSetV2WorkerManifest?.version !== 1 || exchangeSetV2WorkerManifest?.revision !== 'exchange-set-v2-20261005-worker') throw new Error('Exchange Set V2 Worker manifest invalid')
-const exchangeSetV2WorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.EXCHANGE_SET_V2_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(exchangeSetV2WorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (exchangeSetV2WorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Exchange Set V2 Worker drifted: ' + relative)
-      originals.set(relative, actual)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (exchangeSetV2WorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Exchange Set V2 Worker predecessor fixture drifted: ' + relative)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, EXCHANGE_SET_V2_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('EXCHANGE SET V2 WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const mainRuntimeSync20261005WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261005-worker-manifest.json'), 'utf8'))
-if (mainRuntimeSync20261005WorkerManifest?.version !== 1 || mainRuntimeSync20261005WorkerManifest?.revision !== 'branch2-main-runtime-sync-20261005-worker') throw new Error('Branch2/main runtime sync 20261005 Worker manifest invalid')
-const mainRuntimeSync20261005WorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_20261005_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(mainRuntimeSync20261005WorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (mainRuntimeSync20261005WorkerBlobSha(actual) !== delta.afterGitBlob) {
-        throw new Error('Branch2/main runtime sync 20261005 Worker drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.absentBefore) {
-        fs.unlinkSync(absolute)
-      } else {
-        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-        if (mainRuntimeSync20261005WorkerBlobSha(baseline) !== delta.beforeGitBlob) {
-          throw new Error('Branch2/main runtime sync 20261005 Worker predecessor fixture drifted: ' + relative)
-        }
-        fs.writeFileSync(absolute, baseline)
-      }
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_20261005_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, RETURN_EXCHANGE_PRODUCTION_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -315,106 +167,32 @@ if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_20261005_WORKER_NORMALIZED) {
     }
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 / MAIN RUNTIME SYNC 20261005 WORKER STRUCTURAL LAYER PASSED')
+  console.log('RETURN / EXCHANGE PRODUCTION WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const mainRuntimeSyncWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-worker-manifest.json'), 'utf8'))
-if (mainRuntimeSyncWorkerManifest?.version !== 1 || mainRuntimeSyncWorkerManifest?.revision !== 'branch2-main-runtime-sync-20261002-worker') throw new Error('Branch2/main runtime sync Worker manifest invalid')
-const mainRuntimeSyncWorkerBlobSha = (value) => {
+const exchangeNotIssuedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-not-issued-r1-worker-manifest.json'), 'utf8'))
+if (exchangeNotIssuedManifest?.version !== 1 || exchangeNotIssuedManifest?.revision !== 'exchange-not-issued-r1-worker') throw new Error('Exchange not-issued Worker manifest invalid')
+const exchangeNotIssuedBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_WORKER_NORMALIZED) {
+if (!process.env.EXCHANGE_NOT_ISSUED_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(mainRuntimeSyncWorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(exchangeNotIssuedManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (mainRuntimeSyncWorkerBlobSha(actual) !== delta.afterGitBlob) {
-        throw new Error('Branch2/main runtime sync Worker drifted: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (mainRuntimeSyncWorkerBlobSha(baseline) !== delta.beforeGitBlob) {
-        throw new Error('Branch2/main runtime sync Worker predecessor fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 / MAIN RUNTIME SYNC WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const h9cWorkerModuleManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-itemized-multi-exchange-worker-module-manifest.json'), 'utf8'))
-if (h9cWorkerModuleManifest?.version !== 1 || h9cWorkerModuleManifest?.revision !== 'stage03-h9c-itemized-multi-exchange-worker-module') throw new Error('H9C Worker module manifest invalid')
-const h9cWorkerModuleBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.H9C_EXCHANGE_BATCH_MODULE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(h9cWorkerModuleManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (h9cWorkerModuleBlobSha(actual) !== delta.gitBlob || actual.split(/\r?\n/).length !== delta.lines) {
-        throw new Error('H9C Worker module changed beyond exact manifest: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.unlinkSync(absolute)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, H9C_EXCHANGE_BATCH_MODULE_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H9C EXCHANGE BATCH WORKER MODULE STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const branch2SessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-branch2-worker-manifest.json'), 'utf8'))
-if (branch2SessionHotpathWorkerManifest?.version !== 1 || branch2SessionHotpathWorkerManifest?.revision !== 'branch2-session-hotpath-hotfix-r1') throw new Error('Branch2 session hotpath Worker manifest invalid')
-const branch2SessionHotpathWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(branch2SessionHotpathWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (branch2SessionHotpathWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Branch2 session hotpath Worker changed beyond exact manifest: ' + relative)
+      if (exchangeNotIssuedBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Exchange not-issued Worker changed beyond exact manifest: ' + relative)
       }
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Branch2 session hotpath Worker after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Exchange not-issued Worker after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (branch2SessionHotpathWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Branch2 session hotpath Worker predecessor reconstruction failed: ' + relative)
+      if (exchangeNotIssuedBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Exchange not-issued Worker predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
@@ -424,7 +202,7 @@ if (!process.env.BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, EXCHANGE_NOT_ISSUED_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -432,28 +210,256 @@ if (!process.env.BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 SESSION HOTPATH WORKER STRUCTURAL LAYER PASSED')
+  console.log('EXCHANGE NOT-ISSUED R1 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const authR5WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r5-worker-structural-manifest.json'), 'utf8'))
-if (authR5WorkerManifest?.version !== 1 || authR5WorkerManifest?.revision !== 'auth-r5-security-hardening-worker') throw new Error('Auth R5 Worker structural manifest invalid')
-const authR5WorkerBlobSha = (value) => {
+const arrivalInlineRecoveryManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-inline-recovery-r1-worker-manifest.json'), 'utf8'))
+if (arrivalInlineRecoveryManifest?.version !== 1 || arrivalInlineRecoveryManifest?.revision !== 'arrival-inline-recovery-r1-worker') throw new Error('Arrival inline recovery Worker manifest invalid')
+const arrivalInlineRecoveryBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R5_WORKER_NORMALIZED) {
+if (!process.env.ARRIVAL_INLINE_RECOVERY_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(authR5WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(arrivalInlineRecoveryManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR5WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R5 Worker changed beyond exact manifest: ' + relative)
+      if (arrivalInlineRecoveryBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Arrival inline recovery Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Arrival inline recovery Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (arrivalInlineRecoveryBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Arrival inline recovery Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_INLINE_RECOVERY_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL INLINE RECOVERY WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const arrivalVariantIntegrityManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-variant-integrity-r2-worker-manifest.json'), 'utf8'))
+if (arrivalVariantIntegrityManifest?.version !== 1 || arrivalVariantIntegrityManifest?.revision !== 'arrival-variant-integrity-r2-worker') throw new Error('Arrival variant integrity Worker manifest invalid')
+const arrivalVariantIntegrityBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ARRIVAL_VARIANT_INTEGRITY_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(arrivalVariantIntegrityManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (arrivalVariantIntegrityBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Arrival variant integrity Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Arrival variant integrity after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (arrivalVariantIntegrityBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Arrival variant integrity predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_VARIANT_INTEGRITY_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL VARIANT INTEGRITY R2 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const arrivalAdminOnlyManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-admin-only-r1-worker-manifest.json'), 'utf8'))
+if (arrivalAdminOnlyManifest?.version !== 1 || arrivalAdminOnlyManifest?.revision !== 'arrival-admin-only-r1-worker') throw new Error('Arrival admin-only Worker manifest invalid')
+const arrivalAdminOnlyBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ARRIVAL_ADMIN_ONLY_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(arrivalAdminOnlyManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (arrivalAdminOnlyBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Arrival admin-only Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Arrival admin-only Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (arrivalAdminOnlyBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Arrival admin-only Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_ADMIN_ONLY_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL ADMIN-ONLY WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const orderHistoryArrivalIntegrityManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-history-arrival-integrity-r1-worker-manifest.json'), 'utf8'))
+if (orderHistoryArrivalIntegrityManifest?.version !== 1 || orderHistoryArrivalIntegrityManifest?.revision !== 'order-history-arrival-integrity-r1-worker') throw new Error('Order/Arrival integrity Worker manifest invalid')
+const orderHistoryArrivalIntegrityBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_HISTORY_ARRIVAL_INTEGRITY_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderHistoryArrivalIntegrityManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderHistoryArrivalIntegrityBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order/Arrival integrity Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order/Arrival integrity Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (orderHistoryArrivalIntegrityBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order/Arrival integrity Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_HISTORY_ARRIVAL_INTEGRITY_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER / ARRIVAL INTEGRITY WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const h9cProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-production-worker-manifest.json'), 'utf8'))
+if (h9cProductionWorkerManifest?.version !== 1 || h9cProductionWorkerManifest?.revision !== 'stage03-h9c-production-worker') throw new Error('H9C Production Worker manifest invalid')
+const h9cProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.H9C_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    const indexDelta = h9cProductionWorkerManifest.files?.['worker/index.ts']
+    const indexPath = path.join(root, 'worker/index.ts')
+    const actualIndex = fs.readFileSync(indexPath, 'utf8')
+    if (h9cProductionWorkerBlobSha(actualIndex) !== indexDelta.afterGitBlob || actualIndex.split(/\r?\n/).length !== indexDelta.afterLines) {
+      throw new Error('H9C Production Worker changed beyond exact port: worker/index.ts')
+    }
+    let revertedIndex = actualIndex
+    for (const replacement of [...(indexDelta.replacements || [])].reverse()) {
+      if (!revertedIndex.includes(replacement.afterBlock)) throw new Error('H9C Production Worker after-block missing: worker/index.ts')
+      revertedIndex = revertedIndex.replace(replacement.afterBlock, replacement.beforeBlock)
+    }
+    if (h9cProductionWorkerBlobSha(revertedIndex) !== indexDelta.beforeGitBlob || revertedIndex.split(/\r?\n/).length !== indexDelta.beforeLines) {
+      throw new Error('H9C Production Worker predecessor reconstruction failed: worker/index.ts')
+    }
+    originals.set('worker/index.ts', actualIndex)
+    fs.writeFileSync(indexPath, revertedIndex)
+
+    const batchDelta = h9cProductionWorkerManifest.files?.['worker/domains/exchange-batch.ts']
+    const batchPath = path.join(root, 'worker/domains/exchange-batch.ts')
+    const actualBatch = fs.readFileSync(batchPath, 'utf8')
+    if (h9cProductionWorkerBlobSha(actualBatch) !== batchDelta.addedGitBlob || actualBatch.split(/\r?\n/).length !== batchDelta.addedLines) {
+      throw new Error('H9C Production exchange-batch module changed beyond exact port')
+    }
+    originals.set('worker/domains/exchange-batch.ts', actualBatch)
+    fs.unlinkSync(batchPath)
+
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, H9C_PRODUCTION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H9C PRODUCTION WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const authProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-worker-manifest.json'), 'utf8'))
+if (authProductionWorkerManifest?.version !== 1 || authProductionWorkerManifest?.revision !== 'auth-production-port-r2-r7-worker') throw new Error('Auth Production Worker manifest invalid')
+const authProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.AUTH_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(authProductionWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (authProductionWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Auth Production Worker changed beyond exact port: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (authR5WorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R5 Worker predecessor fixture drifted: ' + relative)
+      if (authProductionWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Auth Production Worker baseline fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -463,7 +469,7 @@ if (!process.env.AUTH_R5_WORKER_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R5_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, AUTH_PRODUCTION_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -471,38 +477,42 @@ if (!process.env.AUTH_R5_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R5 WORKER STRUCTURAL LAYER PASSED — auth hardening delta is exact over accepted Auth R4 Branch2')
+  console.log('AUTH PRODUCTION WORKER STRUCTURAL LAYER PASSED — exact R2-R7 account-session port preserved over current main')
   process.exit(0)
 }
-const auth_r3_team_worker_normalizedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r3-team-worker-structural-manifest.json'), 'utf8'))
-if (auth_r3_team_worker_normalizedManifest?.version !== 1 || auth_r3_team_worker_normalizedManifest?.revision !== 'auth-r3-team-access-worker') throw new Error('Auth R3 Team Worker structural manifest invalid')
-const auth_r3_team_worker_normalizedBlobSha = (value) => {
+const sessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-worker-manifest.json'), 'utf8'))
+if (sessionHotpathWorkerManifest?.version !== 1 || sessionHotpathWorkerManifest?.revision !== 'session-hotpath-hotfix-r1') throw new Error('Session hotpath Worker manifest invalid')
+const sessionHotpathWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R3_TEAM_WORKER_NORMALIZED) {
+if (!process.env.SESSION_HOTPATH_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(auth_r3_team_worker_normalizedManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(sessionHotpathWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (auth_r3_team_worker_normalizedBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R3 Team Worker changed beyond exact manifest: ' + relative)
+      if (sessionHotpathWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Session hotpath Worker changed beyond exact manifest: ' + relative)
       }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (auth_r3_team_worker_normalizedBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R3 Team Worker predecessor fixture drifted: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Session hotpath Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (sessionHotpathWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Session hotpath Worker predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
+      fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root,
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R3_TEAM_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, SESSION_HOTPATH_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -510,46 +520,7 @@ if (!process.env.AUTH_R3_TEAM_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R3 TEAM WORKER STRUCTURAL LAYER PASSED — employee lifecycle access revocation is exact over Auth R2 Branch2')
-  process.exit(0)
-}
-const authR2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r2-worker-structural-manifest.json'), 'utf8'))
-if (authR2WorkerManifest?.version !== 1 || authR2WorkerManifest?.revision !== 'auth-r2-account-sessions-worker') throw new Error('Auth R2 Worker structural manifest invalid')
-const authR2WorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.AUTH_R2_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(authR2WorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR2WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R2 Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (authR2WorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R2 Worker predecessor fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, AUTH_R2_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R2 WORKER STRUCTURAL LAYER PASSED — account-session delta is exact over the accepted Branch2 predecessor')
+  console.log('SESSION HOTPATH WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const r74WorkshopWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-4-workshop-read-budget-worker-manifest.json'), 'utf8'))
@@ -660,497 +631,91 @@ if (!process.env.R7_READ_BUDGET_WORKER_NORMALIZED) {
   console.log('R7 READ-BUDGET WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-
-const catalogGranularHistoryWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-granular-history-r1-worker-manifest.json'), 'utf8'))
-if (catalogGranularHistoryWorkerManifest?.version !== 1 || catalogGranularHistoryWorkerManifest?.revision !== 'catalog-granular-history-worker-r1') throw new Error('Catalog granular history Worker manifest invalid')
-const catalogGranularHistoryWorkerBlobSha = (value) => {
+const stage03ProductionRuntimeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-production-runtime-worker-manifest.json'), 'utf8'))
+if (stage03ProductionRuntimeWorkerManifest?.version !== 1 || stage03ProductionRuntimeWorkerManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production worker manifest invalid')
+const stage03ProductionRuntimeWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_GRANULAR_HISTORY_WORKER_NORMALIZED) {
+if (!process.env.STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogGranularHistoryWorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(stage03ProductionRuntimeWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 Production worker current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogGranularHistoryWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog granular history Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogGranularHistoryWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog granular history Worker baseline fixture drifted: ' + relative)
-      }
+      if (stage03ProductionRuntimeWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03 Production worker changed beyond exact promotion manifest: ' + relative)
       originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_GRANULAR_HISTORY_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG GRANULAR HISTORY WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogRetiredRecoveryWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-recovery-r1-worker-manifest.json'), 'utf8'))
-if (catalogRetiredRecoveryWorkerManifest?.version !== 1 || catalogRetiredRecoveryWorkerManifest?.revision !== 'catalog-retired-recovery-worker-r1') throw new Error('Catalog retired recovery Worker manifest invalid')
-const catalogRetiredRecoveryWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_RETIRED_RECOVERY_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogRetiredRecoveryWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetiredRecoveryWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog retired recovery Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogRetiredRecoveryWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog retired recovery Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_RETIRED_RECOVERY_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RETIRED RECOVERY WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogReadyResumeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-ready-resume-r1-worker-manifest.json'), 'utf8'))
-if (catalogReadyResumeWorkerManifest?.version !== 1 || catalogReadyResumeWorkerManifest?.revision !== 'catalog-ready-resume-r1') throw new Error('Catalog ready/resume Worker manifest invalid')
-const catalogReadyResumeWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_READY_RESUME_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogReadyResumeWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogReadyResumeWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog ready/resume Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogReadyResumeWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog ready/resume Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_READY_RESUME_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG READY/RESUME WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogRetirementIntegrityWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-integrity-r1-worker-manifest.json'), 'utf8'))
-if (catalogRetirementIntegrityWorkerManifest?.version !== 1 || catalogRetirementIntegrityWorkerManifest?.revision !== 'catalog-retirement-integrity-r1') throw new Error('Catalog retirement integrity Worker manifest invalid')
-const catalogRetirementIntegrityWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_RETIREMENT_INTEGRITY_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogRetirementIntegrityWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetirementIntegrityWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog retirement integrity Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogRetirementIntegrityWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog retirement integrity Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_RETIREMENT_INTEGRITY_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RETIREMENT INTEGRITY WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogFixedGenderScopeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-fixed-gender-scope-worker-manifest.json'), 'utf8'))
-if (catalogFixedGenderScopeWorkerManifest?.version !== 1 || catalogFixedGenderScopeWorkerManifest?.revision !== 'catalog-fixed-gender-scope-worker-r1') throw new Error('Catalog fixed gender-scope Worker manifest invalid')
-const catalogFixedGenderScopeWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_FIXED_GENDER_SCOPE_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogFixedGenderScopeWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogFixedGenderScopeWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog fixed gender-scope Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogFixedGenderScopeWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog fixed gender-scope Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_FIXED_GENDER_SCOPE_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG FIXED GENDER-SCOPE WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogLocalRetirementWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-local-retirement-worker-manifest.json'), 'utf8'))
-if (catalogLocalRetirementWorkerManifest?.version !== 1 || catalogLocalRetirementWorkerManifest?.revision !== 'catalog-local-retirement-worker-r1') throw new Error('Catalog local retirement Worker manifest invalid')
-const catalogLocalRetirementWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_LOCAL_RETIREMENT_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogLocalRetirementWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogLocalRetirementWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog local retirement Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogLocalRetirementWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog local retirement Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_LOCAL_RETIREMENT_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG LOCAL RETIREMENT WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const orderRetiredConfirmationWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-confirmation-worker-manifest.json'), 'utf8'))
-if (orderRetiredConfirmationWorkerManifest?.version !== 1 || orderRetiredConfirmationWorkerManifest?.revision !== 'order-retired-confirmation-r1') throw new Error('Order retired confirmation Worker manifest invalid')
-const orderRetiredConfirmationWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.ORDER_RETIRED_CONFIRMATION_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(orderRetiredConfirmationWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderRetiredConfirmationWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Order retired confirmation Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (orderRetiredConfirmationWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Order retired confirmation Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, ORDER_RETIRED_CONFIRMATION_WORKER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER RETIRED CONFIRMATION WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const retiredWriteGuardsManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-operational-write-guards-worker-manifest.json'), 'utf8'))
-if (retiredWriteGuardsManifest?.version !== 1 || retiredWriteGuardsManifest?.revision !== 'catalog-retired-operational-write-guards-r1') throw new Error('Catalog retired operational write guards Worker manifest invalid')
-const retiredWriteGuardsBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_RETIRED_OPERATIONAL_WRITE_GUARDS_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(retiredWriteGuardsManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (retiredWriteGuardsBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog retired operational write guards changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (retiredWriteGuardsBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog retired operational write guards baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_RETIRED_OPERATIONAL_WRITE_GUARDS_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RETIRED OPERATIONAL WRITE GUARDS WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const orderRetiredRecreateManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-recreate-branch2-worker-manifest.json'), 'utf8'))
-if (orderRetiredRecreateManifest?.version !== 1 || orderRetiredRecreateManifest?.revision !== 'order-retired-recreate-branch2-r1') throw new Error('Order retired recreation Worker manifest invalid')
-const orderRetiredRecreateBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.ORDER_RETIRED_RECREATE_BRANCH2_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(orderRetiredRecreateManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderRetiredRecreateBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Order retired recreation Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (orderRetiredRecreateBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Order retired recreation Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, ORDER_RETIRED_RECREATE_BRANCH2_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER RETIRED RECREATE BRANCH2 WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogSafeRestoreManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-restore-branch2-worker-manifest.json'), 'utf8'))
-if (catalogSafeRestoreManifest?.version !== 1 || catalogSafeRestoreManifest?.revision !== 'catalog-safe-restore-branch2-r1') throw new Error('Catalog safe restore Worker manifest invalid')
-const catalogSafeRestoreBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RESTORE_BRANCH2_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogSafeRestoreManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogSafeRestoreBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog safe restore Worker changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogSafeRestoreBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog safe restore Worker baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RESTORE_BRANCH2_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RESTORE BRANCH2 WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogRetirementHotfixManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-hotfix-worker-manifest.json'), 'utf8'))
-if (catalogRetirementHotfixManifest?.version !== 1 || catalogRetirementHotfixManifest?.revision !== 'catalog-safe-retirement-hotfix-r1') throw new Error('Catalog retirement hotfix Worker manifest invalid')
-const catalogRetirementHotfixBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RETIREMENT_HOTFIX_NORMALIZED) {
-  const absolute = path.join(root, catalogRetirementHotfixManifest.file)
-  const actual = fs.readFileSync(absolute, 'utf8')
-  if (catalogRetirementHotfixBlobSha(actual) !== catalogRetirementHotfixManifest.afterGitBlob || actual.split(/\r?\n/).length !== catalogRetirementHotfixManifest.afterLines) {
-    throw new Error('Catalog retirement hotfix Worker changed beyond exact manifest')
-  }
-  let reverted = actual
-  for (const replacement of [...(catalogRetirementHotfixManifest.replacements || [])].reverse()) {
-    const occurrences = reverted.split(replacement.afterBlock).length - 1
-    if (occurrences !== 1) throw new Error('Catalog retirement hotfix Worker after-block missing or ambiguous')
-    reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-  }
-  if (catalogRetirementHotfixBlobSha(reverted) !== catalogRetirementHotfixManifest.beforeGitBlob || reverted.split(/\r?\n/).length !== catalogRetirementHotfixManifest.beforeLines) {
-    throw new Error('Catalog retirement hotfix Worker predecessor reconstruction failed')
-  }
-  fs.writeFileSync(absolute, reverted)
-  let childStatus = 1
-  try {
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RETIREMENT_HOTFIX_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    fs.writeFileSync(absolute, actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RETIREMENT HOTFIX WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogSafeRetirementManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-branch2-worker-manifest.json'), 'utf8'))
-if (catalogSafeRetirementManifest?.version !== 1 || catalogSafeRetirementManifest?.revision !== 'catalog-safe-retirement-branch2-r1') throw new Error('Catalog safe retirement Worker manifest invalid')
-const catalogSafeRetirementBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogSafeRetirementManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogSafeRetirementBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog safe retirement Worker changed beyond exact manifest: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.added) {
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+        if (stage03ProductionRuntimeWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03 Production worker baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
         fs.unlinkSync(absolute)
-        continue
       }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        const occurrences = reverted.split(replacement.afterBlock).length - 1
-        if (occurrences !== 1) throw new Error('Catalog safe retirement Worker after-block missing or ambiguous: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03 PRODUCTION WORKER EXACT PROMOTION LAYER PASSED')
+  process.exit(0)
+}
+const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-worker-manifest.json'), 'utf8'))
+if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-worker-r1') throw new Error('Catalog retirement main-port Worker manifest invalid')
+const catalogRetirementMainPortBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogRetirementMainPortManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port Worker current file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port: ' + relative)
+      originals.set(relative, actual)
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (catalogRetirementMainPortBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Catalog retirement main-port Worker baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
+        fs.unlinkSync(absolute)
       }
-      if (catalogSafeRetirementBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog safe retirement Worker predecessor reconstruction failed: ' + relative)
-      }
-      fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root,
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED: '1' },
+      env: { ...process.env, CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RETIREMENT BRANCH2 WORKER STRUCTURAL LAYER PASSED')
+  console.log('CATALOG RETIREMENT MAIN-PORT WORKER EXACT RECONCILED MAIN PORT PASSED')
   process.exit(0)
 }
-
 const semanticSkuWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-semantic-sku-identity-worker-manifest.json'), 'utf8'))
 if (semanticSkuWorkerManifest?.version !== 1 || semanticSkuWorkerManifest?.revision !== 'catalog-semantic-sku-identity-r1') throw new Error('Catalog semantic-SKU Worker manifest invalid')
 const semanticSkuWorkerBlobSha = (value) => {
@@ -1191,25 +756,25 @@ if (!process.env.CATALOG_SEMANTIC_SKU_IDENTITY_NORMALIZED) {
   process.exit(0)
 }
 
-const catalogIntegrityBranch2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-branch2-worker-manifest.json'), 'utf8'))
-if (catalogIntegrityBranch2WorkerManifest?.version !== 1 || catalogIntegrityBranch2WorkerManifest?.revision !== 'catalog-selection-retirement-integrity-r1-branch2') throw new Error('Catalog selection/retirement Branch2 Worker manifest invalid')
-const catalogIntegrityBranch2WorkerBlobSha = (value) => {
+const catalogIntegrityWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-worker-manifest.json'), 'utf8'))
+if (catalogIntegrityWorkerManifest?.version !== 1 || catalogIntegrityWorkerManifest?.revision !== 'catalog-selection-retirement-integrity-r1') throw new Error('Catalog selection/retirement Worker manifest invalid')
+const catalogIntegrityWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_WORKER_NORMALIZED) {
+if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogIntegrityBranch2WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(catalogIntegrityWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogIntegrityBranch2WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog selection/retirement Branch2 Worker changed beyond exact manifest: ' + relative)
+      if (catalogIntegrityWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog selection/retirement Worker changed beyond exact manifest: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogIntegrityBranch2WorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog selection/retirement Branch2 Worker baseline fixture drifted: ' + relative)
+      if (catalogIntegrityWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog selection/retirement Worker baseline fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -1219,7 +784,7 @@ if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_WORKER_NORMALIZE
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, CATALOG_SELECTION_RETIREMENT_INTEGRITY_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -1227,7 +792,7 @@ if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_WORKER_NORMALIZE
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SELECTION / RETIREMENT BRANCH2 WORKER STRUCTURAL LAYER PASSED')
+  console.log('CATALOG SELECTION / RETIREMENT WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const resolverR13WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r13-known-facts-worker-manifest.json'), 'utf8'))
@@ -1288,538 +853,33 @@ if (!process.env.CATALOG_RESOLVER_R12_WORKER_NORMALIZED) {
   console.log('CATALOG RESOLVER R12 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const stage03H11WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h11-product-price-analytics-worker-manifest.json'), 'utf8'))
-if (stage03H11WorkerManifest?.version !== 1 || stage03H11WorkerManifest?.revision !== 'stage03-h11-product-price-analytics') throw new Error('Stage03-H11 Worker manifest invalid')
-const stage03H11WorkerBlobSha = (value) => {
+const clientZammlerProdRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-prod-runtime-worker-manifest.json'), 'utf8'))
+if (clientZammlerProdRuntimeManifest?.version !== 1 || clientZammlerProdRuntimeManifest?.revision !== 'client-zammler-prod-runtime-20260924') throw new Error('CLIENT-ZAMMLER Production Worker manifest invalid')
+const clientZammlerProdWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.STAGE03_H11_PRODUCT_PRICE_ANALYTICS_WORKER_NORMALIZED) {
+if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(stage03H11WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H11WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H11 Worker changed beyond exact manifest: ' + relative)
+      if (clientZammlerProdWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker changed beyond exact manifest: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H11WorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H11 Worker baseline fixture drifted: ' + relative)
+      if (clientZammlerProdWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H11_PRODUCT_PRICE_ANALYTICS_WORKER_NORMALIZED: '1' }})
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_PROD_RUNTIME_WORKER_NORMALIZED: '1' }})
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H11 PRODUCT PRICE ANALYTICS WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H9AWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9a-itemized-exchange-backend-worker-manifest.json'), 'utf8'))
-if (stage03H9AWorkerManifest?.version !== 1 || stage03H9AWorkerManifest?.revision !== 'stage03-h9a-itemized-exchange-backend') throw new Error('Stage03-H9A Worker manifest invalid')
-const stage03H9AWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H9A_ITEMIZED_EXCHANGE_BACKEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H9AWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H9AWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H9A Worker changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H9AWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H9A Worker baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H9A_ITEMIZED_EXCHANGE_BACKEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H9A ITEMIZED EXCHANGE BACKEND WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8FWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8f-direct-itemized-editor-worker-manifest.json'), 'utf8'))
-if (stage03H8FWorkerManifest?.version !== 1 || stage03H8FWorkerManifest?.revision !== 'stage03-h8f-direct-itemized-editor') throw new Error('Stage03-H8F Worker manifest invalid')
-const stage03H8FWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8F_DIRECT_ITEMIZED_EDITOR_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8FWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8FWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8F Worker changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8FWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8F Worker baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8F_DIRECT_ITEMIZED_EDITOR_WORKER_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8F DIRECT ITEMIZED EDITOR WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8DWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8d-itemized-content-rewrite-worker-manifest.json'), 'utf8'))
-if (stage03H8DWorkerManifest?.version !== 1 || stage03H8DWorkerManifest?.revision !== 'stage03-h8d-itemized-content-rewrite-foundation') throw new Error('Stage03-H8D Worker manifest invalid')
-const stage03H8DWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8D_ITEMIZED_CONTENT_REWRITE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8DWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8DWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8D Worker changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8DWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8D Worker baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8D_ITEMIZED_CONTENT_REWRITE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8D ITEMIZED CONTENT REWRITE WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8CWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8c-itemized-price-correction-worker-manifest.json'), 'utf8'))
-if (stage03H8CWorkerManifest?.version !== 1 || stage03H8CWorkerManifest?.revision !== 'stage03-h8c-itemized-price-correction') throw new Error('Stage03-H8C Worker manifest invalid')
-const stage03H8CWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8C_ITEMIZED_PRICE_CORRECTION_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8CWorkerManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8CWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8C Worker changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8CWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8C Worker baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8C_ITEMIZED_PRICE_CORRECTION_WORKER_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8AItemizedMetadataEditManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8a-itemized-metadata-edit-worker-manifest.json'), 'utf8'))
-if (stage03H8AItemizedMetadataEditManifest?.version !== 1 || stage03H8AItemizedMetadataEditManifest?.revision !== 'stage03-h8a-itemized-metadata-edit-foundation') throw new Error('Stage03-H8A itemized metadata edit Worker manifest invalid')
-const stage03H8ABlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8A_ITEMIZED_METADATA_EDIT_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8AItemizedMetadataEditManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8ABlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8A Worker changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8ABlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8A baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8A_ITEMIZED_METADATA_EDIT_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8A ITEMIZED METADATA EDIT WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const clientZammlerEOrderListManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-e-order-list-worker-manifest.json'), 'utf8'))
-if (clientZammlerEOrderListManifest?.version !== 1 || clientZammlerEOrderListManifest?.revision !== 'client-zammler-e-order-list') throw new Error('CLIENT-ZAMMLER-E Worker manifest invalid')
-const clientZammlerEWorkerBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CLIENT_ZAMMLER_E_ORDER_LIST_WORKER_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(clientZammlerEOrderListManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerEWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('CLIENT-ZAMMLER-E Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('CLIENT-ZAMMLER-E Worker after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (clientZammlerEWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('CLIENT-ZAMMLER-E Worker predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_E_ORDER_LIST_WORKER_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CLIENT-ZAMMLER-E WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage04ZammlerBDueTimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage04-zammler-b-due-time-worker-manifest.json'), 'utf8'))
-if (stage04ZammlerBDueTimeManifest?.version !== 1 || stage04ZammlerBDueTimeManifest?.revision !== 'stage04-zammler-b-due-time-plumbing') throw new Error('Stage04-ZAMMLER-B Worker manifest invalid')
-const stage04ZammlerBBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE04_ZAMMLER_B_DUE_TIME_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage04ZammlerBDueTimeManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage04ZammlerBBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage04-ZAMMLER-B Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage04-ZAMMLER-B Worker after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage04ZammlerBBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage04-ZAMMLER-B Worker predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE04_ZAMMLER_B_DUE_TIME_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE04-ZAMMLER-B WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6HRetainedPricingModeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6h-retained-pricing-mode-worker-manifest.json'), 'utf8'))
-if (stage03H6HRetainedPricingModeManifest?.version !== 1 || stage03H6HRetainedPricingModeManifest?.revision !== 'stage03-h6h-retained-pricing-mode') throw new Error('Stage03-H6H retained pricing mode Worker manifest invalid')
-const stage03H6HBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6H_RETAINED_PRICING_MODE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6HRetainedPricingModeManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6HBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6H Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6H after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6HBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6H predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6H_RETAINED_PRICING_MODE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6H RETAINED PRICING MODE WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6DItemizedExchangeGuardManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6d-itemized-exchange-guard-worker-manifest.json'), 'utf8'))
-if (stage03H6DItemizedExchangeGuardManifest?.version !== 1 || stage03H6DItemizedExchangeGuardManifest?.revision !== 'stage03-h6d-itemized-exchange-guard') throw new Error('Stage03-H6D itemized exchange guard Worker manifest invalid')
-const stage03H6DBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6DItemizedExchangeGuardManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6DBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6D Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6D Worker after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6DBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6D Worker predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6D ITEMIZED EXCHANGE GUARD WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6AItemizedEditGuardManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6a-itemized-edit-guard-worker-manifest.json'), 'utf8'))
-if (stage03H6AItemizedEditGuardManifest?.version !== 1 || stage03H6AItemizedEditGuardManifest?.revision !== 'stage03-h6a-itemized-edit-guard') throw new Error('Stage03-H6A itemized edit guard Worker manifest invalid')
-const stage03H6ABlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6A_ITEMIZED_EDIT_GUARD_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6AItemizedEditGuardManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6ABlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6A Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6A Worker after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6ABlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6A Worker predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6A_ITEMIZED_EDIT_GUARD_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6A ITEMIZED EDIT GUARD WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H4ProductRevenueManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h4-itemized-product-revenue-worker-manifest.json'), 'utf8'))
-if (stage03H4ProductRevenueManifest?.version !== 1 || stage03H4ProductRevenueManifest?.revision !== 'stage03-h4-itemized-product-revenue') throw new Error('Stage03-H4 itemized product revenue Worker manifest invalid')
-const stage03H4ProductRevenueBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H4_PRODUCT_REVENUE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H4ProductRevenueManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H4ProductRevenueBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H4 itemized product revenue Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H4 itemized product revenue after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H4ProductRevenueBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H4 itemized product revenue predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H4_PRODUCT_REVENUE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H4 ITEMIZED PRODUCT REVENUE WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H3ItemizedCreateManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h3-explicit-itemized-create-worker-manifest.json'), 'utf8'))
-if (stage03H3ItemizedCreateManifest?.version !== 1 || stage03H3ItemizedCreateManifest?.revision !== 'stage03-h3-explicit-itemized-create') throw new Error('Stage03-H3 explicit itemized create Worker manifest invalid')
-const stage03H3ItemizedCreateBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H3_ITEMIZED_CREATE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H3ItemizedCreateManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H3ItemizedCreateBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H3 explicit itemized create Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H3 explicit itemized create after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H3ItemizedCreateBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H3 explicit itemized create predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H3_ITEMIZED_CREATE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H3 EXPLICIT ITEMIZED CREATE WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H2ItemizedWriteManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h2-itemized-write-plan-worker-manifest.json'), 'utf8'))
-if (stage03H2ItemizedWriteManifest?.version !== 1 || stage03H2ItemizedWriteManifest?.revision !== 'stage03-h2-itemized-write-plan') throw new Error('Stage03-H2 itemized write-plan Worker manifest invalid')
-const stage03H2ItemizedWriteBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H2_ITEMIZED_WRITE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H2ItemizedWriteManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H2ItemizedWriteBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H2 itemized write-plan Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (replacement.afterBlock && !reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H2 itemized write-plan after-block missing: ' + relative)
-        reverted = replacement.afterBlock ? reverted.replace(replacement.afterBlock, replacement.beforeBlock) : reverted
-      }
-      if (stage03H2ItemizedWriteBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H2 itemized write-plan predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H2_ITEMIZED_WRITE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H2 ITEMIZED WRITE PLAN WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H1ItemizedMoneyManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h1-itemized-money-worker-manifest.json'), 'utf8'))
-if (stage03H1ItemizedMoneyManifest?.version !== 1 || stage03H1ItemizedMoneyManifest?.revision !== 'stage03-h1-itemized-money-calculator') throw new Error('Stage03-H1 itemized money Worker manifest invalid')
-const stage03H1ItemizedMoneyBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H1_ITEMIZED_MONEY_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    const addedFiles = stage03H1ItemizedMoneyManifest.addedFiles || {}
-    if (Object.keys(addedFiles).join(',') !== 'worker/domains/order-pricing.ts') throw new Error('Stage03-H1 itemized money added-file allow-list widened')
-    for (const [relative, delta] of Object.entries(addedFiles)) {
-      const absolute = path.join(root, relative)
-      if (!fs.existsSync(absolute)) throw new Error('Stage03-H1 itemized money Worker file missing: ' + relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H1ItemizedMoneyBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H1 itemized money Worker changed beyond exact manifest: ' + relative)
-      originals.set(relative, actual)
-      fs.unlinkSync(absolute)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H1_ITEMIZED_MONEY_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H1 ITEMIZED MONEY WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03G2PriceEditManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-g2-price-only-edit-worker-manifest.json'), 'utf8'))
-if (stage03G2PriceEditManifest?.version !== 1 || stage03G2PriceEditManifest?.revision !== 'stage03-g2-price-only-edit-isolation') throw new Error('Stage03-G2 price-only edit Worker manifest invalid')
-const stage03G2PriceEditBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_G2_PRICE_ONLY_EDIT_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03G2PriceEditManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03G2PriceEditBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-G2 price-only edit Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-G2 price-only edit after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03G2PriceEditBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-G2 price-only edit predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_G2_PRICE_ONLY_EDIT_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-G2 PRICE-ONLY EDIT WORKER STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03F2PricingReadManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-f2-pricing-read-worker-manifest.json'), 'utf8'))
-if (stage03F2PricingReadManifest?.version !== 1 || stage03F2PricingReadManifest?.revision !== 'stage03-f2-pricing-read-compat') throw new Error('Stage03-F2 pricing read Worker manifest invalid')
-const stage03F2PricingReadBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_F2_PRICING_READ_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03F2PricingReadManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03F2PricingReadBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-F2 pricing read Worker changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-F2 pricing read after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03F2PricingReadBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-F2 pricing read predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_F2_PRICING_READ_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-F2 PRICING READ WORKER STRUCTURAL LAYER PASSED')
+  console.log('CLIENT-ZAMMLER PRODUCTION WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const stage03B3WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-b3-execution-price-write-worker-manifest.json'), 'utf8'))

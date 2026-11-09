@@ -6,6 +6,7 @@ export type OrderShipmentDisplay = {
   state: LineShipmentState
   label: string
   lines: Array<{
+    sourceIndex: number
     state: LineShipmentState
     label: string
     sentQuantity: number | null
@@ -31,7 +32,10 @@ export function projectOrderShipmentDisplay(
   order: Pick<OrderRecord, 'shipping_status' | 'items'>,
 ): OrderShipmentDisplay {
   const orderSent = order.shipping_status === 'sent'
-  const lines = (order.items || []).filter(item => Number(item.quantity || 0) > 0).map((item: OrderLine) => {
+  const lines = (order.items || [])
+    .map((item: OrderLine, sourceIndex: number) => ({ item, sourceIndex }))
+    .filter(({ item }) => Number(item.quantity || 0) > 0)
+    .map(({ item, sourceIndex }) => {
     const quantity = Math.max(1, Math.trunc(Number(item.quantity || 1)))
     // Stage 5's future canonical shipment ledger will populate this number.
     // Do not infer an arbitrary split quantity from a whole-line reservation.
@@ -57,8 +61,10 @@ export function projectOrderShipmentDisplay(
     } else {
       const stockState = String(item.stockWriteoffStatus || '').trim().toLowerCase()
       if (confirmedStockIssue.has(stockState)) {
-        state = 'sent'
-        sentQuantity = quantity
+        // A stock issue is not proof of customer shipment. The order-level
+        // marker or a non-cancelled dispatch ledger row must confirm that.
+        state = stockState === 'fulfilled' ? 'not_sent' : 'unknown'
+        sentQuantity = stockState === 'fulfilled' ? 0 : null
       } else if (knownNotIssued.has(stockState)) {
         state = 'not_sent'
         sentQuantity = 0
@@ -68,7 +74,7 @@ export function projectOrderShipmentDisplay(
       : state === 'not_sent' ? 'Не отправлен'
         : state === 'partial' ? `Отправлено ${sentQuantity} из ${quantity}`
           : 'Отправка не уточнена'
-    return { state, label, sentQuantity, quantity }
+    return { sourceIndex, state, label, sentQuantity, quantity }
   })
 
   // Retained-only historical summaries have no line-level facts.
@@ -96,4 +102,22 @@ export function projectOrderShipmentDisplay(
           : 'Отправка не уточнена',
     lines,
   }
+}
+
+/**
+ * The order-wide "sent" marker remains a compatibility fact, but a later
+ * exchange may add a new replacement that still needs shipping. Keep the
+ * primary dispatch action closed for completed orders and open only for a
+ * genuinely pending replacement.
+ */
+export function isOrderShipmentCompleteForActions(
+  order: Pick<OrderRecord, 'shipping_status' | 'items'>,
+): boolean {
+  const hasPendingReplacement = (order.items || []).some(item =>
+    Number(item.quantity || 0) > 0
+    && (Number(item.pendingExchangeDispatchId || 0) > 0
+      || Number(item.pendingExchangeWorkshopId || 0) > 0),
+  )
+  if (hasPendingReplacement) return false
+  return order.shipping_status === 'sent' || projectOrderShipmentDisplay(order).state === 'sent'
 }

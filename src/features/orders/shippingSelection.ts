@@ -9,7 +9,7 @@ export function clampDispatchQuantity(input: unknown, ready: unknown, workshop =
   return workshop ? max : Math.min(value, max)
 }
 
-type DispatchLine = { orderItemId: number; readyQuantity: number; selectable: boolean; sourceType: string }
+type DispatchLine = { orderItemId: number; readyQuantity: number; selectable: boolean; sourceType: string; dispatchPriorIssued?: boolean; needsStockConfirmation?: boolean }
 
 export function dispatchSelectionError(lines: DispatchLine[], selection: Record<number, number>): string {
   for (const line of lines) {
@@ -18,9 +18,29 @@ export function dispatchSelectionError(lines: DispatchLine[], selection: Record<
     const ready = Number(line.readyQuantity)
     if (!line.selectable || !Number.isSafeInteger(selected) || selected < 0 ||
         !Number.isSafeInteger(ready) || ready < 1 || selected > ready ||
-        (line.sourceType === 'workshop' && selected !== ready)) {
+        ((line.sourceType === 'workshop' || line.dispatchPriorIssued) && selected !== ready)) {
       return 'Количество изменилось или превышает доступное. Обновите отправку.'
     }
   }
   return ''
+}
+
+type DispatchAccessibleLine = {
+  orderItemId: number
+  productName: string
+  color?: string | null
+  size?: string | null
+  material?: string | null
+  length?: string | null
+  sourceType: string
+}
+
+/** A unique, human-readable label even when one model has several order lines. */
+export function dispatchLineAccessibleName(line: DispatchAccessibleLine): string {
+  const source = line.sourceType === 'workshop' ? 'Цех'
+    : line.sourceType === 'boutique' ? 'Бутик' : 'Склад'
+  const details = [line.productName, line.color, line.size, line.material, line.length]
+    .map(part => String(part || '').trim())
+    .filter(part => part && part.toUpperCase() !== 'СТАНДАРТ')
+  return [...details, source, `позиция №${line.orderItemId}`].join(' · ')
 }

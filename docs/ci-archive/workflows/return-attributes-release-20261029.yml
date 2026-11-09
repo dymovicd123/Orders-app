@@ -1,0 +1,103 @@
+name: Return variant attributes 20261029 guarded release
+on:
+  pull_request:
+    branches: [main, branch2]
+    paths:
+      - 'src/app/types.ts'
+      - 'src/app/utils.ts'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/styles/194-return-smart-ux.css'
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/productKpiProductMatch.ts'
+      - 'scripts/test-return-attributes-20261029.mjs'
+      - '.github/workflows/return-attributes-release-20261029.yml'
+  push:
+    branches: [main, branch2]
+    paths:
+      - 'src/app/types.ts'
+      - 'src/app/utils.ts'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/styles/194-return-smart-ux.css'
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/productKpiProductMatch.ts'
+      - 'scripts/test-return-attributes-20261029.mjs'
+      - '.github/workflows/return-attributes-release-20261029.yml'
+permissions:
+  contents: read
+concurrency:
+  group: return-variant-20261029-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - name: Check original SKU characteristics on distinct return lines
+        run: node scripts/test-return-attributes-20261029.mjs
+      - name: Verify Branch2 KPI exact matching when applicable
+        if: ${{ (github.event.pull_request.base.ref || github.ref_name) == 'branch2' }}
+        run: node --experimental-strip-types scripts/test-branch2-kpi-exact-selection-20261029.mjs
+      - run: npm run build
+  release:
+    needs: verify
+    if: >-
+      github.event_name == 'push' &&
+      ((github.ref_name == 'main' && contains(github.event.head_commit.message, '#633')) ||
+       (github.ref_name == 'branch2' && contains(github.event.head_commit.message, '#634')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - name: Guard exact Worker and isolated D1 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            main)
+              grep -Fq '"name": "orders-app"' wrangler.jsonc
+              grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+              grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+              ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+              ;;
+            branch2)
+              grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+              grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+              grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
+              ! grep -Fq 'orders_db_prod' wrangler.jsonc
+              ;;
+            *) exit 1 ;;
+          esac
+          git diff --name-only HEAD^ HEAD | while IFS= read -r file; do
+            case "$file" in
+              src/app/types.ts|src/app/utils.ts|src/features/sections/OrderReturnsSection.tsx|src/styles/194-return-smart-ux.css|src/features/sections/ProductKpiSection.tsx|src/features/sections/productKpiProductMatch.ts|scripts/test-return-attributes-20261029.mjs|scripts/test-branch2-kpi-exact-selection-20261029.mjs|.github/workflows/quality-check.yml|.github/workflows/return-attributes-release-20261029.yml|.github/workflows/cloudflare-deploy-monitor.yml) ;;
+              *) echo "Unexpected file in restricted return/KPI release: $file" >&2; exit 1 ;;
+            esac
+          done
+      - run: npm ci
+      - run: node scripts/test-return-attributes-20261029.mjs
+      - name: Branch2 KPI exact match acceptance
+        if: github.ref_name == 'branch2'
+        run: node --experimental-strip-types scripts/test-branch2-kpi-exact-selection-20261029.mjs
+      - run: npm run build
+      - name: Deploy exact guarded Worker; no D1 migrations
+        run: npx wrangler deploy
+      - name: Verify Worker serves frontend
+        run: |
+          node --input-type=module <<'NODE'
+          const host=process.env.GITHUB_REF_NAME==='main'
+            ? 'https://orders-app.orders-clothes.workers.dev/'
+            : 'https://orders-app-branch2.orders-clothes.workers.dev/'
+          const r=await fetch(host+'?return_variants='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(20000)})
+          if(!r.ok||!(await r.text()).includes('/assets/'))throw Error('Frontend unavailable after release')
+          console.log('RETURN_VARIANTS_WORKER_DEPLOY_PASS',host)
+          NODE

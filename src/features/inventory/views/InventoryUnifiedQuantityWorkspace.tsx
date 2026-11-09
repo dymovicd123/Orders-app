@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
-import { findCorrectionFocusGroup } from '../operationCorrectionFocus'
 import '../../../styles/193-unified-inventory-operations.css'
-import '../../../styles/w16-stock-source-attention.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
 type Row = { id?: number; draftKey?:string; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
@@ -17,7 +15,6 @@ type Props = {
   mode: Mode; source: 'warehouse' | 'boutique'; targetSource: 'warehouse' | 'boutique'
   targetQuantity: (variantId: string | number) => number; onSwap: () => void
   groups: Group[]; draft: Draft[]
-  focusVariant?: {token:number; source:'warehouse'|'boutique'; productId:number; variantId:number} | null
   busy: boolean; loading: boolean; error: string; saveError: string; reason: string; isAdmin: boolean
   blockedTransferSource: 'warehouse'|'boutique'|null; onOpenStocktake:(source:'warehouse'|'boutique')=>void
   newVariantWorkspace: ReactNode; extraArrival: { rows: number; totalQuantity: number }
@@ -95,30 +92,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }, [current, source, mode])
   const [inline, setInline] = useState<{ positionKey:string; color:string; kind:'size'|'color'; size:string; quantity:string } | null>(null)
   const [notice, setNotice] = useState('')
-  const appliedFocusToken = useRef<number | null>(null)
-  const [focusMissing, setFocusMissing] = useState(false)
-
-  useEffect(() => {
-    const target = p.focusVariant
-    if (!target || appliedFocusToken.current === target.token
-      || mode !== 'manual_set' || source !== target.source || loading || error) return
-    // Locate the exact SKU in the freshly loaded source rather than searching
-    // by a possibly duplicated model/color/size text label.
-    const group = findCorrectionFocusGroup(groups, target)
-    if (!group) {
-      if (!groups.length) return
-      appliedFocusToken.current = target.token
-      setFocusMissing(true)
-      return
-    }
-    appliedFocusToken.current = target.token
-    setFocusMissing(false)
-    setSelectedBySource(old => ({...old, [source]: [group.key]}))
-    setCurrentBySource(old => ({...old, [source]: group.key}))
-    setStageBySource(old => ({...old, [source]: 'quantities'}))
-    setNotice('')
-  }, [p.focusVariant, groups, loading, error, mode, source])
-
   const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
     .filter((g): g is Group => Boolean(g)), [selected, groups])
   const activeGroup = chosen.find(g => g.key === current) || chosen[0] || null
@@ -166,7 +139,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   function addInlineVariant(sample:Row) {
     if(!inline)return
     if(mode!=='arrival'&&mode!=='manual_set')return
-    const color=inline.color==='БЕЗ ЦВЕТА'?'':inline.color.trim()
+    // «Без цвета» is an explicit catalog value, not an empty invalid input.
+    const color=inline.color.trim()
     const size=inline.size.trim(),quantity=Number(inline.quantity)
     if((inline.kind==='color'&&!color)||!size||inline.quantity.trim()===''||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
       setNotice('Выберите цвет, размер и целое количество от '+(mode==='manual_set'?'0':'1')+' до 999999.');return
@@ -256,8 +230,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       <button className="secondary compact" type="button" onClick={()=>p.onOpenStocktake(blockedTransferSource)}>Открыть проверку</button>
     </div>}
     {loading && <div className="stocktake-inline-notice" role="status">Обновляю варианты и остатки выбранной точки…</div>}
-    {focusMissing && mode==='manual_set' && p.focusVariant?.source===source &&
-      <div className="stocktake-inline-notice w6-notice-error" role="alert">Точный вариант №{p.focusVariant.variantId} отсутствует в свежем списке этой точки. Не выбирайте похожий товар наугад; проверьте каталог и обновите список.</div>}
     {error && <div className="stocktake-inline-notice w6-notice-error" role="alert">{error}
       <button className="secondary compact" type="button" onClick={p.onRefresh}>Обновить список</button></div>}
     {!loading && !error && (stage === 'select' ? <>
@@ -341,8 +313,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         <button className="primary compact stocktake-review-button" type="button" disabled={!changed||busy}
           onClick={review}>Проверить результат</button>
       </div>
-      {mode==='manual_set' && p.focusVariant?.source===source && !focusMissing &&
-        <div className="w16-correction-focus-hint" role="status">Нужный товар и размер выделены ниже. Введите <b>фактическое количество</b> после проверки. Значение пока не заполнено — ничего не изменится без подтверждения.</div>}
       {mode==='manual_set'&&<div className="w8-correction-hint">
         Как в выборочной ревизии: «+ размер» и «+ цвет» добавляют отсутствующие варианты. Их количество — итоговый фактический остаток. Пустая ячейка ничего не меняет.
       </div>}
@@ -440,7 +410,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                           const shortage=Math.max(0,int(row.reservedQuantity)-after)
                           return <StocktakeSizeCountCell key={String(row.variantId)} cellId={row.variantId}
                             size={row.size||'—'} currentQuantity={currentQuantity} value={value}
-                            stateClass={mode==='manual_set' && p.focusVariant?.source===source && Number(row.variantId)===p.focusVariant.variantId ? 'w16-target-variant' : ''}
                             disabled={busy}
                             ariaLabel={activeGroup.productName+' '+color+' '+(row.size||'')+': '+names[mode].input}
                             onChange={raw=>{if(raw!==''&&!/^\d{1,6}$/.test(raw))return;p.onQuantity(row,raw)}}
@@ -511,7 +480,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {mode==='arrival'&&isAdmin&&newVariant&&<div className="w6-stocktake-new-content">
         {newVariantWorkspace}
       </div>}
-      <label className="w6-stocktake-reason">Комментарий (необязательно)
+      <label className="w6-stocktake-reason">{mode==='transfer'?'Комментарий к перемещению (необязательно)':'Комментарий (необязательно)'}
         <input value={reason} onChange={e=>p.onReason(e.target.value)}
           placeholder="При необходимости поясните действие" />
       </label>
@@ -550,7 +519,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           <div className="stocktake-e-review-quantity"><strong>+{extraArrival.totalQuantity} шт.</strong></div>
         </div>}
       </div>
-      <label className="w6-stocktake-reason">Комментарий (необязательно)
+      <label className="w6-stocktake-reason">{mode==='transfer'?'Комментарий к перемещению (необязательно)':'Комментарий (необязательно)'}
         <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="При необходимости поясните действие" />
       </label>
       {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}

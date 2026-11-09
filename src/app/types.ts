@@ -2,6 +2,11 @@ import type * as React from 'react'
 
 export type OrderItem = {
   productName: string
+  catalogVariantId?: number
+  manualCatalogEntry?: boolean
+  availableAtPick?: number
+  physicalAtPick?: number
+  reservedAtPick?: number
   audienceType?: 'ВЗРОСЛЫЙ' | 'ДЕТСКИЙ'
   gender?: string
   color?: string
@@ -19,19 +24,9 @@ export type OrderItem = {
   workshopDueDate?: string
   workshopDueTime?: string
   stockObservationEnabled?: boolean
-  shipmentState?: '' | 'sent' | 'pending'
   observedPhysicalQuantity?: number | null
   shortageAcknowledged?: boolean
-  shortageDecision?: {
-    inventorySource: 'warehouse' | 'boutique'
-    variantId: number
-    requestedQuantity: number
-    physicalQuantity: number
-    reservedQuantity: number
-  } | null
   serverShortage?: {
-    inventorySource: 'warehouse' | 'boutique'
-    variantId: number
     physicalQuantity: number
     reservedQuantity: number
     requestedQuantity: number
@@ -864,6 +859,7 @@ export type OrderRecord = {
   shipping_status?: 'not_sent' | 'sent' | string | null
   shipping_date?: string | null
   pricing_mode?: 'legacy_manual_total' | 'itemized_v1'
+  item_count?: number
   stock_handover_review_needed?: boolean
   stock_handover_has_active_items?: boolean
   catalog_review_required?: boolean
@@ -874,16 +870,6 @@ export type OrderRecord = {
   committed_return_count?: number
   committed_exchange_count?: number
   has_committed_item_return?: boolean
-  // Summarized facts from active standalone returns, excluding exchange-owned refunds.
-  return_physical_summary?: {
-    moneyOnlyCount: number
-    moneyAndGoodsCount: number
-    goodsOnlyCount: number
-    pendingQuantity: number
-    receivedStockQuantity: number
-    receivedNoStockQuantity: number
-    legacyUnknownQuantity: number
-  } | null
   comment: string | null
   archived_at?: string | null
   archived_by?: string | null
@@ -907,6 +893,7 @@ export type OrderRecord = {
     size?: string | null
     quantity: number
     availableOperationQuantity?: number
+    shipmentSentQuantity?: number | null
     stockWriteoffStatus?: string | null
     pendingExchangeDispatchId?: number | null
     pendingExchangeWorkshopId?: number | null
@@ -1196,8 +1183,6 @@ export type InventoryMovementRecord = {
   referenceId: string
   comment: string
   createdAt: string
-  performedByUserId?: number | null
-  performedBy?: string | null
   reversedAt: string
   reversalMovementId: number
   isReversal: boolean
@@ -1205,27 +1190,6 @@ export type InventoryMovementRecord = {
 }
 
 
-
-export type InventoryOperationAttempt = {
-  id: number
-  requestId: string
-  operationType: 'arrival' | 'writeoff' | 'manual_set' | 'transfer'
-  outcome: 'rejected' | 'uncertain' | 'replayed'
-  source: 'warehouse' | 'boutique'
-  variantId: number
-  reasonCode: string
-  reasonMessage: string
-  actorUserId: number | null
-  actor: string | null
-  recordedAt: string
-}
-
-export type InventoryOperationAttemptsResponse = {
-  ok: boolean
-  attempts: InventoryOperationAttempt[]
-  hasMore: boolean
-  nextBeforeId?: number | null
-}
 
 export type InventoryHistoryResponse = {
   ok: boolean
@@ -1262,27 +1226,7 @@ export type InventoryCheckHistoryRow = {
   countedQuantity?: number
 }
 
-export type InventoryCheckHistoryResponse = {
-  ok: boolean
-  rows: InventoryCheckHistoryRow[]
-  hasMore?: boolean
-  nextBeforeId?: number | null
-  totalChecks?: number
-  differenceCount?: number
-  firstConfirmedDifference?: InventoryCheckHistoryObservation | null
-  lastMatchingBeforeDifference?: InventoryCheckHistoryObservation | null
-  latestCheck?: InventoryCheckHistoryObservation | null
-  currentEpisodeFirstDifference?: InventoryCheckHistoryObservation | null
-  currentEpisodeLastMatchingCheck?: InventoryCheckHistoryObservation | null
-}
-export type InventoryCheckHistoryObservation = {
-  id: string
-  checkedAt: string
-  expectedQuantity: number
-  countedQuantity: number
-  checkedBy?: string | null
-  referenceId?: string | null
-}
+export type InventoryCheckHistoryResponse = { ok: boolean; rows: InventoryCheckHistoryRow[] }
 
 export type InventoryResponse = {
   ok: boolean
@@ -1812,7 +1756,7 @@ export type InventoryDraftItem = {
   length: string
   size: string
   quantity: number
-  // W9: unsaved new correction combinations have no canonical variantId yet.
+  // New +size / +color correction draft, validated atomically by Worker.
   draftKey?: string
   createMissingVariant?: boolean
   touched?: boolean

@@ -1,0 +1,34 @@
+name: Main selective Finance exchange provenance gate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/finance-reports.ts'
+      - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
+      - 'scripts/test-main-finance-lineage-release-20261021.mjs'
+      - 'package.json'
+      - '.github/workflows/test-main-finance-exchange-lineage.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'worker/domains/finance-reports.ts'
+      - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
+      - 'scripts/test-main-finance-lineage-release-20261021.mjs'
+      - 'package.json'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Production Finance read-only SQL, historic Stage04 and full immutable release
+        run: node scripts/test-main-finance-lineage-release-20261021.mjs

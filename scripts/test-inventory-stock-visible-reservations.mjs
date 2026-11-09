@@ -1,52 +1,42 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import { selectStockOverviewModels } from '../src/features/inventory/stockOverviewSelectors.ts'
+import {readFileSync} from 'node:fs'
+import {selectStockOverviewModels} from '../src/features/inventory/stockOverviewSelectors.ts'
 
-// Exercise the current model-level stock filter rather than the removed
-// product/size filtering source. All sizes must survive any model selection.
-const section = fs.readFileSync('src/features/sections/InventorySection.tsx','utf8')
-const view = fs.readFileSync('src/features/inventory/views/renderInventoryOverviewPanel.tsx','utf8')
-const selectors = fs.readFileSync('src/features/inventory/stockOverviewSelectors.ts','utf8')
-assert.match(section,/selectStockOverviewModels\(/)
-assert.match(section,/simpleStockPhysical\(row\) !== 0 \|\| simpleStockReserved\(row\) !== 0/)
-assert.match(section,/const simpleStockStats = useMemo\(/)
-assert.match(section,/inventoryStocktakeAllGroups \|\| \[\]\)\.flatMap\(/,
-  'Dashboard totals must come from the unfiltered source snapshot')
-assert.match(selectors,/allRows: group\.rows/, 'Selector must retain original sizes')
-assert.match(view,/С учтённым наличием или резервом/)
-assert.match(view,/Активные модели каталога/)
-assert.match(view,/На месте \{formatMoney\(physical\)\} · Резерв \{formatMoney\(reserved\)\}/)
-assert.match(view,/simpleStockStats\.warehousePhysical/)
-assert.match(view,/simpleStockStats\.warehouseReserved/)
-assert.match(view,/simpleStockStats\.boutiquePhysical/)
-assert.match(view,/simpleStockStats\.boutiqueReserved/)
+// Verify the real product-level selector, not obsolete UI text or old filter modes.
+const rows=[
+ {size:'48',warehouseQuantity:3,warehouseReserved:0},
+ {size:'50',warehouseQuantity:2,warehouseReserved:2},
+ {size:'52',warehouseQuantity:2,warehouseReserved:2},
+ {size:'54',warehouseQuantity:2,warehouseReserved:3},
+ {size:'56',warehouseQuantity:2,warehouseReserved:0},
+ {size:'58',warehouseQuantity:0,warehouseReserved:0},
+]
+const groups=[{key:'kebek',productName:'КЕБЕК',rows},{key:'empty',productName:'ДРУГОЙ',rows:rows.slice(-1)}]
+const physical=x=>x.warehouseQuantity
+const reserved=x=>x.warehouseReserved
+const free=x=>physical(x)-reserved(x)
+const realBalance=x=>physical(x)!==0||reserved(x)!==0
+const present=selectStockOverviewModels(groups,'','withStock',realBalance)
+assert.equal(present.length,1,'Stock list must include a model with reserved or negative-free variants')
+assert.equal(present[0].productName,'КЕБЕК')
+assert.deepEqual(present[0].allRows.map(x=>x.size),['48','50','52','54','56','58'],
+  'Selecting a product must preserve ALL of its variant sizes and zero rows for details')
+assert.deepEqual(selectStockOverviewModels(groups,'кЕб','withStock',realBalance).map(x=>x.key),['kebek'])
+assert.equal(selectStockOverviewModels(groups,'','all',realBalance).length,2)
+assert.equal(rows.reduce((n,x)=>n+physical(x),0),11)
+assert.equal(rows.reduce((n,x)=>n+reserved(x),0),7)
+assert.equal(rows.reduce((n,x)=>n+free(x),0),4)
+assert.equal(free(rows[3]),-1,'Size with more reservations than physical stays visible')
 
-const row = (size,physical,reserved)=>({size,physical,reserved})
-const example = [
-  row('48',3,0), row('50',2,2), row('52',2,2),
-  row('54',2,3), row('56',2,0), row('58',0,0),
-]
-const groups = [
-  {key:'model-a',productName:'Кебек',rows:example},
-  {key:'model-b',productName:'Нулевая модель',rows:[row('48',0,0)]},
-]
-const hasBalance = r => r.physical !== 0 || r.reserved !== 0
-const select = (query,mode) => selectStockOverviewModels(groups,query,mode,hasBalance)
-const shown = select('Кебек','withStock')
-assert.equal(shown.length,1)
-assert.deepEqual(shown[0].rows.map(r=>r.size),['48','50','52','54','56','58'],
-  'Zero, reserved and over-reserved sizes remain visible inside selected catalog models')
-assert.deepEqual(shown[0].allRows,example,'Unfiltered sizes and totals are preserved')
-assert.equal(select('', 'withStock').length,1,
-  'Only completely empty models are hidden in the quick with-stock overview')
-assert.equal(select('', 'all').length,2,
-  'All-model view must include products with no physical stock or reservations')
-assert.equal(select('Несуществующее название','all').length,0)
-assert.deepEqual(
-  [example.reduce((s,r)=>s+r.physical,0),example.reduce((s,r)=>s+r.reserved,0),
-   example.reduce((s,r)=>s+r.physical-r.reserved,0)], [11,7,4],
-  'Physical, reserved, and free quantities are separate truths'
-)
-assert.equal(example.find(r=>r.size==='54').physical-example.find(r=>r.size==='54').reserved,-1,
-  'The over-reserved size must still be present for investigation')
-console.log('INVENTORY STOCK VISIBILITY PASSED: real model filter, all sizes retained, current physical/reserved/free totals and negative available')
+const section=readFileSync('src/features/sections/InventorySection.tsx','utf8')
+const view=readFileSync('src/features/inventory/views/renderInventoryOverviewPanel.tsx','utf8')
+const detail=readFileSync('src/features/inventory/views/StockBrowseDetail.tsx','utf8')
+assert.match(section,/selectStockOverviewModels\(/,'Use tested group selector')
+assert.match(view,/На месте \{formatMoney\(physical\)\} · Резерв \{formatMoney\(reserved\)\}/,
+  'Show physical and reserved totals without mixing them')
+assert.match(detail,/const rows = group\.allRows \|\| group\.rows \|\| \[\]/)
+assert.match(detail,/На месте<\/span>/)
+assert.match(detail,/Резерв<\/span>/)
+assert.match(detail,/Свободно<\/span>/)
+assert.match(detail,/Нулевые варианты/,'Zero-sized variants must remain reachable')
+console.log('INVENTORY_STOCK_REAL_SELECTOR_RESERVED_AND_ALL_SIZES_PASS')

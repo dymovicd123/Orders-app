@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 const read = (p) => fs.readFileSync(p, 'utf8')
 const check = (ok, message) => { if (!ok) throw new Error(message) }
@@ -9,6 +11,34 @@ const section = read('src/features/sections/InventorySection.tsx')
 const css = read('src/styles/w4-human-operations.css')
 const preservation = read('scripts/test-step1906b-frontend-modularization.mjs')
 const manifest = JSON.parse(read('scripts/w4-human-operations-frontend-manifest.json'))
+const matrixWorkspace = read('src/features/inventory/useInventoryMatrixWorkspace.ts')
+const movementActions = read('src/features/inventory/inventoryMovementActions.ts')
+const editorActions = read('src/features/inventory/inventoryOperationEditor.ts')
+check(app.includes('useInventoryMatrixWorkspace({'), 'App does not delegate the stock matrix editor to the typed workspace')
+check(matrixWorkspace.includes('function setInventoryMatrixCell(')
+  && matrixWorkspace.includes('inventoryMatrixCellMap.get(key)')
+  && matrixWorkspace.includes('expectedQuantity: existingCell?.current ?? 0'),
+  'Warehouse matrix lost the original per-cell stock and expected-quantity contract')
+check(matrixWorkspace.includes("inventoryDraft.movementType === 'manual_set'")
+  && matrixWorkspace.includes('inventoryMatrixBatchGroups')
+  && matrixWorkspace.includes('inventoryMatrixCurrentGroupItems'),
+  'Matrix grouping or absolute-count semantics were dropped during structural extraction')
+const matrixCompiled = await build({
+  entryPoints: ['src/features/inventory/useInventoryMatrixWorkspace.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { inventoryMatrixGroupKey } = await import('data:text/javascript;base64,' + Buffer.from(matrixCompiled.outputFiles[0].text).toString('base64'))
+const group = { productId: '42', productName: 'ШАПАН', category: 'adult', gender: 'МУЖ', material: 'БАРХАТ', length: 'УКОРОЧЕННЫЙ' }
+assert.equal(inventoryMatrixGroupKey(group), inventoryMatrixGroupKey({ ...group, productName: 'ДРУГОЕ НАИМЕНОВАНИЕ' }),
+  'A known catalog product must group by immutable product ID, not its name')
+assert.notEqual(inventoryMatrixGroupKey(group), inventoryMatrixGroupKey({ ...group, material: 'ХЛОПОК' }),
+  'Different executions must never merge into one inventory matrix group')
+assert.notEqual(inventoryMatrixGroupKey(group), inventoryMatrixGroupKey({ ...group, gender: 'ЖЕН' }),
+  'Different genders must remain distinct matrix groups')
+assert.equal(inventoryMatrixGroupKey({ ...group, productId: '', productName: ' ШАПАН ' }),
+  inventoryMatrixGroupKey({ ...group, productId: '', productName: 'ШАПАН' }),
+  'Free-input product names must normalize before grouping')
+
 
 check(app.includes("movementType: 'transfer',"), 'Operations no longer opens on the ordinary transfer task')
 check(panel.includes('inventory-operation-main-action') && panel.includes('Переместить товар'), 'transfer is not the obvious primary Operations action')
@@ -17,7 +47,12 @@ for (const label of ['Приход', 'Списание', 'Исправить к�
 check(panel.includes('selectedInventoryOperationGroup.rows.length > 6'), 'large variant sets are not collapsed early enough')
 check(panel.includes('Ещё {transferPartition.extra.length} вариантов'), 'overflow variants are not retained behind a calm disclosure')
 check(panel.includes('Нулевые, отрицательные и старые варианты остаются доступны'), 'zero/negative variant discoverability promise missing')
-check(app.includes("result.code === 'stock_resolution_required'") && app.includes('await askStockResolution({') && app.includes('Подтверждение относится только к этой операции и не заменяет ревизию.'), 'zero/negative transfer recovery is not explained through the bounded possession resolver')
+check(app.includes('createInventoryMovementActions({') && app.includes('createInventoryOperationEditorActions({'), 'Typed operation actions are not connected to App')
+check(movementActions.includes("result.code === 'stock_resolution_required'") && movementActions.includes('await askStockResolution({') && movementActions.includes('Подтверждение относится только к этой операции и не заменяет ревизию.'), 'zero/negative transfer recovery is not explained through the bounded possession resolver')
+check(editorActions.includes("const safeQuantity = Math.min(previousQuantity + existingTargetQuantity")
+  && editorActions.includes("getInventoryRowCategory(row) === nextVariant.category")
+  && editorActions.includes("inventoryOperationAllProductGroups.find"),
+  'Warehouse editor can silently switch exact variants or combine incompatible product executions')
 check(!panel.includes('Сколько здесь сейчас') && !panel.includes('Фактически на месте'), 'Operations still asks for a fake full physical count during transfer/writeoff')
 check(!panel.includes('<th>Свободно</th>') && !panel.includes('<th>{sourceLabel(inventoryDraft.targetSource)}</th>'), 'transfer table still exposes the old six-column cognitive load')
 check(panel.includes('<th>По системе</th>'), 'compact transfer system-state column missing')

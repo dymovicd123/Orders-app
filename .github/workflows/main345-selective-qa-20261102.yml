@@ -1,0 +1,45 @@
+name: Stage 3-5 Main-derived selective integration safety (NO DEPLOY)
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - '.github/workflows/main345-selective-qa-20261102.yml'
+      - 'worker/domains/pending-reservation.ts'
+      - 'worker/domains/orders-relations.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - 'src/app/types.ts'
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Guarded Main-only test candidate, no deployment
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
+          grep -q '"name": "orders-app"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          test -f migrations/0119_v72_order_dispatch_lineage.sql
+          test -f src/features/orders/shippingSelection.ts
+          echo 'MAIN_DERIVED_CANDIDATE_GUARD_PASS'
+      - name: Current Main baseline regressions and Stage5 Worker D1
+        run: |
+          set -euo pipefail
+          npm ci
+          node --experimental-strip-types scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node --experimental-strip-types scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node --experimental-strip-types scripts/test-stage5b-http-routes-20261101.mjs
+          node scripts/test-main-current-business-release-20261031.mjs
+          npm run build
+          npm audit --omit=dev --audit-level=high
+          echo 'MAIN_DERIVED_STAGE5_TESTS_BUILD_AUDIT_PASS'

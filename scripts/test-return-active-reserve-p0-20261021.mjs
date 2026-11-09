@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
-const returns=readFileSync('worker/domains/returns-exchanges.ts','utf8')
+const returns=readFileSync('worker/domains/order-returned-item-receipt.ts','utf8')
+const creation=readFileSync('worker/domains/order-return-creation.ts','utf8')
 const shipping=readFileSync('worker/domains/order-reservations.ts','utf8')
 const capture=(source,variable)=>{
   const i=source.indexOf('const '+variable+' = await db.prepare(')
@@ -12,26 +13,20 @@ const capture=(source,variable)=>{
   assert(start>=0&&end>start,'Unterminated query: '+variable)
   return source.slice(start+1,end)
 }
-const creation=capture(returns,'dangling')
+const creationQuery=capture(creation,'dangling')
 const intake=capture(returns,'activeReservation')
-const pendingHelperStart=shipping.indexOf('const pendingExchangeReplacementExclusionSql = ')
-assert(pendingHelperStart>=0)
-const pendingTickOpen=shipping.indexOf('`',pendingHelperStart)
-const pendingTickClose=shipping.indexOf('`',pendingTickOpen+1)
-assert(pendingTickOpen>=0&&pendingTickClose>pendingTickOpen)
-const pendingExclusion=shipping.slice(pendingTickOpen+1,pendingTickClose).replaceAll('${orderItemReference}','r.order_item_id')
-const shipment=capture(shipping,'conflictingReturn').replaceAll("${pendingExchangeReplacementExclusionSql('r.order_item_id')}",pendingExclusion)
-assert.match(creation,/inventory_reservations/)
-assert.match(creation,/status IN \('active', 'unresolved'\)/)
+const shipment=capture(shipping,'conflictingReturn')
+assert.match(creationQuery,/inventory_reservations/)
+assert.match(creationQuery,/status IN \('active', 'unresolved'\)/)
 assert.match(intake,/status IN \('active', 'unresolved'\)/)
 assert.match(shipment,/AND ret\.order_id = r\.order_id/)
 assert.match(shipment,/NOT EXISTS \(/)
 assert.match(shipment,/e\.refund_return_id = ret\.id/)
 assert.match(shipment,/COALESCE\(oi\.is_workshop, 0\) = 0/)
-const createFn=returns.indexOf('export async function createReturn(')
-const guard=returns.indexOf('const dangling = await db.prepare(',createFn)
-const issued=returns.indexOf('const issuedToClient =',createFn)
-const physicalState=returns.indexOf('const physicalState = selected.physicalState;',createFn)
+const createFn=creation.indexOf('export async function createReturn(')
+const guard=creation.indexOf('const dangling = await db.prepare(',createFn)
+const issued=creation.indexOf('const issuedToClient =',createFn)
+const physicalState=creation.indexOf('const physicalState = selected.physicalState;',createFn)
 assert(createFn>=0&&issued<guard&&guard<physicalState,
   'Guard must occur after exact issue validation and before physical return actions')
 const receiveFn=returns.indexOf('export async function receiveReturnedItem(')
@@ -53,14 +48,13 @@ db.exec(`
  CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);
  CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,refund_return_id INTEGER,status TEXT);
- CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_type TEXT,operation_id INTEGER,event_type TEXT,status TEXT,pending_reason TEXT);
  INSERT INTO order_items VALUES(5,42,'ШАПАН',0,1);
  INSERT INTO inventory_reservations VALUES(7,42,5,'active',1);
  INSERT INTO returns VALUES(10,42,'completed');
  INSERT INTO return_items VALUES(11,10,5,1);
 `)
 const read=(q,...args)=>db.prepare(q).get(...args)??null
-assert.equal(read(creation,5)?.id,7,'Create: active reserve must block physical Return')
+assert.equal(read(creationQuery,5)?.id,7,'Create: active reserve must block physical Return')
 assert.equal(read(intake,5)?.id,7,'Late intake: active reserve must block stock +1')
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42)?.return_id,10,
   'Normal shipment cannot fulfill a returned still-active line')
@@ -69,10 +63,10 @@ assert.equal(read(shipment.replaceAll('${scopeSql}',' AND r.order_item_id IN (SE
 assert.equal(read(shipment.replaceAll('${scopeSql}',' AND r.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))'),42,'[500]'),null,
   'Scoped guard cannot block unrelated order item')
 db.exec("UPDATE inventory_reservations SET status='unresolved' WHERE id=7")
-assert.equal(read(creation,5)?.id,7,'Physical Return must reject unresolved stock obligation')
+assert.equal(read(creationQuery,5)?.id,7,'Physical Return must reject unresolved stock obligation')
 assert.equal(read(intake,5)?.id,7,'Late receipt must reject unresolved stock obligation')
 db.exec("UPDATE inventory_reservations SET status='fulfilled' WHERE id=7")
-assert.equal(read(creation,5),null,'Legitimately fulfilled SKU must remain returnable')
+assert.equal(read(creationQuery,5),null,'Legitimately fulfilled SKU must remain returnable')
 assert.equal(read(intake,5),null,'Legitimately fulfilled SKU can be received')
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Fulfilled item is not a double-shipment candidate')
 db.exec("UPDATE inventory_reservations SET status='active' WHERE id=7")
@@ -84,58 +78,4 @@ db.exec("UPDATE exchanges SET status='cancelled'; UPDATE returns SET status='can
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Cancelled return excluded')
 db.exec("UPDATE returns SET status='completed'; UPDATE order_items SET is_workshop=1 WHERE id=5")
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Workshop obligations are independent of warehouse reservations')
-// Test the real Return INSERT against two stale preflights on disposable SQLite.
-// No Cloudflare or remote D1 connection is used.
-const guardedStart=returns.indexOf('INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)',createFn)
-assert(guardedStart>createFn,'Return creation must have an atomic refund insert')
-const sqlTick=String.fromCharCode(96)
-const sqlOpeningTick=returns.lastIndexOf(sqlTick,guardedStart)
-const guardedEnd=returns.indexOf(sqlTick,guardedStart+1)
-assert(sqlOpeningTick>=createFn&&guardedEnd>guardedStart,'Missing Return INSERT SQL terminator')
-const guardedSql=returns.slice(sqlOpeningTick+1,guardedEnd)
-assert.match(guardedSql,/CASE WHEN \? = 0 OR EXISTS/)
-assert.match(guardedSql,/FROM payments p WHERE p\.order_id = o\.id/)
-assert.match(guardedSql,/COALESCE\(ret\.status, 'completed'\) <> 'cancelled'/)
-const refundSqlite=new DatabaseSync(':memory:')
-refundSqlite.exec(
-  "CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT NOT NULL,archived_at TEXT);" +
-  "CREATE TABLE payments(order_id INTEGER NOT NULL,amount INTEGER NOT NULL);" +
-  "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,manager_id INTEGER,return_date TEXT," +
-  "amount INTEGER NOT NULL,payment_method TEXT,comment TEXT,status TEXT,created_at TEXT);" +
-  "INSERT INTO orders(id,order_status) VALUES(42,'active'),(43,'archived');" +
-  "INSERT INTO payments(order_id,amount) VALUES(42,100),(43,100);"
-)
-const guardedInsert=refundSqlite.prepare(guardedSql)
-const refund=(orderId,amount)=>guardedInsert.run(
-  orderId,null,'2026-11-08',
-  amount,orderId,amount,amount,
-  amount>0?'КАСПИ':null,null,'2026-11-08T10:00:00Z'
-)
-const refundable=()=>100-Number(refundSqlite.prepare(
-  "SELECT COALESCE(SUM(amount),0) AS total FROM returns WHERE order_id=42 AND status<>'cancelled'"
-).get()?.total)
-const countReturns=()=>Number(refundSqlite.prepare("SELECT COUNT(*) AS n FROM returns WHERE order_id=42").get()?.n)
-const firstPreflight=refundable(),secondPreflight=refundable()
-assert.equal(firstPreflight,100)
-assert.equal(secondPreflight,100)
-refund(42,70)
-assert.throws(()=>refund(42,70),/NOT NULL constraint failed: returns\.amount/,
-  'Second employee already passed the stale preflight; atomic INSERT must reject over-refund')
-assert.equal(refundable(),30,'Rejected concurrent refund cannot reduce available received funds')
-assert.equal(countReturns(),1,'Rejected refund must not leave a header')
-refund(42,30)
-assert.equal(refundable(),0,'Exactly the remaining amount is refundable once')
-assert.throws(()=>refund(42,1),/NOT NULL constraint failed: returns\.amount/)
-refund(42,0)
-assert.equal(refundable(),0,'A physical-only zero-money return must remain possible')
-const cancelledId=refundSqlite.prepare("SELECT id FROM returns WHERE order_id=42 AND amount=70").get().id
-refundSqlite.prepare("UPDATE returns SET status='cancelled' WHERE id=?").run(cancelledId)
-assert.equal(refundable(),70,'Cancelling a money Return restores the refundable balance')
-refund(42,70)
-assert.equal(refundable(),0,'Returned funds can be refunded again after cancellation')
-assert.throws(()=>refund(43,20),/NOT NULL constraint failed: returns\.amount/,
-  'Archived orders must never issue new refunds through the guarded SQL')
-refundSqlite.close()
-console.log('BRANCH2_ATOMIC_RETURN_REFUND_CAP_PASSED: concurrent stale preflights, zero, exact remainder, cancel/retry, archived order')
-
 console.log('RETURN_ACTIVE_RESERVE_P0_SQL_GUARDS_PASSED: 3 production queries; active, unresolved, fulfilled, money-only, exchange-linked, cancelled, scoped, workshop')

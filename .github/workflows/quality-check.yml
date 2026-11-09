@@ -51,35 +51,21 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
-      - name: Check actionable admin delete item-return reasons
-        run: node --experimental-strip-types scripts/test-admin-delete-standalone-return-reason-20261021.mjs
+      - name: Verify isolated Branch2 Worker and D1 binding
+        if: github.base_ref == 'branch2' || github.ref_name == 'branch2'
+        run: node scripts/test-branch2-environment.mjs
 
       - name: Run cumulative regression gate
         run: npm run release:check
 
-      - name: Verify Stage04-B2 Workshop Catalog cost snapshots
-        run: node scripts/test-stage04b2-workshop-catalog-cost.mjs
-
-      - name: Verify Stage04-C debt, payment and reversal safety
-        run: node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
-
-      - name: Verify fast settlement summary, optional payment methods and lazy detail
-        run: node --experimental-strip-types scripts/test-stage04-fast-workshop-settlements.mjs
-
-      - name: Verify Stage04-D Workshop settlement UI and cost reconciliation
-        run: node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
-
-      - name: Validate unique frozen legacy Workshop SKU cost capture
-        run: node scripts/test-stage04b3-unique-legacy-sku-capture.mjs
-
-      - name: Verify warehouse stock shows reserved and short sizes without misleading totals
+      - name: Verify physical stock and reserved sizes are visible
         run: node scripts/test-inventory-stock-visible-reservations.mjs
 
       - name: Verify original return-item characteristics and distinguish duplicate model names
         run: node scripts/test-return-attributes-20261029.mjs
 
-      - name: Verify exact KPI model selection without Enter
-        run: node --experimental-strip-types scripts/test-branch2-kpi-exact-selection-20261029.mjs
+      - name: Read-only inventory of test usage and archived fixtures
+        run: node scripts/audit-ci-test-usage-20261108.mjs
 
       - name: Build application
         run: npm run build

@@ -1,0 +1,130 @@
+name: Stage04 Production dormant schema cutover
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-stage04-dormant-schema-20261018.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage04-production-schema-only
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Prepare production settlement schema, leave capture OFF
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact Production identity and migration scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == main ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq 'DEFAULT 0' migrations/0084_v72_workshop_settlement_status_capture.sql
+          grep -Fq 'AND COALESCE((SELECT enabled FROM workshop_settlement_capture_control WHERE id=1), 0) = 1' migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql
+          grep -Fq 'CREATE TRIGGER IF NOT EXISTS trg_workshop_settlement_no_update' migrations/0083_v72_workshop_settlement_foundation.sql
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE)[[:space:]]+(orders|payments|workshop_tasks|inventory)' migrations/0083_v72_workshop_settlement_foundation.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify Stage04 SQLite migrations and payment business rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/test-stage04a-workshop-settlements.mjs
+          node --experimental-strip-types scripts/test-stage04b-workshop-status-capture.mjs
+          node --experimental-strip-types scripts/test-stage04b2-workshop-catalog-cost.mjs
+          node --experimental-strip-types scripts/test-stage04b3-unique-legacy-sku-capture.mjs
+          node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
+          node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
+          node --experimental-strip-types scripts/test-stage04-opening-cutover-20261018.mjs
+      - name: Read only preflight before any schema writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json | jq -cS '.[0].results[0]'
+          }
+          query "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COUNT(*) FROM payments) AS customer_payments,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_count" > /tmp/stage04-prod-before.json
+          query "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workshop_settlement_events') AS event_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workshop_settlement_capture_control') AS control_table,
+            (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name='order_item_id') AS task_item_column,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS catalog_cost_table" > /tmp/stage04-prod-schema.json
+          jq -e '.task_item_column==1 and .catalog_cost_table==1 and (.event_table==0 or .event_table==1) and (.control_table==0 or .control_table==1)' /tmp/stage04-prod-schema.json
+          e="$(jq -r .event_table /tmp/stage04-prod-schema.json)"
+          c="$(jq -r .control_table /tmp/stage04-prod-schema.json)"
+          [[ "$e" == "$c" ]] || { echo "Partial preexisting Stage04 schema; manual audit required" >&2; exit 42; }
+          if [[ "$e" == "1" ]]; then
+            query "SELECT (SELECT COUNT(*) FROM workshop_settlement_events) AS event_count,
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0 AND activated_at IS NULL) AS safely_dormant" > /tmp/stage04-prod-existing.json
+            jq -e '.event_count==0 and .safely_dormant==1' /tmp/stage04-prod-existing.json
+          fi
+          echo 'Production Stage04 schema preflight passed; no existing settlements activated.'
+      - name: Install only dormant Stage04 settlement tables and triggers
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json | jq -r '.[0].results[0].n'
+          }
+          if [[ "$(jq -r .event_table /tmp/stage04-prod-schema.json)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0083_v72_workshop_settlement_foundation.sql
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0084_v72_workshop_settlement_status_capture.sql
+          fi
+          # The final trigger (0108) replaces the intermediate 0106 trigger.
+          # First install it in sequence to retain the same reviewed branch2 migration contract.
+          if [[ "$(query "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion' AND sql LIKE '%catalog_execution_prices%'")" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql
+          fi
+          if [[ "$(query "SELECT COUNT(*) AS n FROM pragma_table_info('workshop_settlement_events') WHERE name='payment_method'")" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0107_v72_workshop_settlement_payment_method.sql
+          fi
+          if [[ "$(query "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion' AND sql LIKE '%v2.is_active%'")" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql
+          fi
+      - name: Verify final live production schema, no autoactivation and no business mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0 AND activated_at IS NULL) AS capture_off,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS settlement_events,
+              (SELECT COUNT(*) FROM pragma_table_info('workshop_settlement_events') WHERE name='payment_method') AS payment_method_column,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_workshop_settlement_no_update','trg_workshop_settlement_no_delete','trg_workshop_settlement_completion_reversal')) AS safety_triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion' AND sql LIKE '%v2.is_active%') AS unique_cost_capture
+          " --json)"
+          jq -e '.[0].results[0] | .capture_off==1 and .settlement_events==0 and .payment_method_column==1 and .safety_triggers==3 and .unique_cost_capture==1' <<<"$result"
+          after="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS customer_payments,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_count
+          " --json | jq -cS '.[0].results[0]')"
+          [[ "$after" == "$(cat /tmp/stage04-prod-before.json)" ]] || {
+            echo "Business counts changed during migration window; review concurrent activity (no automatic rollback)" >&2
+            exit 43
+          }
+          echo 'PRODUCTION STAGE04 SCHEMA READY; CAPTURE STILL OFF; OPENING DEBT NOT SET; SHOP FINANCE UNTOUCHED'

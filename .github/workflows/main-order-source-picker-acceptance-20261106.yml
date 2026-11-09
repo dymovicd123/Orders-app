@@ -1,0 +1,82 @@
+name: Main source-first order picker acceptance
+on:
+  push:
+    branches:
+      - feature/main-source-first-order-picker-20261106
+  pull_request:
+    paths:
+      - src/features/orders/MainOrderSourcePicker.tsx
+      - src/features/orders/MainPickedOrderLine.tsx
+      - src/features/sections/CreateOrderSection.tsx
+      - src/styles/main-order-source-picker.css
+      - worker/domains/order-source-picker.ts
+      - worker/domains/orders-write.ts
+      - worker/domains/order-core.ts
+      - worker/core/types.ts
+      - worker/index.ts
+      - worker/routes/order-selective-shipping.ts
+      - scripts/test-stage5b-http-routes-20261101.mjs
+      - src/App.tsx
+      - src/features/sections/OrdersTableSection.tsx
+      - worker/domains/order-shipment-plan.ts
+      - worker/domains/order-dispatch.ts
+      - worker/domains/order-dispatch-confirmation.ts
+      - worker/domains/order-dispatch-cancel.ts
+      - scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - scripts/test-selective-shipping-shortage-http-20261108.mjs
+      - src/features/orders/shippingSelection.ts
+      - scripts/test-stage5-client-quantity-replay-20261102.mjs
+      - scripts/test-main-confirmed-shipping-state-20261108.mjs
+permissions:
+  contents: read
+jobs:
+  source-first-order-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Source-first SKU/read-only reservation acceptance
+        run: node scripts/test-main-source-first-order-picker-20261106.mjs
+      - name: Chrome visual acceptance - 12 model tiles and 6 SKU cards
+        run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
+      - name: Interactive Chrome clicks and search-suggestion acceptance
+        run: node scripts/test-main-order-picker-browser-interactions-20261106.mjs
+      - name: Keep screenshot from real browser
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-order-source-picker-visual
+          path: artifacts/main-order-picker-visual.png
+          if-no-files-found: ignore
+      - name: Guided size/color Chrome acceptance and manager-friendly order copy
+        run: node scripts/test-main-order-ux-review-20261107.mjs
+      - name: Work QA794 F1-F7 report regressions in real Chrome
+        run: node scripts/test-branch2-order-qa794-report-fixes.mjs
+      - name: Full itemized order editor parity with creation - Chrome acceptance
+        run: node scripts/test-branch2-itemized-editor-picker-20261107.mjs
+      - name: Exchange replacement uses exact create-order picker in Chrome
+        run: node scripts/test-branch2-exchange-replacement-picker-20261107.mjs
+      - name: STANDARD material and length stay hidden in orders, workshop and invoice exports
+        run: node scripts/test-branch2-standard-display-20261108.mjs
+      - name: Work mixed order edit - immutable catalog snapshot and 7 lines
+        run: node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
+      - name: Real HTTP six-to-seven line editor rewrite with payment and reservation checks
+        run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
+      - name: Completed dispatch must remain blocked and shown clearly
+        run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
+      - name: Quantity selection allows partial known-SKU shortage without affecting workshop rules
+        run: node scripts/test-stage5-client-quantity-replay-20261102.mjs
+      - name: Selective shipping shortage confirmation without hard stock block
+        run: node scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - name: Worker HTTP and SQLite shipment shortage, idempotency and cancellation
+        run: node scripts/test-selective-shipping-shortage-http-20261108.mjs
+      - name: Type check and frontend build
+        run: npm run build
+      - name: Existing main business release suite
+        run: npm run release:check
+

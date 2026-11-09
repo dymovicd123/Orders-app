@@ -1,8 +1,12 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 const read = (p) => fs.readFileSync(p, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const app = read('src/App.tsx')
+const warehouseSnapshots = read('src/features/inventory/useWarehouseSnapshots.ts')
+const governance = read('src/features/inventory/warehouseGovernanceActions.ts')
 const movement = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
 const worker = read('worker/index.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
@@ -37,14 +41,15 @@ const transferRoute = block(worker, "if (url.pathname === '/api/inventory/transf
 check(!transferRoute.includes('requireAdminAccess(request)'), 'known-SKU transfer unexpectedly became admin-only')
 
 // Cache invalidation must be side-effect free for Attention: no hidden D1 read after unrelated writes.
-const invalidator = block(app, 'function invalidateInventoryStockCaches(includeCatalogReview = false)', 'async function loadCatalogData(force = false)')
+check(app.includes('useWarehouseSnapshots({'), 'Warehouse snapshot controller is not mounted in App')
+const invalidator = block(warehouseSnapshots, 'function invalidateInventoryStockCaches(includeCatalogReview = false)', '  return {')
 check(invalidator.includes('warehouseAttentionSummaryCache = null'), 'Attention summary cache is not invalidated')
 check(!invalidator.includes('loadWarehouseAttention('), 'inventory cache invalidation still performs a hidden Attention read')
 check(!app.includes('if (postSaveShortages.length) void loadWarehouseAttention()'), 'order save still performs an unsolicited Attention read')
 
 // W2.1 detail ownership/race protection must remain intact.
-check(app.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'W2.1 detail ownership guard missing')
-check(app.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'W2.1 cached-summary detail preservation missing')
+check(warehouseSnapshots.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'W2.1 detail ownership guard missing')
+check(warehouseSnapshots.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'W2.1 cached-summary detail preservation missing')
 
 // Preserve the modularization guard as an explicit delta chained after W2, not a rewritten history hash.
 check(w3Manifest.version === 1 && w3Manifest.revision === 'w3-1a-warehouse-reliability', 'W3.1A frontend preservation manifest invalid')
@@ -54,5 +59,63 @@ check(frontendPreservation.includes('w3WarehouseReliabilityPath') && frontendPre
 // Frozen Arrival interface must remain byte-for-byte recognizable.
 check(inventorySection.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 check(inventorySection.includes('<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'), 'frozen Arrival add-position action changed')
+
+// Actual compiled governance module: no new write routes or bypassed role boundaries.
+const governanceCompiled = await build({
+  entryPoints: ['src/features/inventory/warehouseGovernanceActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createWarehouseGovernanceActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(governanceCompiled.outputFiles[0].text).toString('base64')
+)
+check(app.includes('createWarehouseGovernanceActions({'), 'App no longer delegates warehouse controls to the typed owner')
+check(governance.includes("if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return")
+  && governance.includes("if (!canManageWarehouse || inventoryControlBusy) return")
+  && governance.includes("if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return"),
+  'Audit, auto-writeoff or reversal lost the original role/idempotent-operation gates')
+let writes = 0
+const blocked = createWarehouseGovernanceActions({
+  canManageWarehouse: false, inventoryAuditBusy: false, setInventoryAuditBusy: () => {}, setInventoryAudit: () => {},
+  inventoryControlBusy: false, setInventoryControlBusy: () => {},
+  inventoryControlSettings: { autoWriteoffEnabled: true, pendingWriteoffCount: 3 },
+  setInventoryControlSettings: () => {},
+  reversingInventoryMovementId: null, setReversingInventoryMovementId: () => {},
+  apiFetch: async () => { writes += 1; throw new Error('Privileged operation must not be sent') },
+  setError: () => {}, setMessage: () => {},
+  loadInventoryData: async () => { throw new Error('No implicit refresh for blocked action') },
+})
+await blocked.resolveInventoryAuditIssue({ issueKey: 'missing', productName: 'ТЕСТ' })
+await blocked.toggleInventoryAutoWriteoff()
+await blocked.applyPendingInventoryWriteoffs()
+await blocked.reverseInventoryMovement({ id: 33, canReverse: true, productName: 'ТЕСТ', quantityDelta: 1 })
+assert.equal(writes, 0, 'Manager without warehouse role cannot change audit, settings or physical inventory')
+
+let auditPayload = null
+let auditState = null
+let auditMessage = ''
+const authorized = createWarehouseGovernanceActions({
+  canManageWarehouse: true, inventoryAuditBusy: false,
+  setInventoryAuditBusy: () => {}, setInventoryAudit: next => { auditState = next },
+  inventoryControlBusy: false, setInventoryControlBusy: () => {},
+  inventoryControlSettings: { autoWriteoffEnabled: true, pendingWriteoffCount: 0 },
+  setInventoryControlSettings: () => {},
+  reversingInventoryMovementId: null, setReversingInventoryMovementId: () => {},
+  apiFetch: async (url, options = {}) => {
+    assert.equal(url, '/api/inventory/audit/resolve')
+    assert.equal(options.method, 'POST')
+    auditPayload = JSON.parse(options.body)
+    return new Response(JSON.stringify({ ok: true, missing: [], resolved: [] }),
+      { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+  setError: () => {}, setMessage: next => { auditMessage = next },
+  loadInventoryData: async () => { throw new Error('Audit acknowledgement must not mutate or refresh physical stock') },
+})
+await authorized.resolveInventoryAuditIssue({ issueKey: 'historical-gap' }, false)
+assert.deepEqual(auditPayload, {
+  issueKey: 'historical-gap', resolved: false,
+  comment: 'Проблема возвращена в активную проверку.',
+}, 'Audit acknowledgement must remain metadata-only with exact issue identity')
+assert.equal(auditState?.ok, true)
+assert.match(auditMessage, /снова требует проверки/)
 
 console.log('W3.1A WAREHOUSE RELIABILITY PASSED — manager-safe routine Operations coexist with admin-only Arrival, demand-driven Attention and the frozen Arrival layout')

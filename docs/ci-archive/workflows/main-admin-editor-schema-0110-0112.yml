@@ -1,0 +1,165 @@
+name: Production order editing and delete schema 0110-0112
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-admin-editor-schema-0110-0112.yml'
+      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
+      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
+      - 'migrations/0112_v72_order_client_name_override.sql'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-admin-editor-schema-0110-0112.yml'
+      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
+      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
+      - 'migrations/0112_v72_order_client_name_override.sql'
+permissions:
+  contents: read
+concurrency:
+  group: main-admin-0110-0112-schema
+  cancel-in-progress: false
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Refuse any DB except production and verify reviewed schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_BASE_REF:-main}" == 'main' ]]
+          [[ "${GITHUB_EVENT_NAME}" == 'pull_request' || "${GITHUB_REF}" == 'refs/heads/main' ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          [[ "$(git hash-object migrations/0110_v72_exchange_order_item_price_correction_audit.sql)" == '1de7e817dd4d8b9188f3bac747653dcffcf26b35' ]]
+          [[ "$(git hash-object migrations/0111_v72_admin_order_delete_saga_journal.sql)" == '44860d4a5764aac9ebd2ad292f08da1ce4f42279' ]]
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0110_v72_exchange_order_item_price_correction_audit.sql
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0111_v72_admin_order_delete_saga_journal.sql
+          [[ "$(git hash-object migrations/0112_v72_order_client_name_override.sql)" == 'f0f3f04494747513030992a052de0d437da57525' ]]
+      - run: npm ci
+      - name: Check real local D1 idempotency and FK before touching main
+        run: node scripts/test-order-edit-autonomy.mjs
+      - name: Read-only remote main schema preflight and business snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='exchange_order_item_price_corrections') AS audit_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_exchange_order_price_lineage') AS audit_indexes,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('exchange_order_price_history_immutable_update','exchange_order_price_history_immutable_delete')) AS audit_triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('admin_order_delete_sagas','admin_order_delete_saga_steps')) AS saga_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_admin_delete_active_saga_order','idx_admin_delete_saga_steps_resume')) AS saga_indexes,
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='customer_name_override') AS name_column,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_search_orders_fts') AS fts_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_orders_ai','trg_order_search_orders_au','trg_order_search_managers_au','trg_order_search_customers_au')) AS fts_triggers
+          " --json | jq -cSe '.[0].results[0]' > /tmp/admin-schema-before.json
+          jq -e '((.audit_tables==0 and .audit_indexes==0 and .audit_triggers==0) or
+                     (.audit_tables==1 and .audit_indexes==1 and .audit_triggers==2))
+                   and ((.saga_tables==0 and .saga_indexes==0) or (.saga_tables==2 and .saga_indexes==2)) and .fts_exists==1 and .fts_triggers==4 and (.name_column==0 or .name_column==1)' /tmp/admin-schema-before.json
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+              (SELECT COUNT(*) FROM order_items) AS order_item_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchange_count,
+              (SELECT COUNT(*) FROM returns) AS return_count,
+              (SELECT COUNT(*) FROM payments) AS payment_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_total,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_count,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/admin-business-before.json
+          echo "Production schema before:"; cat /tmp/admin-schema-before.json
+          echo "Production business snapshot captured (counts / totals only)."
+      - name: Capture production Time Travel bookmark before any schema writes
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No restore bookmark") end' > /tmp/admin-schema-restore-bookmark
+          test -s /tmp/admin-schema-restore-bookmark
+          echo "Restore bookmark: $(cat /tmp/admin-schema-restore-bookmark)" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Do not restore automatically; production may receive later orders.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply safe schema 0110, 0111 and 0112 to production only
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /tmp/admin-schema-restore-bookmark
+          if [[ "$(jq -r '.audit_tables' /tmp/admin-schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0110_v72_exchange_order_item_price_correction_audit.sql
+          else
+            echo "0110 already present; no writes"
+          fi
+          if [[ "$(jq -r '.saga_tables' /tmp/admin-schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0111_v72_admin_order_delete_saga_journal.sql
+          else
+            echo "0111 already present; no writes"
+          fi
+          if [[ "$(jq -r '.name_column' /tmp/admin-schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0112_v72_order_client_name_override.sql
+          fi
+      - name: Verify remote schema, empty audit journals, and unchanged business data
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='exchange_order_item_price_corrections') AS audit_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_exchange_order_price_lineage') AS audit_indexes,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('exchange_order_price_history_immutable_update','exchange_order_price_history_immutable_delete')) AS audit_triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('admin_order_delete_sagas','admin_order_delete_saga_steps')) AS saga_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_admin_delete_active_saga_order','idx_admin_delete_saga_steps_resume')) AS saga_indexes,
+              (SELECT COUNT(*) FROM exchange_order_item_price_corrections) AS audits,
+              (SELECT COUNT(*) FROM admin_order_delete_sagas) AS sagas,
+              (SELECT COUNT(*) FROM admin_order_delete_saga_steps) AS steps,
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='customer_name_override') AS name_column,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_orders_ai','trg_order_search_orders_au','trg_order_search_managers_au','trg_order_search_customers_au') AND sql LIKE '%customer_name_override%') AS migrated_triggers,
+              (SELECT COUNT(*) FROM order_search_orders_fts) AS indexed,
+              (SELECT COUNT(*) FROM orders) AS order_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/admin-schema-after.json
+          jq -e '.audit_tables==1 and .audit_indexes==1 and .audit_triggers==2 and .saga_tables==2 and .saga_indexes==2 and .name_column==1 and .migrated_triggers==4 and .indexed==.order_count' /tmp/admin-schema-after.json
+          if [[ "$(jq -r '.audit_tables' /tmp/admin-schema-before.json)" == 0 ]]; then
+            [[ "$(jq -r '.audits' /tmp/admin-schema-after.json)" == 0 ]]
+          fi
+          if [[ "$(jq -r '.saga_tables' /tmp/admin-schema-before.json)" == 0 ]]; then
+            [[ "$(jq -r '.sagas' /tmp/admin-schema-after.json)" == 0 ]]
+            [[ "$(jq -r '.steps' /tmp/admin-schema-after.json)" == 0 ]]
+          fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+              (SELECT COUNT(*) FROM order_items) AS order_item_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchange_count,
+              (SELECT COUNT(*) FROM returns) AS return_count,
+              (SELECT COUNT(*) FROM payments) AS payment_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_total,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_count,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/admin-business-after.json
+          cmp /tmp/admin-business-before.json /tmp/admin-business-after.json
+          echo "Production 0110/0111 installed with no business rows changed."

@@ -5,23 +5,20 @@ import { DatabaseSync } from 'node:sqlite'
 const migrationPath = 'migrations/0083_v72_workshop_settlement_foundation.sql'
 const sql = fs.readFileSync(migrationPath, 'utf8')
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8')
-assert.match(wrangler, /"name"\s*:\s*"orders-app-branch2"/)
-// Current Branch2 runtime uses an isolated Oct27 mirror; historical migration workflow below is checked as historical evidence.
-assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2_mirror_20261027"/)
-assert.match(wrangler, /"database_id"\s*:\s*"0904a573-21ff-44d8-93b0-c9200f771702"/)
-assert.doesNotMatch(wrangler, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+assert.match(wrangler, /"name"\s*:\s*"orders-app"/)
+assert.match(wrangler, /"database_name"\s*:\s*"orders_db_prod"/)
+assert.match(wrangler, /"database_id"\s*:\s*"17e68a41-1d58-4a36-8a63-47c3e32443c4"/)
+assert.doesNotMatch(wrangler,/orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301/)
 assert.doesNotMatch(sql, /(?:ALTER|DROP)\s+TABLE\s+(?:orders|order_items|payments|workshop_tasks)\b/i)
 assert.doesNotMatch(sql, /(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:orders|order_items|payments|workshop_tasks)\b/i)
 
-const migrationWorkflow = fs.readFileSync('.github/workflows/stage04-branch2-migration-0083.yml', 'utf8')
-// This one-off Oct09 migration was deliberately archived on Oct30. It must
-// remain inert even under manual workflow_dispatch: do not re-enable old remote
-// D1 commands just to satisfy a frozen historical workflow-source assertion.
-assert.match(migrationWorkflow, /Archived Branch2 legacy job/)
-assert.match(migrationWorkflow, /workflow_dispatch:/)
-assert.match(migrationWorkflow, /archived:\s*\n\s*if: false/)
-assert.doesNotMatch(migrationWorkflow, /d1 execute[^\n]*--remote|wrangler deploy|wrangler versions deploy/)
-assert.doesNotMatch(migrationWorkflow, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+const migrationWorkflow = fs.readFileSync('.github/workflows/main-stage04-dormant-schema-20261018.yml', 'utf8')
+assert.match(migrationWorkflow, /GITHUB_REF_NAME" == main/)
+assert.match(migrationWorkflow, /d1 execute orders_db_prod --remote --config wrangler\.jsonc/)
+assert.match(migrationWorkflow, /database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+assert.match(migrationWorkflow, /Exact Production identity and migration scope/)
+assert.match(migrationWorkflow, /stage04-prod-before\.json/)
+assert.doesNotMatch(migrationWorkflow, /d1 execute orders_db_branch2/)
 const db = new DatabaseSync(':memory:')
 db.exec('PRAGMA foreign_keys = ON;')
 db.exec('CREATE TABLE orders (id INTEGER PRIMARY KEY, total_amount INTEGER NOT NULL); INSERT INTO orders VALUES (1,12345)')

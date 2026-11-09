@@ -27,7 +27,49 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
-
+const stocktakeSafeDefaultsManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-safe-defaults-frontend-manifest.json'), 'utf8'))
+if (stocktakeSafeDefaultsManifest?.version !== 1 || stocktakeSafeDefaultsManifest?.revision !== 'stocktake-safe-defaults-r1') throw new Error('Stocktake safe-default frontend manifest invalid')
+const stocktakeSafeDefaultsBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STOCKTAKE_SAFE_DEFAULTS_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stocktakeSafeDefaultsManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stocktakeSafeDefaultsBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stocktake safe-default frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stocktake safe-default after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stocktakeSafeDefaultsBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stocktake safe-default predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STOCKTAKE_SAFE_DEFAULTS_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STOCKTAKE SAFE-DEFAULT FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
@@ -93,125 +135,29 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
-const workshopUiR1Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/workshop-ui-r1-frontend-manifest.json'), 'utf8'))
-if (workshopUiR1Manifest?.version !== 1 || workshopUiR1Manifest?.revision !== 'workshop-ui-r1') throw new Error('Workshop UI R1 frontend manifest invalid')
-const workshopUiR1BlobSha = (value) => {
+const workshopMainSyncManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/workshop-main-sync-20261007-runtime-manifest.json'), 'utf8'))
+if (workshopMainSyncManifest?.version !== 1 || workshopMainSyncManifest?.revision !== 'workshop-main-sync-20261007') throw new Error('Workshop main sync frontend manifest invalid')
+const workshopMainSyncFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.WORKSHOP_UI_R1_FRONTEND_NORMALIZED) {
+if (!process.env.WORKSHOP_MAIN_SYNC_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(workshopUiR1Manifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (workshopUiR1BlobSha(actual) !== delta.afterGitBlob) throw new Error('Workshop UI R1 frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (workshopUiR1BlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Workshop UI R1 predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, WORKSHOP_UI_R1_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('WORKSHOP UI R1 FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const orderFilterSectorIsolationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-filter-sector-isolation-r1-frontend-manifest.json'), 'utf8'))
-if (orderFilterSectorIsolationManifest?.version !== 1 || orderFilterSectorIsolationManifest?.revision !== 'order-filter-sector-isolation-r1') throw new Error('Order filter sector isolation frontend manifest invalid')
-const orderFilterSectorIsolationBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.ORDER_FILTER_SECTOR_ISOLATION_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(orderFilterSectorIsolationManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderFilterSectorIsolationBlobSha(actual) !== delta.afterGitBlob) throw new Error('Order filter sector isolation frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (orderFilterSectorIsolationBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Order filter sector isolation predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, ORDER_FILTER_SECTOR_ISOLATION_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER FILTER SECTOR ISOLATION FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const kaspiWorkshopInvoiceR1FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-workshop-invoice-r1-runtime-manifest.json'), 'utf8'))
-if (kaspiWorkshopInvoiceR1FrontendManifest?.version !== 1 || kaspiWorkshopInvoiceR1FrontendManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 frontend manifest invalid')
-const kaspiWorkshopInvoiceR1FrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.KASPI_WORKSHOP_INVOICE_R1_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(kaspiWorkshopInvoiceR1FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(workshopMainSyncManifest.files || {})) {
       if (!relative.startsWith('src/')) continue
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiWorkshopInvoiceR1FrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Workshop invoice R1 frontend drifted: ' + relative)
+      if (workshopMainSyncFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Workshop main sync frontend drifted: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiWorkshopInvoiceR1FrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Workshop invoice R1 frontend predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_WORKSHOP_INVOICE_R1_FRONTEND_NORMALIZED: '1' } })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI WORKSHOP INVOICE R1 FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const kaspiMainParityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-main-parity-20261007-frontend-manifest.json'), 'utf8'))
-if (kaspiMainParityFrontendManifest?.version !== 1 || kaspiMainParityFrontendManifest?.revision !== 'kaspi-main-parity-20261007-frontend') throw new Error('Kaspi main parity frontend manifest invalid')
-const kaspiMainParityBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.KASPI_MAIN_PARITY_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(kaspiMainParityFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiMainParityBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi main parity frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiMainParityBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi main parity predecessor fixture drifted: ' + relative)
+      if (workshopMainSyncFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Workshop main sync frontend predecessor fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_MAIN_PARITY_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, WORKSHOP_MAIN_SYNC_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -219,109 +165,42 @@ if (!process.env.KASPI_MAIN_PARITY_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI MAIN PARITY FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('WORKSHOP MAIN SYNC FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 
-const kaspiCreateTabFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-create-tab-ux-20261007-frontend-manifest.json'), 'utf8'))
-if (kaspiCreateTabFrontendManifest?.version !== 1 || kaspiCreateTabFrontendManifest?.revision !== 'kaspi-create-tab-ux-20261007-frontend') throw new Error('Kaspi Create tab frontend manifest invalid')
-const kaspiCreateTabBlobSha = (value) => {
+const kaspiProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-production-runtime-20261007-manifest.json'), 'utf8'))
+if (kaspiProductionFrontendManifest?.version !== 1 || kaspiProductionFrontendManifest?.revision !== 'kaspi-production-runtime-20261007') throw new Error('Kaspi Production frontend manifest invalid')
+const kaspiProductionFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.KASPI_CREATE_TAB_FRONTEND_NORMALIZED) {
+if (!process.env.KASPI_PRODUCTION_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(kaspiCreateTabFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiCreateTabBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Create tab frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiCreateTabBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Create tab predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_CREATE_TAB_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI CREATE TAB FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const kaspiR2AuditFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-r2-audit-20261007-frontend-manifest.json'), 'utf8'))
-if (kaspiR2AuditFrontendManifest?.version !== 1 || kaspiR2AuditFrontendManifest?.revision !== 'kaspi-r2-audit-20261007-frontend') throw new Error('Kaspi R2 audit frontend manifest invalid')
-const kaspiR2AuditFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.KASPI_R2_AUDIT_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(kaspiR2AuditFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiR2AuditFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi R2 audit frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiR2AuditFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi R2 audit predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_R2_AUDIT_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI R2 AUDIT FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const kaspiSharedOrdersR2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-shared-orders-r2-20261006-runtime-manifest.json'), 'utf8'))
-if (kaspiSharedOrdersR2FrontendManifest?.version !== 1 || kaspiSharedOrdersR2FrontendManifest?.revision !== 'kaspi-shared-orders-r2-20261006-runtime') throw new Error('Kaspi shared Orders R2 frontend manifest invalid')
-const kaspiSharedOrdersR2FrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.KASPI_SHARED_ORDERS_R2_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(kaspiSharedOrdersR2FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(kaspiProductionFrontendManifest.files || {})) {
       if (!relative.startsWith('src/')) continue
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiSharedOrdersR2FrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi shared Orders R2 frontend drifted: ' + relative)
+      if (kaspiProductionFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Production frontend drifted: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (kaspiSharedOrdersR2FrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi shared Orders R2 frontend predecessor fixture drifted: ' + relative)
+      if (kaspiProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Production frontend predecessor fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_SHARED_ORDERS_R2_FRONTEND_NORMALIZED: '1' },
-    })
+    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_PRODUCTION_FRONTEND_NORMALIZED: '1' } })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI SHARED ORDERS R2 FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('KASPI PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
+
+
 
 const arrivalChildAudienceFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-child-audience-20261006-runtime-manifest.json'), 'utf8'))
 if (arrivalChildAudienceFrontendManifest?.version !== 1 || arrivalChildAudienceFrontendManifest?.revision !== 'arrival-child-audience-20261006-runtime') throw new Error('Arrival child-audience frontend manifest invalid')
@@ -355,33 +234,32 @@ if (!process.env.ARRIVAL_CHILD_AUDIENCE_FRONTEND_NORMALIZED) {
   process.exit(0)
 }
 
-const kaspiSeparationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'))
-if (kaspiSeparationFrontendManifest?.version !== 1 || kaspiSeparationFrontendManifest?.revision !== 'kaspi-order-separation-20261006-runtime') throw new Error('Kaspi order separation frontend manifest invalid')
-const kaspiSeparationFrontendBlobSha = (value) => {
+const returnExchangeProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-production-final-20261006-frontend-manifest.json'), 'utf8'))
+if (returnExchangeProductionFrontendManifest?.version !== 1 || returnExchangeProductionFrontendManifest?.revision !== 'return-exchange-production-final-20261006-frontend') throw new Error('Return/Exchange Production frontend manifest invalid')
+const returnExchangeProductionFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.KASPI_ORDER_SEPARATION_FRONTEND_NORMALIZED) {
+if (!process.env.RETURN_EXCHANGE_PRODUCTION_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(kaspiSeparationFrontendManifest.files || {})) {
-      if (!relative.startsWith('src/')) continue
+    for (const [relative, delta] of Object.entries(returnExchangeProductionFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (kaspiSeparationFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi order separation frontend drifted: ' + relative)
+      if (returnExchangeProductionFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange Production frontend drifted: ' + relative)
       originals.set(relative, actual)
       if (delta.absentBefore) {
         fs.unlinkSync(absolute)
       } else {
         const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-        if (kaspiSeparationFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi order separation frontend predecessor fixture drifted: ' + relative)
+        if (returnExchangeProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange Production frontend predecessor fixture drifted: ' + relative)
         fs.writeFileSync(absolute, baseline)
       }
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, KASPI_ORDER_SEPARATION_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, RETURN_EXCHANGE_PRODUCTION_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -393,393 +271,32 @@ if (!process.env.KASPI_ORDER_SEPARATION_FRONTEND_NORMALIZED) {
     }
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('KASPI ORDER SEPARATION FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('RETURN / EXCHANGE PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-
-const exchangeFinalAuditFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-final-audit-20261006-frontend-manifest.json'), 'utf8'))
-if (exchangeFinalAuditFrontendManifest?.version !== 1 || exchangeFinalAuditFrontendManifest?.revision !== 'exchange-final-audit-20261006-frontend') throw new Error('Exchange final audit frontend manifest invalid')
-const exchangeFinalAuditFrontendBlobSha = (value) => {
+const exchangeNotIssuedFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-not-issued-r1-frontend-manifest.json'), 'utf8'))
+if (exchangeNotIssuedFrontendManifest?.version !== 1 || exchangeNotIssuedFrontendManifest?.revision !== 'exchange-not-issued-r1-frontend') throw new Error('Exchange not-issued frontend manifest invalid')
+const exchangeNotIssuedFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.EXCHANGE_FINAL_AUDIT_FRONTEND_NORMALIZED) {
+if (!process.env.EXCHANGE_NOT_ISSUED_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(exchangeFinalAuditFrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(exchangeNotIssuedFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (exchangeFinalAuditFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Exchange final audit frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (exchangeFinalAuditFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Exchange final audit frontend predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, EXCHANGE_FINAL_AUDIT_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) {
-      const absolute = path.join(root, relative)
-      fs.mkdirSync(path.dirname(absolute), { recursive: true })
-      fs.writeFileSync(absolute, actual)
-    }
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('EXCHANGE FINAL AUDIT FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const exchangeHumanUxFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-human-ux-20261006-frontend-manifest.json'), 'utf8'))
-if (exchangeHumanUxFrontendManifest?.version !== 1 || exchangeHumanUxFrontendManifest?.revision !== 'exchange-human-ux-20261006-frontend') throw new Error('Exchange human UX frontend manifest invalid')
-const exchangeHumanUxFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.EXCHANGE_HUMAN_UX_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(exchangeHumanUxFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (exchangeHumanUxFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Exchange human UX frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (exchangeHumanUxFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Exchange human UX frontend predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, EXCHANGE_HUMAN_UX_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) {
-      const absolute = path.join(root, relative)
-      fs.mkdirSync(path.dirname(absolute), { recursive: true })
-      fs.writeFileSync(absolute, actual)
-    }
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('EXCHANGE HUMAN UX FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const sourceDefaultsFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-frontend-manifest.json'), 'utf8'))
-if (sourceDefaultsFrontendManifest?.version !== 1 || sourceDefaultsFrontendManifest?.revision !== 'return-exchange-source-defaults-20261005-frontend') throw new Error('Return/Exchange source-default frontend manifest invalid')
-const sourceDefaultsFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.RETURN_EXCHANGE_SOURCE_DEFAULTS_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(sourceDefaultsFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (sourceDefaultsFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange source-default frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (sourceDefaultsFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange source-default frontend predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, RETURN_EXCHANGE_SOURCE_DEFAULTS_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('RETURN / EXCHANGE SOURCE DEFAULTS FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const returnSmartUxManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-smart-ux-20261005-frontend-manifest.json'), 'utf8'))
-if (returnSmartUxManifest?.version !== 1 || returnSmartUxManifest?.revision !== 'return-smart-ux-20261005-frontend') throw new Error('Return smart UX frontend manifest invalid')
-const returnSmartUxBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.RETURN_SMART_UX_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(returnSmartUxManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (returnSmartUxBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return smart UX frontend drifted: ' + relative)
-      originals.set(relative, actual)
-      if (delta.absentBefore) {
-        fs.unlinkSync(absolute)
-      } else {
-        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-        if (returnSmartUxBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return smart UX predecessor fixture drifted: ' + relative)
-        fs.writeFileSync(absolute, baseline)
-      }
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, RETURN_SMART_UX_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) {
-      const absolute = path.join(root, relative)
-      fs.mkdirSync(path.dirname(absolute), { recursive: true })
-      fs.writeFileSync(absolute, actual)
-    }
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('RETURN SMART UX FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const returnAuditRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-ux-audit-20261005-runtime-manifest.json'), 'utf8'))
-if (returnAuditRuntimeManifest?.version !== 1 || returnAuditRuntimeManifest?.revision !== 'return-ux-audit-20261005-runtime') throw new Error('Return UX audit runtime manifest invalid')
-const returnAuditBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.RETURN_UX_AUDIT_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(returnAuditRuntimeManifest.files || {})) {
-      if (!relative.startsWith('src/')) continue
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (returnAuditBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return UX audit frontend drifted: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (returnAuditBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return UX audit predecessor fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, RETURN_UX_AUDIT_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('RETURN UX AUDIT FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const exchangeSetV2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-frontend-manifest.json'), 'utf8'))
-if (exchangeSetV2FrontendManifest?.version !== 1 || exchangeSetV2FrontendManifest?.revision !== 'exchange-set-v2-20261005-frontend') throw new Error('Exchange Set V2 frontend manifest invalid')
-const exchangeSetV2FrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.EXCHANGE_SET_V2_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(exchangeSetV2FrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (exchangeSetV2FrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Exchange Set V2 frontend drifted: ' + relative)
-      originals.set(relative, actual)
-      if (delta.absentBefore) {
-        fs.unlinkSync(absolute)
-      } else {
-        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-        if (exchangeSetV2FrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Exchange Set V2 frontend predecessor fixture drifted: ' + relative)
-        fs.writeFileSync(absolute, baseline)
-      }
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, EXCHANGE_SET_V2_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) {
-      const absolute = path.join(root, relative)
-      fs.mkdirSync(path.dirname(absolute), { recursive: true })
-      fs.writeFileSync(absolute, actual)
-    }
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('EXCHANGE SET V2 FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const mainRuntimeSync20261005FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261005-frontend-manifest.json'), 'utf8'))
-if (mainRuntimeSync20261005FrontendManifest?.version !== 1 || mainRuntimeSync20261005FrontendManifest?.revision !== 'branch2-main-runtime-sync-20261005-frontend') throw new Error('Branch2/main runtime sync 20261005 Frontend manifest invalid')
-const mainRuntimeSync20261005FrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_20261005_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(mainRuntimeSync20261005FrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (mainRuntimeSync20261005FrontendBlobSha(actual) !== delta.afterGitBlob) {
-        throw new Error('Branch2/main runtime sync 20261005 Frontend drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.absentBefore) {
-        fs.unlinkSync(absolute)
-      } else {
-        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-        if (mainRuntimeSync20261005FrontendBlobSha(baseline) !== delta.beforeGitBlob) {
-          throw new Error('Branch2/main runtime sync 20261005 Frontend predecessor fixture drifted: ' + relative)
-        }
-        fs.writeFileSync(absolute, baseline)
-      }
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_20261005_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) {
-      const absolute = path.join(root, relative)
-      fs.mkdirSync(path.dirname(absolute), { recursive: true })
-      fs.writeFileSync(absolute, actual)
-    }
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 / MAIN RUNTIME SYNC 20261005 FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const mainRuntimeSyncFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-frontend-manifest.json'), 'utf8'))
-if (mainRuntimeSyncFrontendManifest?.version !== 1 || mainRuntimeSyncFrontendManifest?.revision !== 'branch2-main-runtime-sync-20261002-frontend') throw new Error('Branch2/main runtime sync frontend manifest invalid')
-const mainRuntimeSyncFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(mainRuntimeSyncFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (mainRuntimeSyncFrontendBlobSha(actual) !== delta.afterGitBlob) {
-        throw new Error('Branch2/main runtime sync frontend drifted: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (mainRuntimeSyncFrontendBlobSha(baseline) !== delta.beforeGitBlob) {
-        throw new Error('Branch2/main runtime sync frontend predecessor fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 / MAIN RUNTIME SYNC FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const h9cFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-itemized-multi-exchange-frontend-manifest.json'), 'utf8'))
-if (h9cFrontendManifest?.version !== 1 || h9cFrontendManifest?.revision !== 'stage03-h9c-itemized-multi-exchange-frontend') throw new Error('H9C frontend manifest invalid')
-const h9cFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.H9C_ITEMIZED_MULTI_EXCHANGE_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(h9cFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (h9cFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('H9C frontend changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (h9cFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('H9C frontend predecessor fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, H9C_ITEMIZED_MULTI_EXCHANGE_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H9C ITEMIZED MULTI-EXCHANGE FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const branch2SessionHotpathFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-branch2-frontend-manifest.json'), 'utf8'))
-if (branch2SessionHotpathFrontendManifest?.version !== 1 || branch2SessionHotpathFrontendManifest?.revision !== 'branch2-session-hotpath-frontend-r1') throw new Error('Branch2 session hotpath frontend manifest invalid')
-const branch2SessionHotpathFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(branch2SessionHotpathFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (branch2SessionHotpathFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Branch2 session hotpath frontend changed beyond exact manifest: ' + relative)
+      if (exchangeNotIssuedFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Exchange not-issued frontend changed beyond exact manifest: ' + relative)
       }
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Branch2 session hotpath frontend after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Exchange not-issued frontend after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (branch2SessionHotpathFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Branch2 session hotpath frontend predecessor reconstruction failed: ' + relative)
+      if (exchangeNotIssuedFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Exchange not-issued frontend predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
@@ -789,7 +306,7 @@ if (!process.env.BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, EXCHANGE_NOT_ISSUED_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -797,32 +314,32 @@ if (!process.env.BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 SESSION HOTPATH FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('EXCHANGE NOT-ISSUED R1 FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const authR6FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r6-password-manager-frontend-manifest.json'), 'utf8'))
-if (authR6FrontendManifest?.version !== 1 || authR6FrontendManifest?.revision !== 'auth-r6-password-manager-reliability') throw new Error('Auth R6 frontend structural manifest invalid')
-const authR6FrontendBlobSha = (value) => {
+const arrivalInlineRecoveryFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-inline-recovery-r1-frontend-manifest.json'), 'utf8'))
+if (arrivalInlineRecoveryFrontendManifest?.version !== 1 || arrivalInlineRecoveryFrontendManifest?.revision !== 'arrival-inline-recovery-r1-frontend') throw new Error('Arrival inline recovery frontend manifest invalid')
+const arrivalInlineRecoveryFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R6_FRONTEND_NORMALIZED) {
+if (!process.env.ARRIVAL_INLINE_RECOVERY_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(authR6FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(arrivalInlineRecoveryFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR6FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R6 frontend changed beyond exact manifest: ' + relative)
+      if (arrivalInlineRecoveryFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Arrival inline recovery frontend changed beyond exact manifest: ' + relative)
       }
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Auth R6 frontend after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Arrival inline recovery frontend after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (authR6FrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R6 frontend predecessor reconstruction failed: ' + relative)
+      if (arrivalInlineRecoveryFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Arrival inline recovery frontend predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
@@ -832,7 +349,7 @@ if (!process.env.AUTH_R6_FRONTEND_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R6_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, ARRIVAL_INLINE_RECOVERY_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -840,28 +357,114 @@ if (!process.env.AUTH_R6_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R6 FRONTEND STRUCTURAL LAYER PASSED — password-manager reliability delta is exact over accepted Auth R5 Branch2')
+  console.log('ARRIVAL INLINE RECOVERY FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const authR5FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r5-frontend-structural-manifest.json'), 'utf8'))
-if (authR5FrontendManifest?.version !== 1 || authR5FrontendManifest?.revision !== 'auth-r5-password-manager-frontend') throw new Error('Auth R5 frontend structural manifest invalid')
-const authR5FrontendBlobSha = (value) => {
+const arrivalAdminOnlyFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-admin-only-r1-frontend-manifest.json'), 'utf8'))
+if (arrivalAdminOnlyFrontendManifest?.version !== 1 || arrivalAdminOnlyFrontendManifest?.revision !== 'arrival-admin-only-r1-frontend') throw new Error('Arrival admin-only frontend manifest invalid')
+const arrivalAdminOnlyFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R5_FRONTEND_NORMALIZED) {
+if (!process.env.ARRIVAL_ADMIN_ONLY_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(authR5FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(arrivalAdminOnlyFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR5FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R5 frontend changed beyond exact manifest: ' + relative)
+      if (arrivalAdminOnlyFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Arrival admin-only frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Arrival admin-only frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (arrivalAdminOnlyFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Arrival admin-only frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_ADMIN_ONLY_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL ADMIN-ONLY FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const orderHistoryArrivalIntegrityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-history-arrival-integrity-r1-frontend-manifest.json'), 'utf8'))
+if (orderHistoryArrivalIntegrityFrontendManifest?.version !== 1 || orderHistoryArrivalIntegrityFrontendManifest?.revision !== 'order-history-arrival-integrity-r1-frontend') throw new Error('Order/Arrival integrity frontend manifest invalid')
+const orderHistoryArrivalIntegrityFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderHistoryArrivalIntegrityFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderHistoryArrivalIntegrityFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order/Arrival integrity frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order/Arrival integrity frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (orderHistoryArrivalIntegrityFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order/Arrival integrity frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER / ARRIVAL INTEGRITY FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const h9cProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-production-frontend-manifest.json'), 'utf8'))
+if (h9cProductionFrontendManifest?.version !== 1 || h9cProductionFrontendManifest?.revision !== 'stage03-h9c-production-frontend') throw new Error('H9C Production frontend manifest invalid')
+const h9cProductionFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.H9C_PRODUCTION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(h9cProductionFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (h9cProductionFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('H9C Production frontend changed beyond exact port: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (authR5FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R5 frontend predecessor fixture drifted: ' + relative)
+      if (h9cProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('H9C Production frontend predecessor fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -871,7 +474,7 @@ if (!process.env.AUTH_R5_FRONTEND_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R5_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, H9C_PRODUCTION_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -879,28 +482,28 @@ if (!process.env.AUTH_R5_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R5 FRONTEND STRUCTURAL LAYER PASSED — password-manager semantics are exact over accepted Auth R4 Branch2')
+  console.log('STAGE03-H9C PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const authR4TeamModalManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r4-team-modal-structural-manifest.json'), 'utf8'))
-if (authR4TeamModalManifest?.version !== 1 || authR4TeamModalManifest?.revision !== 'auth-r4-team-access-modal') throw new Error('Auth R4 Team modal structural manifest invalid')
-const authR4TeamModalBlobSha = (value) => {
+const stocktakeNavigationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-navigation-hotfix-frontend-manifest.json'), 'utf8'))
+if (stocktakeNavigationManifest?.version !== 1 || stocktakeNavigationManifest?.revision !== 'stocktake-navigation-hotfix-r1') throw new Error('Stocktake navigation hotfix manifest invalid')
+const stocktakeNavigationBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R4_TEAM_MODAL_NORMALIZED) {
+if (!process.env.STOCKTAKE_NAVIGATION_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(authR4TeamModalManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(stocktakeNavigationManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR4TeamModalBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R4 Team modal changed beyond exact manifest: ' + relative)
+      if (stocktakeNavigationBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stocktake navigation changed beyond exact hotfix: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (authR4TeamModalBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R4 Team modal predecessor fixture drifted: ' + relative)
+      if (stocktakeNavigationBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stocktake navigation baseline fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -910,7 +513,7 @@ if (!process.env.AUTH_R4_TEAM_MODAL_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R4_TEAM_MODAL_NORMALIZED: '1' },
+      env: { ...process.env, STOCKTAKE_NAVIGATION_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -918,28 +521,28 @@ if (!process.env.AUTH_R4_TEAM_MODAL_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R4 TEAM MODAL STRUCTURAL LAYER PASSED — account editor modal is exact over accepted Auth R3 Branch2')
+  console.log('STOCKTAKE NAVIGATION STRUCTURAL LAYER PASSED — exact partial-count navigation hotfix preserved over current main')
   process.exit(0)
 }
-const auth_r3_team_frontend_normalizedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r3-team-frontend-structural-manifest.json'), 'utf8'))
-if (auth_r3_team_frontend_normalizedManifest?.version !== 1 || auth_r3_team_frontend_normalizedManifest?.revision !== 'auth-r3-team-access-frontend') throw new Error('Auth R3 Team frontend structural manifest invalid')
-const auth_r3_team_frontend_normalizedBlobSha = (value) => {
+const authProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-frontend-manifest.json'), 'utf8'))
+if (authProductionFrontendManifest?.version !== 1 || authProductionFrontendManifest?.revision !== 'auth-production-port-r2-r8b-frontend') throw new Error('Auth Production frontend manifest invalid')
+const authProductionFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R3_TEAM_FRONTEND_NORMALIZED) {
+if (!process.env.AUTH_PRODUCTION_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(auth_r3_team_frontend_normalizedManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(authProductionFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (auth_r3_team_frontend_normalizedBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R3 Team frontend changed beyond exact manifest: ' + relative)
+      if (authProductionFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Auth Production frontend changed beyond exact port: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (auth_r3_team_frontend_normalizedBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R3 Team frontend predecessor fixture drifted: ' + relative)
+      if (authProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Auth Production frontend baseline fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -949,7 +552,7 @@ if (!process.env.AUTH_R3_TEAM_FRONTEND_NORMALIZED) {
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R3_TEAM_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, AUTH_PRODUCTION_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -957,38 +560,42 @@ if (!process.env.AUTH_R3_TEAM_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R3 TEAM FRONTEND STRUCTURAL LAYER PASSED — Team access UX is exact over Auth R2 Branch2')
+  console.log('AUTH PRODUCTION FRONTEND STRUCTURAL LAYER PASSED — exact R2-R8B account-session UI port preserved over current main')
   process.exit(0)
 }
-const authR2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r2-frontend-structural-manifest.json'), 'utf8'))
-if (authR2FrontendManifest?.version !== 1 || authR2FrontendManifest?.revision !== 'auth-r2-account-sessions-frontend') throw new Error('Auth R2 frontend structural manifest invalid')
-const authR2FrontendBlobSha = (value) => {
+const sessionHotpathFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-frontend-manifest.json'), 'utf8'))
+if (sessionHotpathFrontendManifest?.version !== 1 || sessionHotpathFrontendManifest?.revision !== 'session-hotpath-frontend-r1') throw new Error('Session hotpath frontend manifest invalid')
+const sessionHotpathFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.AUTH_R2_FRONTEND_NORMALIZED) {
+if (!process.env.SESSION_HOTPATH_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(authR2FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(sessionHotpathFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (authR2FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Auth R2 frontend changed beyond exact manifest: ' + relative)
+      if (sessionHotpathFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Session hotpath frontend changed beyond exact manifest: ' + relative)
       }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (authR2FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Auth R2 frontend predecessor fixture drifted: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Session hotpath frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (sessionHotpathFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Session hotpath frontend predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
+      fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root,
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, AUTH_R2_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, SESSION_HOTPATH_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -996,7 +603,7 @@ if (!process.env.AUTH_R2_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH R2 FRONTEND STRUCTURAL LAYER PASSED — account-session UI delta is exact over the accepted Branch2 predecessor')
+  console.log('SESSION HOTPATH FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const r757FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-5-7-read-budget-frontend-manifest.json'), 'utf8'))
@@ -1071,159 +678,33 @@ if (!process.env.R7_READ_BUDGET_FRONTEND_NORMALIZED) {
   console.log('R7 READ-BUDGET FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const catalogGranularHistoryFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-granular-history-r1-frontend-manifest.json'), 'utf8'))
-if (catalogGranularHistoryFrontendManifest?.version !== 1 || catalogGranularHistoryFrontendManifest?.revision !== 'catalog-granular-history-ui-r1') throw new Error('Catalog granular history frontend manifest invalid')
-const catalogGranularHistoryFrontendBlobSha = (value) => {
+const stage03ProductionRuntimeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-production-runtime-frontend-manifest.json'), 'utf8'))
+if (stage03ProductionRuntimeFrontendManifest?.version !== 1 || stage03ProductionRuntimeFrontendManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production frontend manifest invalid')
+const stage03ProductionRuntimeFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_GRANULAR_HISTORY_FRONTEND_NORMALIZED) {
+if (!process.env.STAGE03_PRODUCTION_RUNTIME_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogGranularHistoryFrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(stage03ProductionRuntimeFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 Production frontend current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogGranularHistoryFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog granular history frontend changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogGranularHistoryFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog granular history frontend baseline fixture drifted: ' + relative)
-      }
+      if (stage03ProductionRuntimeFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03 Production frontend changed beyond exact promotion manifest: ' + relative)
       originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_GRANULAR_HISTORY_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG GRANULAR HISTORY FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogRetiredRecoveryFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-recovery-r1-frontend-manifest.json'), 'utf8'))
-if (catalogRetiredRecoveryFrontendManifest?.version !== 1 || catalogRetiredRecoveryFrontendManifest?.revision !== 'catalog-retired-recovery-ui-r1') throw new Error('Catalog retired recovery frontend manifest invalid')
-const catalogRetiredRecoveryFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_RETIRED_RECOVERY_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogRetiredRecoveryFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetiredRecoveryFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog retired recovery frontend changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogRetiredRecoveryFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog retired recovery frontend baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_RETIRED_RECOVERY_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RETIRED RECOVERY FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogReadyResumeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-ready-resume-r1-frontend-manifest.json'), 'utf8'))
-if (catalogReadyResumeFrontendManifest?.version !== 1 || catalogReadyResumeFrontendManifest?.revision !== 'catalog-ready-resume-ui-r1') throw new Error('Catalog ready/resume frontend manifest invalid')
-const catalogReadyResumeFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_READY_RESUME_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogReadyResumeFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogReadyResumeFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog ready/resume frontend changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogReadyResumeFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog ready/resume frontend baseline fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_READY_RESUME_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG READY/RESUME FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogLocalRetirementFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-local-retirement-frontend-manifest.json'), 'utf8'))
-if (catalogLocalRetirementFrontendManifest?.version !== 1 || catalogLocalRetirementFrontendManifest?.revision !== 'catalog-local-retirement-frontend-r1') throw new Error('Catalog local retirement frontend manifest invalid')
-const catalogLocalRetirementFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_LOCAL_RETIREMENT_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogLocalRetirementFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogLocalRetirementFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog local retirement frontend changed beyond exact manifest: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.mode === 'add') {
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+        if (stage03ProductionRuntimeFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03 Production frontend baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
         fs.unlinkSync(absolute)
-        continue
       }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogLocalRetirementFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog local retirement frontend baseline fixture drifted: ' + relative)
-      }
-      fs.writeFileSync(absolute, baseline)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_LOCAL_RETIREMENT_FRONTEND_NORMALIZED: '1' },
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_PRODUCTION_RUNTIME_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -1235,191 +716,51 @@ if (!process.env.CATALOG_LOCAL_RETIREMENT_FRONTEND_NORMALIZED) {
     }
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG LOCAL RETIREMENT FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('STAGE03 PRODUCTION FRONTEND EXACT PROMOTION LAYER PASSED')
   process.exit(0)
 }
-
-const orderRetiredConfirmationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-confirmation-frontend-manifest.json'), 'utf8'))
-if (orderRetiredConfirmationFrontendManifest?.version !== 1 || orderRetiredConfirmationFrontendManifest?.revision !== 'order-retired-confirmation-ui-r1') throw new Error('Order retired confirmation frontend manifest invalid')
-const orderRetiredConfirmationFrontendBlobSha = (value) => {
+const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-frontend-manifest.json'), 'utf8'))
+if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-frontend-r1') throw new Error('Catalog retirement main-port frontend manifest invalid')
+const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.ORDER_RETIRED_CONFIRMATION_FRONTEND_NORMALIZED) {
+if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(orderRetiredConfirmationFrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(catalogRetirementMainPortManifest.files || {})) {
       const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port frontend current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderRetiredConfirmationFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Order retired confirmation frontend changed beyond exact manifest: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (orderRetiredConfirmationFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Order retired confirmation frontend baseline fixture drifted: ' + relative)
-      }
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port: ' + relative)
       originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, ORDER_RETIRED_CONFIRMATION_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER RETIRED CONFIRMATION FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogSafeRestoreFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-restore-branch2-frontend-manifest.json'), 'utf8'))
-if (catalogSafeRestoreFrontendManifest?.version !== 1 || catalogSafeRestoreFrontendManifest?.revision !== 'catalog-safe-restore-branch2-ui-r1') {
-  throw new Error('Catalog safe restore frontend manifest invalid')
-}
-const catalogSafeRestoreFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RESTORE_BRANCH2_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogSafeRestoreFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogSafeRestoreFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog safe restore frontend changed beyond exact manifest: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.added) {
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (catalogRetirementMainPortBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Catalog retirement main-port frontend baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
         fs.unlinkSync(absolute)
-        continue
       }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogSafeRestoreFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog safe restore frontend baseline fixture drifted: ' + relative)
-      }
-      fs.writeFileSync(absolute, baseline)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root,
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RESTORE_BRANCH2_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RESTORE BRANCH2 FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogRetirementHotfixFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-hotfix-frontend-manifest.json'), 'utf8'))
-if (catalogRetirementHotfixFrontendManifest?.version !== 1 || catalogRetirementHotfixFrontendManifest?.revision !== 'catalog-safe-retirement-hotfix-ui-r1') {
-  throw new Error('Catalog retirement hotfix frontend manifest invalid')
-}
-const catalogRetirementHotfixFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RETIREMENT_HOTFIX_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogRetirementHotfixFrontendManifest.files || {})) {
+    for (const [relative, actual] of originals) {
       const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetirementHotfixFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog retirement hotfix frontend changed beyond exact manifest: ' + relative)
-      }
-      originals.set(relative, actual)
-      if (delta.added) {
-        fs.unlinkSync(absolute)
-        continue
-      }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        const occurrences = reverted.split(replacement.afterBlock).length - 1
-        if (occurrences !== 1) throw new Error('Catalog retirement hotfix frontend after-block missing or ambiguous: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (catalogRetirementHotfixFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog retirement hotfix frontend predecessor reconstruction failed: ' + relative)
-      }
-      fs.writeFileSync(absolute, reverted)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
     }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RETIREMENT_HOTFIX_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RETIREMENT HOTFIX FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-
-const catalogSafeRetirementFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-branch2-frontend-manifest.json'), 'utf8'))
-if (catalogSafeRetirementFrontendManifest?.version !== 1 || catalogSafeRetirementFrontendManifest?.revision !== 'catalog-safe-retirement-branch2-ui-r1') {
-  throw new Error('Catalog safe retirement frontend manifest invalid')
-}
-const catalogSafeRetirementFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CATALOG_SAFE_RETIREMENT_BRANCH2_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(catalogSafeRetirementFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogSafeRetirementFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog safe retirement frontend changed beyond exact manifest: ' + relative)
-      }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        const occurrences = reverted.split(replacement.afterBlock).length - 1
-        if (occurrences !== 1) throw new Error('Catalog safe retirement frontend after-block missing or ambiguous: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (catalogSafeRetirementFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog safe retirement frontend predecessor reconstruction failed: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RETIREMENT_BRANCH2_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RETIREMENT BRANCH2 FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('CATALOG RETIREMENT MAIN-PORT FRONTEND EXACT RECONCILED MAIN PORT PASSED')
   process.exit(0)
 }
 const orderAvailabilityUxManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-availability-known-combination-ux-frontend-manifest.json'), 'utf8'))
@@ -1464,25 +805,25 @@ if (!process.env.ORDER_AVAILABILITY_KNOWN_COMBINATION_UX_NORMALIZED) {
   console.log('ORDER AVAILABILITY KNOWN-COMBINATION UX STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const catalogIntegrityBranch2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-branch2-frontend-manifest.json'), 'utf8'))
-if (catalogIntegrityBranch2FrontendManifest?.version !== 1 || catalogIntegrityBranch2FrontendManifest?.revision !== 'catalog-selection-retirement-integrity-r1-branch2') throw new Error('Catalog selection/retirement Branch2 frontend manifest invalid')
-const catalogIntegrityBranch2FrontendBlobSha = (value) => {
+const catalogIntegrityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-frontend-manifest.json'), 'utf8'))
+if (catalogIntegrityFrontendManifest?.version !== 1 || catalogIntegrityFrontendManifest?.revision !== 'catalog-selection-retirement-integrity-r1') throw new Error('Catalog selection/retirement frontend manifest invalid')
+const catalogIntegrityFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALIZED) {
+if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogIntegrityBranch2FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(catalogIntegrityFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogIntegrityBranch2FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog selection/retirement Branch2 frontend changed beyond exact manifest: ' + relative)
+      if (catalogIntegrityFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog selection/retirement frontend changed beyond exact manifest: ' + relative)
       }
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (catalogIntegrityBranch2FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog selection/retirement Branch2 frontend baseline fixture drifted: ' + relative)
+      if (catalogIntegrityFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog selection/retirement frontend baseline fixture drifted: ' + relative)
       }
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
@@ -1492,7 +833,7 @@ if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALI
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALIZED: '1' },
+      env: { ...process.env, CATALOG_SELECTION_RETIREMENT_INTEGRITY_FRONTEND_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -1500,7 +841,7 @@ if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALI
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SELECTION / RETIREMENT BRANCH2 FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('CATALOG SELECTION / RETIREMENT FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const resolverR12FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r12-catalog-consistency-frontend-manifest.json'), 'utf8'))
@@ -1564,639 +905,33 @@ if (!process.env.CATALOG_RESOLVER_R11_KNOWN_GENDER_NORMALIZED) {
   console.log('CATALOG RESOLVER R11 KNOWN-GENDER FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const stage03H11FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h11-product-price-analytics-frontend-manifest.json'), 'utf8'))
-if (stage03H11FrontendManifest?.version !== 1 || stage03H11FrontendManifest?.revision !== 'stage03-h11-product-price-analytics') throw new Error('Stage03-H11 frontend manifest invalid')
-const stage03H11FrontendBlobSha = (value) => {
+const clientZammlerProdRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-prod-runtime-frontend-manifest.json'), 'utf8'))
+if (clientZammlerProdRuntimeManifest?.version !== 1 || clientZammlerProdRuntimeManifest?.revision !== 'client-zammler-prod-runtime-20260924') throw new Error('CLIENT-ZAMMLER Production frontend manifest invalid')
+const clientZammlerProdFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.STAGE03_H11_PRODUCT_PRICE_ANALYTICS_FRONTEND_NORMALIZED) {
+if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(stage03H11FrontendManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H11FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H11 frontend changed beyond exact manifest: ' + relative)
+      if (clientZammlerProdFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend changed beyond exact manifest: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H11FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H11 frontend baseline fixture drifted: ' + relative)
+      if (clientZammlerProdFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, baseline)
     }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H11_PRODUCT_PRICE_ANALYTICS_FRONTEND_NORMALIZED: '1' }})
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_PROD_RUNTIME_FRONTEND_NORMALIZED: '1' }})
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H11 PRODUCT PRICE ANALYTICS FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H10FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h10-manual-return-policy-frontend-manifest.json'), 'utf8'))
-if (stage03H10FrontendManifest?.version !== 1 || stage03H10FrontendManifest?.revision !== 'stage03-h10-manual-return-policy') throw new Error('Stage03-H10 frontend manifest invalid')
-const stage03H10FrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H10_MANUAL_RETURN_POLICY_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H10FrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H10FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H10 frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H10FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H10 frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H10_MANUAL_RETURN_POLICY_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H10 MANUAL RETURN POLICY FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H9BFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9b-itemized-exchange-ui-frontend-manifest.json'), 'utf8'))
-if (stage03H9BFrontendManifest?.version !== 1 || stage03H9BFrontendManifest?.revision !== 'stage03-h9b-itemized-exchange-ui') throw new Error('Stage03-H9B frontend manifest invalid')
-const stage03H9BFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H9B_ITEMIZED_EXCHANGE_UI_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H9BFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H9BFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H9B frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H9BFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H9B frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H9B_ITEMIZED_EXCHANGE_UI_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H9B ITEMIZED EXCHANGE UI FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8GFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8g-direct-create-price-frontend-manifest.json'), 'utf8'))
-if (stage03H8GFrontendManifest?.version !== 1 || stage03H8GFrontendManifest?.revision !== 'stage03-h8g-direct-create-price') throw new Error('Stage03-H8G frontend manifest invalid')
-const stage03H8GFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8G_DIRECT_CREATE_PRICE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8GFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8GFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8G frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8GFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8G frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8G_DIRECT_CREATE_PRICE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8G DIRECT CREATE PRICE FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8FFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8f-direct-itemized-editor-frontend-manifest.json'), 'utf8'))
-if (stage03H8FFrontendManifest?.version !== 1 || stage03H8FFrontendManifest?.revision !== 'stage03-h8f-direct-itemized-editor') throw new Error('Stage03-H8F frontend manifest invalid')
-const stage03H8FFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8F_DIRECT_ITEMIZED_EDITOR_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8FFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8FFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8F frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8FFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8F frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8F_DIRECT_ITEMIZED_EDITOR_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8F DIRECT ITEMIZED EDITOR FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8EFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8e-itemized-content-editor-frontend-manifest.json'), 'utf8'))
-if (stage03H8EFrontendManifest?.version !== 1 || stage03H8EFrontendManifest?.revision !== 'stage03-h8e-itemized-content-editor') throw new Error('Stage03-H8E frontend manifest invalid')
-const stage03H8EFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8E_ITEMIZED_CONTENT_EDITOR_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8EFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8EFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8E frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8EFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8E frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8E_ITEMIZED_CONTENT_EDITOR_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8E ITEMIZED CONTENT EDITOR FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8CFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8c-itemized-price-correction-frontend-manifest.json'), 'utf8'))
-if (stage03H8CFrontendManifest?.version !== 1 || stage03H8CFrontendManifest?.revision !== 'stage03-h8c-itemized-price-correction') throw new Error('Stage03-H8C frontend manifest invalid')
-const stage03H8CFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8C_ITEMIZED_PRICE_CORRECTION_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8CFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8CFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8C frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8CFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8C frontend baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8C_ITEMIZED_PRICE_CORRECTION_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H8BManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8b-itemized-restricted-editor-frontend-manifest.json'), 'utf8'))
-if (stage03H8BManifest?.version !== 1 || stage03H8BManifest?.revision !== 'stage03-h8b-itemized-restricted-editor') throw new Error('Stage03-H8B frontend manifest invalid')
-const stage03H8BBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H8B_ITEMIZED_RESTRICTED_EDITOR_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H8BManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H8BBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8B frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H8BBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8B baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8B_ITEMIZED_RESTRICTED_EDITOR_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H7BManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h7b-itemized-create-activation-frontend-manifest.json'), 'utf8'))
-if (stage03H7BManifest?.version !== 1 || stage03H7BManifest?.revision !== 'stage03-h7b-itemized-create-activation') throw new Error('Stage03-H7B frontend manifest invalid')
-const stage03H7BBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H7B_ITEMIZED_CREATE_ACTIVATION_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H7BManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H7BBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03-H7B frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (stage03H7BBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03-H7B baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H7B_ITEMIZED_CREATE_ACTIVATION_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H7B FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const clientZammlerGUiPolishManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-g-ui-polish-frontend-manifest.json'), 'utf8'))
-if (clientZammlerGUiPolishManifest?.version !== 1 || clientZammlerGUiPolishManifest?.revision !== 'client-zammler-g-ui-polish') throw new Error('CLIENT-ZAMMLER-G frontend manifest invalid')
-const clientZammlerGBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CLIENT_ZAMMLER_G_UI_POLISH_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(clientZammlerGUiPolishManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerGBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER-G frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (clientZammlerGBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER-G baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_G_UI_POLISH_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CLIENT-ZAMMLER-G FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const clientZammlerFWorkshopInvoiceManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-f-workshop-invoice-frontend-manifest.json'), 'utf8'))
-if (clientZammlerFWorkshopInvoiceManifest?.version !== 1 || clientZammlerFWorkshopInvoiceManifest?.revision !== 'client-zammler-f-workshop-invoice') throw new Error('CLIENT-ZAMMLER-F frontend manifest invalid')
-const clientZammlerFBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CLIENT_ZAMMLER_F_WORKSHOP_INVOICE_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(clientZammlerFWorkshopInvoiceManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerFBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('CLIENT-ZAMMLER-F frontend changed beyond exact manifest: ' + relative)
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (clientZammlerFBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('CLIENT-ZAMMLER-F baseline fixture drifted: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_F_WORKSHOP_INVOICE_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CLIENT-ZAMMLER-F FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const clientZammlerEOrderListManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-e-order-list-frontend-manifest.json'), 'utf8'))
-if (clientZammlerEOrderListManifest?.version !== 1 || clientZammlerEOrderListManifest?.revision !== 'client-zammler-e-order-list') throw new Error('CLIENT-ZAMMLER-E frontend manifest invalid')
-const clientZammlerEFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.CLIENT_ZAMMLER_E_ORDER_LIST_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(clientZammlerEOrderListManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerEFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('CLIENT-ZAMMLER-E frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('CLIENT-ZAMMLER-E frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (clientZammlerEFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('CLIENT-ZAMMLER-E frontend predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CLIENT_ZAMMLER_E_ORDER_LIST_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CLIENT-ZAMMLER-E FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage04ZammlerCCreateFormManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage04-zammler-c-create-form-frontend-manifest.json'), 'utf8'))
-if (stage04ZammlerCCreateFormManifest?.version !== 1 || stage04ZammlerCCreateFormManifest?.revision !== 'stage04-zammler-c-create-form') throw new Error('Stage04-ZAMMLER-C frontend manifest invalid')
-const stage04ZammlerCBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE04_ZAMMLER_C_CREATE_FORM_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage04ZammlerCCreateFormManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage04ZammlerCBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage04-ZAMMLER-C frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage04-ZAMMLER-C frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage04ZammlerCBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage04-ZAMMLER-C predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE04_ZAMMLER_C_CREATE_FORM_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE04-ZAMMLER-C FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage04ZammlerBDueTimeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage04-zammler-b-due-time-frontend-manifest.json'), 'utf8'))
-if (stage04ZammlerBDueTimeFrontendManifest?.version !== 1 || stage04ZammlerBDueTimeFrontendManifest?.revision !== 'stage04-zammler-b-due-time-plumbing') throw new Error('Stage04-ZAMMLER-B frontend manifest invalid')
-const stage04ZammlerBFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE04_ZAMMLER_B_DUE_TIME_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage04ZammlerBDueTimeFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage04ZammlerBFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage04-ZAMMLER-B frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage04-ZAMMLER-B frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage04ZammlerBFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage04-ZAMMLER-B frontend predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE04_ZAMMLER_B_DUE_TIME_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE04-ZAMMLER-B FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6GItemizedCreateReadinessManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6g-itemized-create-readiness-frontend-manifest.json'), 'utf8'))
-if (stage03H6GItemizedCreateReadinessManifest?.version !== 1 || stage03H6GItemizedCreateReadinessManifest?.revision !== 'stage03-h6g-itemized-create-readiness') throw new Error('Stage03-H6G itemized Create readiness frontend manifest invalid')
-const stage03H6GBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6G_ITEMIZED_CREATE_READINESS_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6GItemizedCreateReadinessManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6GBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6G frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (replacement.afterBlock && !reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6G after-block missing: ' + relative)
-        reverted = replacement.afterBlock ? reverted.replace(replacement.afterBlock, replacement.beforeBlock) : reverted
-      }
-      if (stage03H6GBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6G predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6G_ITEMIZED_CREATE_READINESS_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6G ITEMIZED CREATE READINESS FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6DItemizedExchangeGuardFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6d-itemized-exchange-guard-frontend-manifest.json'), 'utf8'))
-if (stage03H6DItemizedExchangeGuardFrontendManifest?.version !== 1 || stage03H6DItemizedExchangeGuardFrontendManifest?.revision !== 'stage03-h6d-itemized-exchange-guard') throw new Error('Stage03-H6D itemized exchange guard frontend manifest invalid')
-const stage03H6DFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6DItemizedExchangeGuardFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6DFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6D frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6D frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6DFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6D frontend predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6D ITEMIZED EXCHANGE GUARD FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6BShadowCreatePricingManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6b-shadow-create-pricing-frontend-manifest.json'), 'utf8'))
-if (stage03H6BShadowCreatePricingManifest?.version !== 1 || stage03H6BShadowCreatePricingManifest?.revision !== 'stage03-h6b-shadow-create-pricing') throw new Error('Stage03-H6B shadow Create pricing frontend manifest invalid')
-const stage03H6BBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6B_SHADOW_CREATE_PRICING_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6BShadowCreatePricingManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6BBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6B frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6B frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6BBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6B frontend predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6B_SHADOW_CREATE_PRICING_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6B SHADOW CREATE PRICING FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H6AItemizedEditGuardFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6a-itemized-edit-guard-frontend-manifest.json'), 'utf8'))
-if (stage03H6AItemizedEditGuardFrontendManifest?.version !== 1 || stage03H6AItemizedEditGuardFrontendManifest?.revision !== 'stage03-h6a-itemized-edit-guard') throw new Error('Stage03-H6A itemized edit guard frontend manifest invalid')
-const stage03H6AFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H6A_ITEMIZED_EDIT_GUARD_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H6AItemizedEditGuardFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H6AFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6A frontend changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6A frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H6AFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6A frontend predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6A_ITEMIZED_EDIT_GUARD_FRONTEND_NORMALIZED: '1' }})
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H6A ITEMIZED EDIT GUARD FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03H5CatalogPriceResolverManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h5-catalog-price-resolver-frontend-manifest.json'), 'utf8'))
-if (stage03H5CatalogPriceResolverManifest?.version !== 1 || stage03H5CatalogPriceResolverManifest?.revision !== 'stage03-h5-catalog-price-resolver') throw new Error('Stage03-H5 Catalog price resolver frontend manifest invalid')
-const stage03H5CatalogPriceResolverBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_H5_CATALOG_PRICE_RESOLVER_NORMALIZED) {
-  const originals = new Map()
-  const added = []
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03H5CatalogPriceResolverManifest.modifiedFiles || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H5CatalogPriceResolverBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H5 Catalog price resolver changed beyond exact manifest: ' + relative)
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H5 Catalog price resolver after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03H5CatalogPriceResolverBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H5 Catalog price resolver predecessor reconstruction failed: ' + relative)
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    for (const [relative, delta] of Object.entries(stage03H5CatalogPriceResolverManifest.addedFiles || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03H5CatalogPriceResolverBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H5 added frontend file changed beyond exact manifest: ' + relative)
-      added.push([relative, actual])
-      fs.unlinkSync(absolute)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, STAGE03_H5_CATALOG_PRICE_RESOLVER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-    for (const [relative, actual] of added) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-H5 CATALOG PRICE RESOLVER FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
-const stage03F1PricingTypesManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-f1-pricing-types-frontend-manifest.json'), 'utf8'))
-if (stage03F1PricingTypesManifest?.version !== 1 || stage03F1PricingTypesManifest?.revision !== 'stage03-f1-pricing-types') throw new Error('Stage03-F1 pricing types frontend manifest invalid')
-const stage03F1PricingTypesBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.STAGE03_F1_PRICING_TYPES_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(stage03F1PricingTypesManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage03F1PricingTypesBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Stage03-F1 pricing types changed beyond exact manifest: ' + relative)
-      }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-F1 pricing types after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (stage03F1PricingTypesBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Stage03-F1 pricing types predecessor reconstruction failed: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, STAGE03_F1_PRICING_TYPES_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('STAGE03-F1 PRICING TYPES FRONTEND STRUCTURAL LAYER PASSED')
+  console.log('CLIENT-ZAMMLER PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const stage03C2PricePolishManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c2-price-ui-polish-frontend-manifest.json'), 'utf8'))

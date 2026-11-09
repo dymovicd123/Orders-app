@@ -231,9 +231,8 @@ export function assertCatalogGenderAllowedForScope(
 ) {
   const scope = normalizeCatalogProductGenderScope(scopeInput);
   const gender = normalizeCatalogCombinationGender(genderInput);
-  // Product scope is the default only. An explicitly confirmed concrete gender
-  // is part of SKU identity; an opposite-gender combination is not a catalog anomaly.
-  // Do not invent or merge stock for either gender.
+  // Explicit SKU gender is factual identity; product scope remains only a default.
+  // Never change, merge, or invent stock while accepting a real opposite-gender SKU.
   if (gender && gender !== 'ЖЕН' && gender !== 'МУЖ') {
     const productLabel = cleanText(productName) ? ` «${cleanText(productName)}»` : '';
     throw new Error(`Неизвестный пол варианта товара${productLabel}. Выберите «ЖЕН» или «МУЖ».`);

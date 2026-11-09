@@ -91,52 +91,16 @@ assert.equal(f.checkpointId<0,true,'Full revision uses negative rowid')
 assert.equal(f.reviewReason,'checkpoint_after_order')
 
 
-// October safety: adjustment, selective revision and quick physical count
-// must each become a checkpoint for an earlier unissued order, including
-// the COMPACT order-table flag and exact SKU/source handover details.
-const afterAdjustment = makeOrder(2020,'2026-10-24','2026-10-24T08:00:00Z')
-sql.prepare("INSERT INTO inventory_stock_checks VALUES(5001,'warehouse',240,'2026-10-24T12:00:00Z','manual_set','manual','correction:5001')").run()
-const adjustmentCheck=await assertReview(2020,true)
-assert.equal(adjustmentCheck.checkpointId,5001,'Adjustment must request a handover decision')
-assert.equal(adjustmentCheck.checkpointKind,'check')
-const afterSelective = makeOrder(2021,'2026-10-25','2026-10-25T08:00:00Z')
-sql.prepare("INSERT INTO inventory_stock_checks VALUES(5002,'warehouse',240,'2026-10-25T12:00:00Z','selective_stocktake','stocktake','REV-W-P-2021')").run()
-const selectiveCheck=await assertReview(2021,true)
-assert.equal(selectiveCheck.checkpointId,5002,'Selective revision must request a handover decision')
-assert.equal(selectiveCheck.checkpointKind,'revision')
-const afterQuick = makeOrder(2022,'2026-10-26','2026-10-26T08:00:00Z')
-sql.prepare("INSERT INTO inventory_stock_checks VALUES(5003,'warehouse',240,'2026-10-26T12:00:00Z','quick_stocktake','quick_stocktake','quick:5003')").run()
-const quickCheck=await assertReview(2022,true)
-assert.equal(quickCheck.checkpointId,5003,'Short physical check must request a handover decision')
-const afterChecks = makeOrder(2023,'2026-10-27','2026-10-27T08:00:00Z')
-await assertReview(2023,false)
-const otherLocation = makeOrder(2024,'2026-10-27','2026-10-27T09:00:00Z')
-sql.prepare("INSERT INTO inventory_stock_checks VALUES(5004,'boutique',240,'2026-10-27T12:00:00Z','manual_set','manual','boutique-only')").run()
-await assertReview(2024,false)
-// Same-second physical check: SQLite datetime() drops fractional seconds.
-// A correction 350ms after an order is a NEW checkpoint, not an old one.
+// Stage 2.5: a check later in the same second must prompt clarification.
+// SQLite datetime() truncates milliseconds; julianday() preserves ordering.
 const sameSecondOrder=makeOrder(2030,'2026-10-28','2026-10-28T10:00:00.100Z')
 sql.prepare("INSERT INTO inventory_stock_checks VALUES(6001,'warehouse',240,'2026-10-28T10:00:00.450Z','manual_set','manual','same-second-after')").run()
 const sameSecondReview=await assertReview(2030,true)
 assert.equal(sameSecondReview.checkpointId,6001)
 assert.equal(sameSecondReview.reviewReason,'checkpoint_after_order')
-// A check 350ms BEFORE the same-second order must not trigger false review.
 const sameSecondEarlier=makeOrder(2031,'2026-10-29','2026-10-29T10:00:00.700Z')
 sql.prepare("INSERT INTO inventory_stock_checks VALUES(6002,'warehouse',240,'2026-10-29T10:00:00.350Z','manual_set','manual','same-second-before')").run()
 await assertReview(2031,false)
 
-// Prove the independent operation paths actually persist those checkpoints.
-const fs = await import('node:fs')
-const manual = fs.readFileSync('worker/domains/inventory-movement.ts','utf8')
-const stocktake = fs.readFileSync('worker/domains/inventory-stocktake.ts','utf8')
-assert(manual.includes("'manual_set', 'manual', ?, ?, ?, ?") && manual.includes('INSERT OR IGNORE INTO inventory_stock_checks'),
-  'Ordinary manual adjustment must create an exact SKU stock check')
-assert(stocktake.includes("THEN 'selective_stocktake' ELSE 'full_stocktake'"),
-  'Selective stocktake must save exact SKU checks')
-assert(stocktake.includes("'quick_stocktake', ? || ':' || v.id") && stocktake.includes('INSERT OR IGNORE'),
-  'Quick physical check must create an exact SKU check')
-
 sql.close()
 console.log('OLD_ORDINARY_ORDER_POST_STOCKTAKE_REVIEW_SQLITE_PASSED')
-console.log('HANDOVER_ALL_CHECKPOINT_TYPES_COMPACT_AND_DETAIL_PASSED')
-

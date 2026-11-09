@@ -478,7 +478,11 @@ export async function addInventoryStocktakeCombination(
   const material = canonicalStockPositionValue(input.material);
   const length = canonicalStockPositionValue(input.length);
   const rawSizes = Array.isArray(input.sizes) ? input.sizes : [input.size];
-  const normalizedSizes = Array.from(new Set(rawSizes.map(value => normalizeCatalogCombinationSize(value)).filter(Boolean))).slice(0, 40);
+  // Explicit «БЕЗ РАЗМЕРА» is a real catalog choice with canonical empty size.
+  // A genuinely omitted size is NOT a choice and stays invalid.
+  const normalizedSizes = Array.from(new Set(rawSizes
+    .filter(value => cleanText(value))
+    .map(value => normalizeCatalogCombinationSize(value)))).slice(0, 40);
   const category = normalizeAudienceCategory(input.category, normalizedSizes[0] || input.size);
   const gender = normalizeCatalogCombinationGender(input.gender);
   const color = normalizeCatalogCombinationColor(input.color);
@@ -1052,8 +1056,6 @@ export async function quickInventoryStocktakeBatch(
       return current === item.expectedQuantity ? [] : [{ variantId: item.variantId, expectedQuantity: item.expectedQuantity, currentQuantity: current }];
     });
     if (raced.length) return { ok: false, code: 'changed', message: `Во время сохранения изменилось ${raced.length} позиций. Ничего из быстрой сверки не применено.`, conflicts: raced };
-    // The session may have started after the initial preflight. This is a
-    // business conflict, not a database failure, and the D1 batch rolled back.
     const newlyActive = await db.prepare(
       `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
     ).bind(source).first<{ id: string }>();
@@ -1663,8 +1665,6 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
        m.product_name_snapshot, m.gender_snapshot, m.color_snapshot, m.material_snapshot,
        m.length_snapshot, m.size_snapshot, m.quantity_delta, m.quantity_after,
        m.reference_type, m.reference_id, m.comment, m.created_at,
-       manual_receipt.actor_user_id AS performed_by_user_id,
-       COALESCE(manual_receipt.actor_label, td.created_by) AS performed_by,
        r.reversed_at, r.reversal_movement_id,
        CASE WHEN rr.original_movement_id IS NOT NULL THEN 1 ELSE 0 END AS is_reversal,
        td.from_source AS transfer_from_source, td.to_source AS transfer_to_source,
@@ -1691,8 +1691,6 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
            AND e.operation_reference = m.reference_id
          ORDER BY e.id DESC LIMIT 1) AS unexplained_quantity
      FROM inventory_movements m
-     LEFT JOIN inventory_manual_operation_receipts manual_receipt
-       ON m.reference_type = 'manual' AND manual_receipt.operation_id = m.reference_id
      LEFT JOIN inventory_movement_reversals r ON r.original_movement_id = m.id
      LEFT JOIN inventory_movement_reversals rr ON rr.reversal_movement_id = m.id
      LEFT JOIN inventory_transfer_documents td
@@ -1725,8 +1723,6 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
       referenceId: cleanText(row.reference_id),
       comment: cleanText(row.comment),
       createdAt: cleanText(row.created_at),
-      performedByUserId: Math.max(0, toInt(row.performed_by_user_id, 0)) || null,
-      performedBy: cleanText(row.performed_by) || null,
       reversedAt: cleanText(row.reversed_at),
       reversalMovementId: toInt(row.reversal_movement_id, 0),
       isReversal: toInt(row.is_reversal, 0) === 1,
@@ -1760,110 +1756,17 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
   if (variantId > 0) {
     const exactSourceClause = source ? 'AND c.inventory_source = ?' : '';
     const exactBindings: Array<string | number> = source ? [variantId, source] : [variantId];
-    // Unlike general warehouse history, the exact SKU needs a genuine
-    // chronological investigation. Check paging and the earliest mismatch
-    // must be independent; otherwise the first 50 checks can mislead staff.
-    const beforeId = Math.max(0, toInt(url.searchParams.get('beforeId'), 0));
-    const cursorClause = beforeId ? 'AND c.id < ?' : '';
-    const cursorBindings: Array<string | number> = beforeId ? [beforeId] : [];
     const exact = await db.prepare(
       `SELECT c.id, c.inventory_source, c.check_type, c.reference_type, c.reference_id,
               c.expected_quantity, c.counted_quantity, c.difference_quantity, c.checked_by, c.checked_at
        FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause} ${cursorClause}
-       ORDER BY c.id DESC
+       WHERE c.variant_id = ? ${exactSourceClause}
+       ORDER BY c.checked_at DESC, c.id DESC
        LIMIT ?`
-    ).bind(...exactBindings, ...cursorBindings, limit + 1).all<Record<string, unknown>>();
-    const raw = exact.results || [];
-    const page = raw.slice(0, limit);
-    // Full-history count and earliest observed discrepancy are not paginated.
-    // A "first occurrence" is reliable only when sourced from the entire
-    // recorded history for this exact SKU and location.
-    const summary = await db.prepare(
-      `SELECT COUNT(*) AS total_checks,
-              COALESCE(SUM(CASE WHEN c.expected_quantity <> c.counted_quantity THEN 1 ELSE 0 END), 0) AS difference_count
-       FROM inventory_stock_checks c WHERE c.variant_id = ? ${exactSourceClause}`
-    ).bind(...exactBindings).first<Record<string, unknown>>();
-    const first = await db.prepare(
-      `SELECT c.id, c.checked_at, c.expected_quantity, c.counted_quantity, c.checked_by, c.reference_id
-       FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause}
-         AND c.expected_quantity <> c.counted_quantity
-       ORDER BY c.checked_at ASC, c.id ASC LIMIT 1`
-    ).bind(...exactBindings).first<Record<string, unknown>>();
-    const previousMatch = first ? await db.prepare(
-      `SELECT c.id, c.checked_at, c.expected_quantity, c.counted_quantity, c.checked_by
-       FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause}
-         AND c.expected_quantity = c.counted_quantity
-         AND (c.checked_at < ? OR (c.checked_at = ? AND c.id < ?))
-       ORDER BY c.checked_at DESC, c.id DESC LIMIT 1`
-    ).bind(...exactBindings, cleanText(first.checked_at), cleanText(first.checked_at), toInt(first.id, 0)).first<Record<string, unknown>>() : null;
-    // For the working investigation, the *latest* physical check matters,
-    // not the first mismatch since the beginning of time. A later matching
-    // check closes an earlier discrepancy episode; a subsequent mismatch
-    // starts a NEW episode. All queries are for the exact source + variant.
-    const latest = await db.prepare(
-      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
-       FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause}
-       ORDER BY c.checked_at DESC,c.id DESC LIMIT 1`
-    ).bind(...exactBindings).first<Record<string, unknown>>();
-    const latestDiffers = Boolean(latest && toInt(latest.expected_quantity,0) !== toInt(latest.counted_quantity,0));
-    const lastMatchBeforeLatest = latestDiffers ? await db.prepare(
-      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
-       FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause} AND c.expected_quantity = c.counted_quantity
-         AND (c.checked_at < ? OR (c.checked_at = ? AND c.id < ?))
-       ORDER BY c.checked_at DESC,c.id DESC LIMIT 1`
-    ).bind(...exactBindings,cleanText(latest!.checked_at),cleanText(latest!.checked_at),
-      toInt(latest!.id,0)).first<Record<string,unknown>>() : null;
-    const episodeClause = lastMatchBeforeLatest
-      ? 'AND (c.checked_at > ? OR (c.checked_at = ? AND c.id > ?))' : '';
-    const episodeBind = lastMatchBeforeLatest
-      ? [cleanText(lastMatchBeforeLatest.checked_at),cleanText(lastMatchBeforeLatest.checked_at),toInt(lastMatchBeforeLatest.id,0)] : [];
-    const episodeFirst = latestDiffers ? await db.prepare(
-      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
-       FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause}
-         AND c.expected_quantity <> c.counted_quantity ${episodeClause}
-       ORDER BY c.checked_at ASC,c.id ASC LIMIT 1`
-    ).bind(...exactBindings,...episodeBind).first<Record<string,unknown>>() : null;
-    const observation = (row: Record<string,unknown> | null) => row ? ({
-      id: String(toInt(row.id,0)),
-      checkedAt: cleanText(row.checked_at),
-      expectedQuantity: toInt(row.expected_quantity,0),
-      countedQuantity: toInt(row.counted_quantity,0),
-      checkedBy: cleanText(row.checked_by) || null,
-      referenceId: cleanText(row.reference_id) || null,
-    }) : null;
-    const lastMatchingBeforeDifference = previousMatch ? {
-      id: String(toInt(previousMatch.id, 0)),
-      checkedAt: cleanText(previousMatch.checked_at),
-      expectedQuantity: toInt(previousMatch.expected_quantity, 0),
-      countedQuantity: toInt(previousMatch.counted_quantity, 0),
-      checkedBy: cleanText(previousMatch.checked_by) || null,
-    } : null;
-    const earliest = first ? {
-      id: String(toInt(first.id, 0)),
-      checkedAt: cleanText(first.checked_at),
-      expectedQuantity: toInt(first.expected_quantity, 0),
-      countedQuantity: toInt(first.counted_quantity, 0),
-      checkedBy: cleanText(first.checked_by) || null,
-      referenceId: cleanText(first.reference_id) || null,
-    } : null;
+    ).bind(...exactBindings, limit).all<Record<string, unknown>>();
     return {
       ok: true,
-      hasMore: raw.length > limit,
-      nextBeforeId: page.length ? toInt(page[page.length - 1].id, 0) : null,
-      totalChecks: Math.max(0, toInt(summary?.total_checks, 0)),
-      differenceCount: Math.max(0, toInt(summary?.difference_count, 0)),
-      firstConfirmedDifference: earliest,
-      lastMatchingBeforeDifference,
-      latestCheck: observation(latest),
-      currentEpisodeFirstDifference: observation(episodeFirst),
-      currentEpisodeLastMatchingCheck: observation(lastMatchBeforeLatest),
-      rows: page.map(row => ({
+      rows: (exact.results || []).map(row => ({
         kind: 'check', id: String(toInt(row.id, 0)), source: normalizeSourceType(row.inventory_source),
         scope: null, checkedAt: cleanText(row.checked_at), checkedBy: cleanText(row.checked_by) || null,
         itemCount: 1, differenceCount: toInt(row.difference_quantity, 0) !== 0 ? 1 : 0,

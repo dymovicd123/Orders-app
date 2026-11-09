@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "revision": "catalog-retirement-main-port-worker-r1",
+  "baseMain": "820ff6be9a2e06fad4f61b147263927b0c42d3a7",
+  "files": {
+    "worker/core/types.ts": {
+      "beforeGitBlob": "312bc1d727934eda47cc87e803f0bca7bb9e31dc",
+      "afterGitBlob": "adc35aafa02fad3e33bf9614f33446fee16874e1",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/core/types.ts"
+    },
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "0a12b6a8f0437085b708417911954ac26b50f993",
+      "baselineFixture": null
+    },
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "be35906bab2e8e55b87bb9ccb665ad5fecd0a805",
+      "afterGitBlob": "4c155ec4477f4020d2a31ef0b532c0dc29e5d5c0",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/catalog-review.ts"
+    },
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "9cb0482bb49909d298a8c3eb7516ee8b39d74064",
+      "afterGitBlob": "a2b6f66afa0e9b624ef3ae35171607b7037e2833",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/catalog.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "dc4f64b84407d205dcc2309ed4906338e4b1dae4",
+      "afterGitBlob": "cb76c177b655e66682b6e6f97ca1a26cf5163c31",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/inventory-movement.ts"
+    },
+    "worker/domains/lifecycle.ts": {
+      "beforeGitBlob": "5704fe601b0d766bee75d30e1023b8a264463530",
+      "afterGitBlob": "25f08471020220883107de8ee02b26bc774eb29a",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/lifecycle.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "465b6117be429e21bc59fd84ad37bd2bbb023ff6",
+      "afterGitBlob": "5c0be05527542eaa448b1c33fe87cf9379d906cc",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/orders-relations.ts": {
+      "beforeGitBlob": "66e7c7acc571bd6531da9d09ed39082f5e4f2f6a",
+      "afterGitBlob": "7770b6a97482252a827ac1f8bdf2d12a486295d0",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/orders-relations.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "69e513b7b800f875b710553d898271bc198e90ac",
+      "afterGitBlob": "cdb992e012228e2bad863d8aec00b6469a3baf82",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/orders-write.ts"
+    },
+    "worker/domains/warehouse-attention.ts": {
+      "beforeGitBlob": "1d536e823e660d1d246dfadc022a23e8617f2a54",
+      "afterGitBlob": "5351db911154293cf79d8b5a9bbd6cea48a8be3b",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/domains/warehouse-attention.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "16c9e0e676e6ba5c838e90036bb91ec2364e22fb",
+      "afterGitBlob": "7bcb3942d671a81386ea35de67a76cc9ea457f4b",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/worker/index.ts"
+    }
+  }
+}

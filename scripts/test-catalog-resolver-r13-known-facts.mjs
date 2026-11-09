@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 
 const review = fs.readFileSync('worker/domains/catalog-review.ts', 'utf8')
-const reservations = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
+const reservations = fs.readFileSync('worker/domains/order-catalog-identity.ts', 'utf8')
 const flow = fs.readFileSync('src/features/orders/catalogResolutionFlow.ts', 'utf8')
 const workspace = fs.readFileSync('src/app/controllers/useWorkspaceViewModel.tsx', 'utf8')
 const references = fs.readFileSync('worker/domains/references.ts', 'utf8')

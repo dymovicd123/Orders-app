@@ -15,20 +15,6 @@
       "beforeLines": 217,
       "afterLines": 218,
       "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/orders/catalogResolutionFlow.ts"
-    },
-    "src/features/renderers/FinanceReportContentRenderer.tsx": {
-      "beforeGitBlob": "09507f509a08cdd17dfc0e7a3e71b4ff10427e2b",
-      "afterGitBlob": "d5beac0346fcd4b463b9f937424245bd919b10f6",
-      "beforeLines": 272,
-      "afterLines": 272,
-      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/renderers/FinanceReportContentRenderer.tsx"
-    },
-    "src/features/sections/CreateOrderSection.tsx": {
-      "beforeGitBlob": "28228f14b3da7813c152148fc97326210afcf227",
-      "afterGitBlob": "29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c",
-      "beforeLines": 473,
-      "afterLines": 473,
-      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/sections/CreateOrderSection.tsx"
     }
   }
 }

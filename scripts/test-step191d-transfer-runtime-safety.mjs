@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 import { readWorkerSource } from './lib/worker-source.mjs'
 
@@ -320,4 +322,225 @@ expect(count === 60, '60-line one-bind-per-row source failed')
 expect(60 + 6 <= 100, 'Transfer bind budget no longer fits Cloudflare D1 limit')
 
 db.close()
+
+const movementBundle = await build({
+  entryPoints: ['src/features/inventory/inventoryMovementActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createInventoryMovementActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(movementBundle.outputFiles[0].text).toString('base64')
+)
+const stockRow = {
+  id: 1, inventorySource: 'warehouse', productId: 1, variantId: 33, productName: 'БАЯН СҰЛУ ШАПАН',
+  gender: 'ЖЕН', color: 'ОРАНЖЕВЫЙ', material: 'ЗАМША ВЕЛЮР', length: 'СТАНДАРТ', size: '56',
+  audienceType: 'ВЗРОСЛЫЙ', quantity: 1, reservedQuantity: 0, availableQuantity: 1,
+}
+const transferItem = {
+  productId: '1', variantId: '33', productName: stockRow.productName, category: 'adult',
+  gender: stockRow.gender, color: stockRow.color, material: stockRow.material, length: stockRow.length,
+  size: stockRow.size, quantity: 2, expectedQuantity: 1,
+}
+const originalDraft = {
+  source: 'warehouse', targetSource: 'boutique', movementType: 'transfer',
+  comment: 'Перемещение между точками', items: [transferItem],
+}
+let currentDraft = structuredClone(originalDraft)
+let currentTransferRequestId = 'transfer-original-request'
+let savedMessage = null
+let savedError = null
+let movedError = null
+let numberOfResets = 0
+let promptCount = 0
+let fetchCalls = []
+let loadCalls = []
+let failureMode = 'needs_confirmation'
+const trackedFetch = async (url, init = {}) => {
+  fetchCalls.push({ url: String(url), init })
+  if (failureMode === 'network_error') throw new Error('unknown transport outcome')
+  if (failureMode === 'needs_confirmation' && fetchCalls.length === 1) {
+    return new Response(JSON.stringify({
+      ok: false, code: 'stock_resolution_required', operationType: 'transfer',
+      items: [{ source: 'warehouse', variantId: 33, productName: stockRow.productName, trackedPhysicalQuantity: 1, operationQuantity: 2 }],
+    }), { status: 409, headers: { 'content-type': 'application/json' } })
+  }
+  return new Response(JSON.stringify({ ok: true, externalId: 'T-TEST-1', warnings: [{ shortageAfter: 1 }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } })
+}
+const operations = createInventoryMovementActions({
+  inventoryMovementBusy: false,
+  setInventoryMovementBusy: () => {},
+  setInventoryMovementError: value => { movedError = value },
+  setError: value => { savedError = value },
+  setMessage: value => { savedMessage = value },
+  inventoryDraft: currentDraft,
+  setInventoryDraft: next => { currentDraft = typeof next === 'function' ? next(currentDraft) : next },
+  flattenInventoryArrivalPositions: () => [],
+  inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult',
+  inventoryTransferRequestId: currentTransferRequestId,
+  inventoryManualRequestId: 'manual-original-request',
+  apiFetch: trackedFetch,
+  loadInventoryData: async (source, force) => {
+    loadCalls.push({ source, force })
+    return { ok: true, items: [stockRow] }
+  },
+  loadCatalogData: async () => null,
+  setInventoryTransferRequestId: next => { currentTransferRequestId = typeof next === 'function' ? next(currentTransferRequestId) : next; numberOfResets += 1 },
+  setInventoryManualRequestId: () => { numberOfResets += 1 },
+  makeCashRequestId: prefix => `new-${prefix}`,
+  setInventoryArrivalPositions: () => {},
+  setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {},
+  setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {},
+  setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {},
+  setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: { current: null },
+  askStockResolution: async prompt => {
+    promptCount += 1
+    assert.match(prompt.note, /не заменяет ревизию/)
+    assert.equal(prompt.items[0].needed, 2)
+    return true
+  },
+})
+await operations.saveInventoryMovement()
+assert.equal(fetchCalls.length, 2, 'Possession-confirmed shortage must retry the same operation once, not post twice without confirmation')
+assert.equal(promptCount, 1, 'Missing physical quantity must ask once, not block the operator without a choice')
+assert.deepEqual(fetchCalls.map(call => call.url), [
+  '/api/inventory/transfer?returnInventory=0',
+  '/api/inventory/transfer?returnInventory=0',
+], 'Both transfer attempts must preserve their Worker route')
+const submitted = fetchCalls.map(call => JSON.parse(call.init.body))
+assert.deepEqual(submitted.map(p => p.requestId), ['transfer-original-request', 'transfer-original-request'],
+  'Confirmed stock shortage must reuse the exact original idempotency key')
+assert.deepEqual(fetchCalls.map(call => call.init.headers['X-Idempotency-Key']),
+  ['transfer-original-request', 'transfer-original-request'],
+  'First submit and stock confirmation must use exactly the original token in HTTP header')
+assert(fetchCalls.every(call => call.init.headers['X-Idempotency-Key'] === JSON.parse(call.init.body).requestId),
+  'HTTP idempotency token must always equal body requestId for Worker replay')
+assert.equal(submitted[1].stockConfirmations[0].expectedQuantity, 1,
+  'Physical confirmation may prove possession but must not replace current baseline facts')
+assert.equal(submitted[1].items[0].variantId, '33', 'Exact SKU must not drift during the confirmation retry')
+assert.equal(submitted[1].items[0].observedPhysicalQuantity, undefined,
+  'Transfer must never manufacture an absolute physical inventory count')
+assert.deepEqual(loadCalls.map(call => call.source), ['warehouse', 'boutique'],
+  'Committed transfer must refresh both inventory locations')
+assert.equal(numberOfResets, 1, 'Only confirmed successful transfer may issue a new idempotency request ID')
+assert.equal(currentTransferRequestId, 'new-inventory-transfer')
+assert.match(savedMessage, /резервы сохранены/, 'Post-transfer stock shortage must keep existing reservations and explain the result')
+assert.equal(movedError, '', 'A successfully confirmed transfer must clear its error state')
+
+fetchCalls = []
+loadCalls = []
+numberOfResets = 0
+failureMode = 'network_error'
+currentDraft = structuredClone(originalDraft)
+currentTransferRequestId = 'same-original-token-for-retry'
+const unknownOutcome = createInventoryMovementActions({
+  inventoryMovementBusy: false, setInventoryMovementBusy: () => {},
+  setInventoryMovementError: value => { movedError = value },
+  setError: value => { savedError = value }, setMessage: value => { savedMessage = value },
+  inventoryDraft: currentDraft, setInventoryDraft: () => { throw new Error('Draft must not reset on unknown outcome') },
+  flattenInventoryArrivalPositions: () => [], inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult', inventoryTransferRequestId: currentTransferRequestId,
+  inventoryManualRequestId: 'unused', apiFetch: trackedFetch,
+  loadInventoryData: async () => { throw new Error('Refresh must not execute after an unconfirmed write') },
+  loadCatalogData: async () => null,
+  setInventoryTransferRequestId: () => { numberOfResets += 1 },
+  setInventoryManualRequestId: () => { numberOfResets += 1 },
+  makeCashRequestId: prefix => `new-${prefix}`,
+  setInventoryArrivalPositions: () => {}, setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {}, setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {}, setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {}, setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: { current: null },
+  askStockResolution: async () => { throw new Error('No confirmation for a failed network request') },
+})
+await unknownOutcome.saveInventoryMovement()
+assert.equal(fetchCalls.length, 1)
+assert.equal(JSON.parse(fetchCalls[0].init.body).requestId, 'same-original-token-for-retry')
+assert.equal(fetchCalls[0].init.headers['X-Idempotency-Key'], 'same-original-token-for-retry',
+  'Unknown transport outcome must retain retryable header without rotating token')
+assert.equal(numberOfResets, 0, 'Indeterminate network write must not rotate idempotency token')
+assert.match(movedError, /unknown transport outcome/)
+assert.deepEqual(currentDraft, originalDraft, 'Unknown outcome must preserve the complete operator draft')
+
+
+// The same frontend workflow also handles Arrival through the movement route.
+// Its existing request ID must match the HTTP header on both normal saves and
+// uncertain transport responses; only a confirmed success rotates the ID.
+const arrivalRequestId = 'arrival-original-transport-token'
+const arrivalCalls = []
+const arrivalIdRotations = []
+const arrivalDraft = {
+  ...structuredClone(originalDraft),
+  movementType: 'arrival',
+  comment: 'Обычный приход без повторного учёта',
+  items: [{...transferItem, quantity: 1, expectedQuantity: 1}],
+}
+const arrivalProps = {
+  inventoryMovementBusy: false,
+  setInventoryMovementBusy: () => {},
+  setInventoryMovementError: () => {},
+  setError: () => {},
+  setMessage: () => {},
+  inventoryDraft: arrivalDraft,
+  setInventoryDraft: () => {},
+  flattenInventoryArrivalPositions: () => [],
+  inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult',
+  inventoryTransferRequestId: 'transfer-unused',
+  inventoryManualRequestId: arrivalRequestId,
+  apiFetch: async (url, init = {}) => {
+    arrivalCalls.push({url: String(url), init})
+    return new Response(JSON.stringify({ok: true, operationId: arrivalRequestId, arrivalReceipt: {
+      verified: true, source: 'warehouse', items: [{
+        variantId: 33, productName: stockRow.productName, color: stockRow.color,
+        size: stockRow.size, received: 1, currentQuantity: 2,
+      }],
+    }}), {status: 201, headers: {'content-type': 'application/json'}})
+  },
+  loadInventoryData: async () => ({ok:true,items:[stockRow]}),
+  loadCatalogData: async () => ({ok:true,items:[]}),
+  setInventoryTransferRequestId: () => { throw new Error('Arrival must not rotate transfer token') },
+  setInventoryManualRequestId: next => arrivalIdRotations.push(next),
+  makeCashRequestId: prefix => 'next-' + prefix,
+  setInventoryArrivalPositions: () => {},
+  setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {},
+  setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {},
+  setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {},
+  setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: {current: null},
+  askStockResolution: async () => { throw new Error('Arrival cannot ask transfer possession confirmation') },
+}
+await createInventoryMovementActions(arrivalProps).saveInventoryMovement()
+assert.equal(arrivalCalls.length, 1)
+assert.equal(arrivalCalls[0].url, '/api/inventory/movements?returnInventory=0')
+assert.equal(arrivalCalls[0].init.headers['X-Idempotency-Key'], arrivalRequestId)
+assert.equal(JSON.parse(arrivalCalls[0].init.body).requestId, arrivalRequestId)
+assert.deepEqual(arrivalIdRotations, ['next-inventory-manual'],
+  'A saved arrival must rotate the original token exactly once')
+
+arrivalCalls.length = 0
+arrivalIdRotations.length = 0
+let arrivalUnknownError = ''
+await createInventoryMovementActions({
+  ...arrivalProps,
+  apiFetch: async (url, init = {}) => {
+    arrivalCalls.push({url: String(url), init})
+    throw new Error('arrival transport response lost')
+  },
+  setInventoryMovementError: value => { arrivalUnknownError = value },
+  setInventoryDraft: () => { throw new Error('Unknown Arrival cannot clear the draft') },
+}).saveInventoryMovement()
+assert.equal(arrivalCalls.length, 1)
+assert.equal(arrivalCalls[0].init.headers['X-Idempotency-Key'], arrivalRequestId)
+assert.equal(JSON.parse(arrivalCalls[0].init.body).requestId, arrivalRequestId)
+assert.equal(arrivalIdRotations.length, 0, 'Uncertain Arrival must not rotate token')
+assert.match(arrivalUnknownError, /arrival transport response lost/)
+
 console.log('STEP 191D TRANSFER RUNTIME SAFETY TESTS PASSED — exact video row 1→0, absent target, 0 reserved; 60-line bind budget preserved')

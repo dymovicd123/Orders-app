@@ -31,7 +31,9 @@ for (const [label, code] of [['classic', classic], ['smart', smart]]) {
 assert.match(classic, /type="checkbox" checked=\{exchangeIssueConfirmed\} style=\{\{[^\n]*\}\}/)
 assert.match(smart, /type="checkbox" checked=\{groupConfirmed\} style=\{\{[^\n]*\}\}/)
 assert.match(orders, /observedPhysicalQuantity: null, shortageAcknowledged: true/)
-assert.match(reservations, /const observedPhysical: null = null;/)
+const admission = read('worker/domains/reservation-admission.ts')
+assert.ok(reservations.includes('admitOrderReservationAtomically(db, {'), 'Known SKU reservations must use guarded D1 admission')
+assert.ok(admission.includes('SET reserved_quantity') && !admission.includes('INSERT INTO inventory_movements'), 'Reservation cannot synthesize physical stock or movement')
 assert.match(lifecycle, /outboundPossessionConfirmed !== true/)
 
 console.log('STOCK SHORTAGE UI PASSED — orders disclose counts without inline recount; exchange confirms only issued things; inventory truth stays separate')

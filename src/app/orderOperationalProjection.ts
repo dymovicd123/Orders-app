@@ -79,18 +79,6 @@ export function projectOrderOperationalState(
   const workshopItems = items.filter((item) => Boolean(item?.isWorkshop) || String(item?.sourceType || '').toLowerCase() === 'workshop')
   const hasWorkshopItems = workshopItems.length > 0
   const hasStockItems = items.some((item) => !Boolean(item?.isWorkshop) && String(item?.sourceType || '').toLowerCase() !== 'workshop')
-  // A returned unit cannot be issued again. But its completed Return must NOT
-  // hide shipping for a different, still-active line (e.g. Warehouse units were
-  // handed over, one returned, and the separate Workshop item is now ready).
-  // Backend shipping independently verifies active holds, same-line return
-  // conflicts and exact physical movements before committing anything.
-  const stillDeliverableAfterReturn = items.some((item) => {
-    if (Number(item?.quantity || 0) <= 0) return false
-    if (item?.isWorkshop || String(item?.sourceType || '').toLowerCase() === 'workshop') return true
-    return ['active', 'reserved', 'pending_reservation', 'unresolved', 'pending', ''].includes(
-      String(item?.stockWriteoffStatus || '').trim().toLowerCase(),
-    )
-  })
   const mixedOrder = hasWorkshopItems && hasStockItems
 
   const knownWorkshopStatuses = workshopItems
@@ -189,20 +177,17 @@ export function projectOrderOperationalState(
     // Full editing may rewrite item, payment, manager and stock relationships.
     // Safe recorded-price and metadata corrections remain separately available to managers.
     canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin,
-    // Returns of ALREADY ISSUED stock do not cancel unrelated ready Workshop
-    // items or still-reserved stock lines. Never offer a second shipment for
-    // an entirely returned order with nothing left to deliver.
-    canShip: mutableWorkingOrder && !sent && !workshopPending
-      && (!hasCommittedItemReturn || stillDeliverableAfterReturn),
+    // A completed exchange replaces the active order item; it does not permanently block
+    // future shipping. If a false "sent" mark is corrected, the current replacement can be
+    // reserved and handed over normally. A real item return still blocks this path.
+    canShip: mutableWorkingOrder && !hasCommittedItemReturn && !sent && !workshopPending,
     needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required),
-    // A standalone Return does not cancel the manager's right to correct a later
-    // final-send marker. The server distinguishes a status-only correction (no
-    // new physical issue) from cases requiring item-scoped physical reversal.
-    canCorrectShipping: mutableWorkingOrder && sent,
-    // A Return for one line does not prevent handing over a different still-
-    // reserved line. The per-item Worker action validates the exact reservation,
-    // original SKU and same-line Return before any physical issue.
+    // A completed exchange is current order truth, not a reason to roll the exchange back.
+    // False shipping correction follows the active replacement item. A standalone item
+    // return still changes current physical truth and must be corrected in its own domain.
+    canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn && sent,
     canOpenStockHandover: mutableWorkingOrder
+      && !hasCommittedItemReturn
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }

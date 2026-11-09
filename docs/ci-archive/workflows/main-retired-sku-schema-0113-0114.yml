@@ -1,0 +1,136 @@
+name: Production retired SKU journals 0113-0114
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/main-retired-sku-schema-0113-0114.yml', 'migrations/0113_retired_order_item_actual_handover.sql', 'migrations/0114_retired_item_one_line_corrections.sql']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/main-retired-sku-schema-0113-0114.yml', 'migrations/0113_retired_order_item_actual_handover.sql', 'migrations/0114_retired_item_one_line_corrections.sql']
+permissions:
+  contents: read
+concurrency:
+  group: production-retired-sku-journals
+  cancel-in-progress: false
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pin production DB, source hashes and additive-only DDL
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          [[ "$(git hash-object migrations/0113_retired_order_item_actual_handover.sql)" == '8cb4587661e6778afdb079211b208b76a5c2ddfa' ]]
+          [[ "$(git hash-object migrations/0114_retired_item_one_line_corrections.sql)" == 'd4582df345661a598e52afee68c6749654ba9ebe' ]]
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0113_retired_order_item_actual_handover.sql
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0114_retired_item_one_line_corrections.sql
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - run: npm ci
+      - name: Validate idempotent schema on disposable SQLite
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { DatabaseSync } from 'node:sqlite';
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const db=new DatabaseSync(':memory:');
+          for (const f of ['migrations/0113_retired_order_item_actual_handover.sql','migrations/0114_retired_item_one_line_corrections.sql']) {
+            db.exec(readFileSync(f,'utf8'));
+            db.exec(readFileSync(f,'utf8'));
+          }
+          for(const name of ['retired_order_item_issues','retired_order_item_corrections'])
+            assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name=?").get(name).n,1);
+          db.close();
+          NODE
+      - name: Read-only production schema and business baseline
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS t13,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_retired_order_item_issues_order') AS i13,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_corrections') AS t14,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_retired_item_correction_order') AS i14
+          " --json | jq -cSe '.[0].results[0]' > /tmp/schema-before.json
+          jq -e '((.t13==0 and .i13==0) or (.t13==1 and .i13==1)) and ((.t14==0 and .i14==0) or (.t14==1 and .i14==1))' /tmp/schema-before.json
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt_total,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges,
+            (SELECT COUNT(*) FROM returns) AS returns
+          " --json | jq -cSe '.[0].results[0]' > /tmp/business-before.json
+      - name: D1 Time Travel recovery bookmark for main
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No recovery bookmark") end' > /tmp/prod-retired-bookmark
+          test -s /tmp/prod-retired-bookmark
+          echo "Recovery bookmark obtained; do not restore live DB automatically." >> "$GITHUB_STEP_SUMMARY"
+      - name: Install only missing 0113 and 0114 tables on production
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          test -s /tmp/prod-retired-bookmark
+          if [[ "$(jq -r .t13 /tmp/schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0113_retired_order_item_actual_handover.sql
+          fi
+          if [[ "$(jq -r .t14 /tmp/schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0114_retired_item_one_line_corrections.sql
+          fi
+      - name: Verify both journals and no changed business totals
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS t13,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_retired_order_item_issues_order') AS i13,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_corrections') AS t14,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_retired_item_correction_order') AS i14,
+            (SELECT COUNT(*) FROM retired_order_item_issues) AS count13,
+            (SELECT COUNT(*) FROM retired_order_item_corrections) AS count14
+          " --json | jq -cSe '.[0].results[0]' > /tmp/schema-after.json
+          jq -e '.t13==1 and .i13==1 and .t14==1 and .i14==1' /tmp/schema-after.json
+          if [[ "$(jq -r .t13 /tmp/schema-before.json)" == 0 ]]; then jq -e '.count13==0' /tmp/schema-after.json; fi
+          if [[ "$(jq -r .t14 /tmp/schema-before.json)" == 0 ]]; then jq -e '.count14==0' /tmp/schema-after.json; fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt_total,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges,
+            (SELECT COUNT(*) FROM returns) AS returns
+          " --json | jq -cSe '.[0].results[0]' > /tmp/business-after.json
+          cmp /tmp/business-before.json /tmp/business-after.json
+          echo 'MAIN_0113_0114_SCHEMA_INSTALLED_NO_BUSINESS_CHANGES'

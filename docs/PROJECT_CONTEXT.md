@@ -1,38 +1,10 @@
 # Постоянный контекст проекта «Система заказов»
 
-Updated: 2026-11-08 (Branch2 environment identity and sync checkpoint; older sections below remain historical)
+Updated: 2026-11-08 (ключевые инварианты и ссылки; отдельные исторические секции ниже могут описывать старые этапы)
 
-Этот файл хранит **долгоживущие архитектурные и инженерные инварианты**. Текущий статус этапов/релизов хранится в корневом `PROJECT_CONTINUATION.md`.
+Этот файл хранит **долгоживущие архитектурные и инженерные инварианты**. **Точка входа для следующего разработчика/AI — корневой `AGENTS.md`.** Текущий план очистки архитектуры и прогресс — `docs/architecture/orders-app-audit-2026-11-08.md`; старый `PROJECT_CONTINUATION.md` содержит исторические снимки и не должен замещать актуальный GitHub.
 
 Старые `CLOUDFLARE_CONTINUATION_CONTEXT_STEP*.md`, старые ZIP/context-файлы и исторические Stage-документы — evidence/history. Они не заменяют актуальный GitHub.
-
-## Synchronization with Main — 2026-11-08 (Branch2-only stage 1)
-
-- Checked actual GitHub heads: Main `e72ca3296e5ff71981c2f8f5558fe1a25ba938a7`, Branch2 `7127790374d68f056ff2c172ad754fd64a023bf4` before this sync PR. Branches have diverged and **must not** be merged or overwritten wholesale.
-- First selected semantic fix: Branch2 Return creation already validated refundable money before its D1 batch, but lacked Main's atomic SQL revalidation. Copied just Main's guarded INSERT into Branch2 plus the identical race-conflict mapping. The money-event and physical item claim statements remain in the same batch. Existing Return active-reserve SQL test now executes the real guarded INSERT against disposable SQLite, including simultaneous stale preflights, zero-money, cancelled Return, and archived-order cases. This patch does not alter Main or any D1 database.
-- **Selective sync stage 2 (this PR):** Branch2 exact dispatch cancellation now checks the actual original `sale` movement and restores no more physical quantity than the recorded deduction. The cancelled reservation is reactivated only if the whole dispatched amount was actually deducted **and** sufficient physical stock remains after other reservations. Otherwise it becomes `unresolved` for reconciliation. These safeguards are ported from Main's existing `order-dispatch-cancel.ts` without copying Main's incompatible prior-issued shipping, shipment plan, UI, routes, or full Worker. Existing Stage5B real Worker/SQLite acceptance has additional movement-proof / partial accounted deduction / competing reserve / replay cases.
-- **Selective sync stage 3 (this PR):** перенос только подтверждения отправки ранее фактически выданных исторических вещей без второго списания. В Branch2 добавлены неизменённые Main helper-модули `order-prior-issued-origin.ts` (точные доказательства физической выдачи) и `order-prior-issued-shipping.ts` (атомарная отметка отправки + audit; безопасная отмена только статуса). `order-shipment-plan.ts` получил только признак `canConfirmIssuedOnly` для полностью выданных, доказанных, **исторических** заказов; существующий selective dispatch/shortage/Exchange алгоритм не переписан. Маршруты GET plan, PATCH shipping и POST shipping/correct используют безопасную ветку, а интерфейс показывает отдельную явную кнопку только при разрешённом плане. Новые сценарии включены в существующий реальный Worker HTTP/SQLite тест (audit-rollback, 0 stock movement, repeat, undo, нет proof, mixed, modern order, Return, Exchange). После зелёных CI выпускать через существующий защищённый релиз Branch2 и подтверждать фактический Cloudflare deploy. **Никакого изменения Main/Production D1.**
-- **Selective shipping sync stage 3 (current PR):** only identified stock variants with an existing `active` or shortage-related `unresolved` reservation are selectable. `order-dispatch-confirmation.ts` is reused from Main, with explicit employee confirmation of actual pieces for shortage. The POST revalidates exact source/variant, available tracked quantity, selected quantity and reservation state; stock changes use bounded, atomic SQL (no invented physical stock or seizure of unrelated reservations), with per-SKU `inventory_operation_evidence`. Stocktake/handover gates, Return/Exchange lineage and HTTP requestId replay stay intact. Existing real Worker HTTP + disposable SQLite coverage explicitly checks zero physical, stale confirmation, unresolved/active reservations, other order reservations, replay and correction. Do not interpret the confirmation as a real inventory stocktake. The old whole-order shipment route remains separate.
-- Still intentionally **not synchronized**: Main's selective-shipment route architecture and domain refactors, and Branch2-specific Exchange cancellation/dispatch behavior, must be reconciled case by case with real Worker HTTP/SQLite tests. Do not copy Main `returns-exchanges.ts`, `worker/index.ts`, `wrangler.jsonc`, production migrations, or DB IDs on top of Branch2.
-- **Branch2 publication:** новый постоянный ручной путь — scripts/branch2-manual-release.mjs. Он проверяет полный SHA текущей удалённой branch2, чистый checkout, изолированные Worker/D1, полный release:check, сборку, Wrangler dry-run. Только отдельная команда --publish с полным SHA, текстовым подтверждением и вручную настроенными Cloudflare credentials публикует Worker и assets. D1 проверяется исключительно через SELECT до/после; затем анонимный HTTP smoke. Никаких автоматических push/PR-триггеров; Main не изменяется. Прежний отключённый fallback остаётся неактивным. GitHub merge не является публикацией.
-- Main architecture continuation: `AGENTS.md` and `docs/architecture/orders-app-audit-2026-11-08.md` in Main; use target-branch code and PR checks as the final truth. Exact PR status and Branch2 deployment must be checked separately.
-
-## Ручной выпуск Branch2 Worker без автоматической публикации
-
-GitHub Actions UI не может создать новую кнопку workflow_dispatch только из файла Branch2: такой workflow должен существовать в default-ветке Main. Чтобы не затрагивать Production и его Cloudflare pipeline, используется **один постоянный локальный скрипт**. Его безопасная проверка --check включена в уже существующий Branch2 CI. Ассистент не может запустить фактический Cloudflare deploy через доступный GitHub-коннектор.
-
-Порядок для обладателя доступа к тестовому Cloudflare:
-
-1. В локальном репозитории выполнить git checkout branch2, затем git pull --ff-only. Рабочее дерево должно быть чистым, origin — dymovicd123/Orders-app.
-2. Получить полный актуальный SHA командой git rev-parse HEAD и подставить его вместо слова SHA в командах ниже.
-3. Проверить изоляцию: node scripts/branch2-manual-release.mjs --check. Команда не обращается к сети или D1 и не публикует ничего.
-4. Выполнить полный тест/сборку и Wrangler preview без публикации и D1: node scripts/branch2-manual-release.mjs --dry-run --sha SHA.
-5. Только после успешного dry-run вручную задать в локальном окружении CLOUDFLARE_API_TOKEN и CLOUDFLARE_ACCOUNT_ID с минимальными разрешениями для тестового Worker и Branch2 D1. Секреты не записывать в GitHub, логи или чат.
-6. Явно запустить публикацию: node scripts/branch2-manual-release.mjs --publish --sha SHA --confirm BRANCH2-ONLY. Скрипт повторит все тесты, убедится, что удалённый Branch2 HEAD не изменился, проверит тестовую D1 исключительно SELECT-запросами, опубликует только orders-app-branch2, сверит показатели D1 до/после и проверит HTTP auth/status=200 и защищённые маршруты=401.
-
-При неверном SHA, иной конфигурации, нечистом checkout, неуспешном CI, ошибке схемы или API команда завершится с ошибкой. **Если ошибка случилась после Wrangler deploy, Worker уже мог быть опубликован**: проверить состояние вручную и не запускать слепой повтор. Контроль показателей может выявить параллельные действия тестовых пользователей — это требует проверки, а не автоматической правки D1.
-
-Production Main, Production D1, GitHub Actions и исходный Branch2 wrangler.jsonc командой не изменяются. Промежуточная конфигурация создаётся только локально и удаляется после выполнения. Для следующих релизов повторно использовать тот же скрипт без нового workflow.
 
 ## Source of truth
 
@@ -60,8 +32,8 @@ Production:
 Branch2:
 - branch: `branch2`
 - Worker: `orders-app-branch2`
-- D1: `orders_db_branch2_mirror_20261027` (actual `branch2` `wrangler.jsonc`)
-- D1 id: `0904a573-21ff-44d8-93b0-c9200f771702` (actual Branch2 binding; reverify before any action)
+- D1: `orders_db_branch2`
+- D1 id: `40065052-854e-44b8-bcd5-251bdd488301`
 
 Permanent rules:
 - never cross-bind Worker/D1;
@@ -110,10 +82,6 @@ Resolver invariants:
 - Safe corrections preserve history through correction/reversal instead of silent rewrite.
 - Return physical facts and refund amount are independent.
 - Exchange physical change and exchange payment/refund are independent.
-- Modern `itemized_v1` Exchange is a **set operation**, not a list of forced old→new pairs: old items and new items are independent collections.
-- Itemized Exchange commercial total is derived from persisted sold line values; actual payment/refund is derived separately from real net paid.
-- A never-issued exchanged item releases reservation/Workshop obligation without increasing Physical; a customer-held old item may remain pending and be received later per line.
-- Delayed Set Exchange intake keeps a unique lifecycle identity per old exchange item; one group's lines may have different Warehouse/Boutique/no-stock dispositions.
 
 Stage03 pricing model (active on Branch2, not yet fully promoted to Production):
 - `legacy_manual_total` preserves old order-total truth.

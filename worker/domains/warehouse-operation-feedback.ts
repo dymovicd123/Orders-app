@@ -28,6 +28,11 @@ export function warehouseOperationFeedback(
       && /^(?:Списание|Корректировка): характеристики не соответствуют выбранному варианту\. Выберите существующую комбинацию заново\.$/.test(raw)) {
     return {status:409,code:'warehouse_sku_mismatch',message:raw}
   }
+  if (kind === 'transfer'
+      && /^Перемещение: выбранная вещь больше не соответствует характеристикам варианта из каталога\./.test(raw)
+      && raw.endsWith('Склад не изменён.')) {
+    return {status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420)}
+  }
   if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
       status:409,code:'warehouse_stock_stale',

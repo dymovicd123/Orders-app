@@ -267,10 +267,6 @@ export async function createItemizedExchangeBatch(
         let inventorySource: SourceType | null = null;
         let physicalIssueConfirmed = false;
         if (effectiveSource !== 'workshop') {
-          const shipmentState = cleanText((effectiveNewItem as any).shipmentState);
-          if (shipmentState !== 'sent' && shipmentState !== 'pending') {
-            throw new CriticalOperationConflictError(`Позиция обмена ${inputIndex + 1}: укажите, отправлен ли новый товар.`);
-          }
           const normalizedEffective = normalizeOrderItems([effectiveNewItem], normalizeSourceType((existing as any).source_type))[0];
           const resolved = await resolveCatalogProductAndVariantV2(db, normalizedEffective);
           resolvedVariantId = toInt(resolved.variantId, 0) || null;
@@ -279,7 +275,7 @@ export async function createItemizedExchangeBatch(
             throw new Error('Обмен больше не принимает полный фактический остаток. Обновите форму и подтвердите только выдаваемые вещи.');
           }
           physicalIssueConfirmed = (effectiveNewItem as any).issuePossessionConfirmed === true;
-          if (resolvedVariantId && (effectiveNewItem as any).shipmentState === 'sent') {
+          if (resolvedVariantId) {
             stockKey = `${inventorySource}:${resolvedVariantId}`;
             const group = stockGroups.get(stockKey) || {
               inventorySource,

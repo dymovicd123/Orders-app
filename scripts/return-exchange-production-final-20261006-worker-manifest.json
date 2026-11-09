@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "return-exchange-production-final-20261006-worker",
+  "files": {
+    "worker/domains/activity.ts": {
+      "beforeGitBlob": "081b4477db92538b94337731349527d0907a73cc",
+      "afterGitBlob": "10d1eead5f97652f505a8d4ad9efc8095444075c",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/worker/domains/activity.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "98a06ee1856fb36e3b90b239b1d570ab648f1bd4",
+      "afterGitBlob": "d0ca58b9c48d4ab87199f4a84d9c095da06b36a5",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/worker/domains/orders-read.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "db910492153aa5ed48b56285968aa7dc09d86e81",
+      "afterGitBlob": "6965a1c2f1896041f1ac7fa4cf780ccfc73ecf07",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/worker/domains/orders-write.ts"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "5f3fb92b5383709e2791f4f6ddd7dc5d0ad29017",
+      "afterGitBlob": "af53527b060ec388bbe9058b80df16a564b8af4c",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/worker/domains/returns-exchanges.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "31262087815423d5ebd13f7b28cd0335ac75470d",
+      "afterGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/worker/index.ts"
+    }
+  }
+}
