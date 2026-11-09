@@ -67,6 +67,8 @@ assert.equal(isOrderShipmentCompleteForActions({
 assert.equal(isOrderShipmentCompleteForActions({...order,shipping_status:'not_sent',items:[{...item,shipmentSentQuantity:1}]}),true,'All physically dispatched item lines should not offer another shipment')
 
 const ui=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
+const dispatchModal=fs.readFileSync('src/features/orders/OrderTableDispatchModal.tsx','utf8')
+assert(ui.includes('<OrderTableDispatchModal'),'The table must keep the shipment history dialog accessible')
 assert(ui.includes('const fullyShipped = isOrderShipmentCompleteForActions(order)'))
 assert(ui.includes("fullyShipped ? `Отправлено${order.shipping_date ? ` · ${order.shipping_date}` : ''}` : shipmentDisplay.label"),
   'Delivery column must agree with the item-level partial shipment state')
@@ -78,11 +80,11 @@ assert(ui.includes("fullyShipped && projection.lifecycleLabel === 'Активе�
 assert(ui.includes('extraActionsOrderId === order.id && fullyShipped'),'Recorded shipment details must remain available only in extra actions')
 assert(ui.includes('История отправок / исправить ошибку'))
 
-assert(ui.includes('Уже отправлено — повторная отправка не нужна'))
-assert(ui.includes('По учёту отправка уже проведена'))
-assert(ui.includes('Исправить ошибочную отправку'))
-assert(ui.includes('Отправлено: {x.dispatchedAt'))
-assert(ui.includes("String(part).trim().toUpperCase()!=='СТАНДАРТ'"))
+assert(dispatchModal.includes('Уже отправлено — повторная отправка не нужна'))
+assert(dispatchModal.includes('По учёту отправка уже проведена'))
+assert(dispatchModal.includes('Исправить ошибочную отправку'))
+assert(dispatchModal.includes('Отправлено: {x.dispatchedAt'))
+assert(dispatchModal.includes("String(part).trim().toUpperCase()!=='СТАНДАРТ'"))
 const shipping=fs.readFileSync('worker/domains/order-dispatch.ts','utf8')
 assert(shipping.includes("cleanText(order.shipping_status)==='sent'"),'Must not relax no-repeat shipping guard')
 const correction=fs.readFileSync('worker/domains/order-dispatch-cancel.ts','utf8')
