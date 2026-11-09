@@ -43,4 +43,16 @@ jobs:
           npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --json --command="SELECT count(*) AS applied FROM d1_migrations" > /tmp/b2-schema-migrations.json
           node -e 'const d=require("/tmp/b2-schema-migrations.json");console.log("BRANCH2_MIGRATION_COUNT",JSON.stringify((Array.isArray(d)?d:[d]).flatMap(x=>x.results||[])))'
           echo 'BRANCH2_D1_READONLY_PREFLIGHT_COMPLETE — NO WRITES, NO MIGRATIONS, NO DEPLOY'
+      - name: Inspect actual Main and Branch2 active Cloudflare deployments without altering traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in orders-app orders-app-branch2; do
+            response="$(curl --fail-with-body -fsS \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$service/deployments")"
+            echo "$response" | SERVICE="$service" node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{const x=JSON.parse(s);if(!x.success||!Array.isArray(x.result?.deployments))process.exit(3);const deployments=x.result.deployments.slice().sort((a,b)=>String(a.created_on).localeCompare(String(b.created_on)));const last=deployments.at(-1);console.log("CLOUDFLARE_SERVING_READONLY",JSON.stringify({service:process.env.SERVICE,created:last?.created_on,activeDeployment:last?.id,versions:last?.versions}));if(!last?.id)process.exit(4)})'
+          done
+          echo 'MAIN_AND_BRANCH2_CLOUDFLARE_READONLY_PROOF_COMPLETE'
+
 # Read-only retry after GitHub Actions runner incident; original target and SELECT-only queries remain unchanged.
