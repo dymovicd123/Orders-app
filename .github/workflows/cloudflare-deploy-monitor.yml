@@ -1,40 +1,11 @@
-name: Cloudflare upload monitor and approved Main version promotion
-# Push monitor observes Cloudflare uploads only. Separate dispatch promotion is explicit, pinned and guarded.
+name: Cloudflare build and live-deployment monitor
+# Observe native Cloudflare builds and read the active Worker deployment; never publish from GitHub.
 
 on:
   push:
     branches:
       - branch2
       - main
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Inspect only, or promote a previously uploaded version'
-        type: choice
-        options: [inspect, promote]
-        default: inspect
-        required: true
-      source_sha:
-        description: 'Full 40-character Git SHA for promotion (blank for inspect)'
-        type: string
-        required: false
-      version_id:
-        description: 'Exact uploaded Worker Version ID (blank for inspect)'
-        type: string
-        required: false
-      expected_deployment_id:
-        description: 'Currently active Main Deployment ID (blank for inspect)'
-        type: string
-        required: false
-      expected_active_version_id:
-        description: 'Currently active Main Version ID (blank for inspect)'
-        type: string
-        required: false
-      confirmation:
-        description: 'For promotion enter PUBLISH-MAIN-100'
-        type: string
-        required: false
-
 permissions:
   contents: read
   statuses: write
@@ -42,7 +13,7 @@ permissions:
 jobs:
   monitor:
     if: github.event_name == 'push'
-    name: Cloudflare upload / ${{ github.ref_name }}
+    name: Cloudflare build / ${{ github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -94,7 +65,7 @@ jobs:
           esac
           echo "worker_name=$WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Mark deploy pending
+      - name: Mark build pending
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -107,7 +78,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc --arg c "cloudflare-upload/$GITHUB_REF_NAME" --arg u "$RUN_URL" '{state:"pending",context:$c,description:"Waiting for Cloudflare version upload",target_url:$u}')" >/dev/null
+            -d "$(jq -nc --arg c "cloudflare-build/$GITHUB_REF_NAME" --arg u "$RUN_URL" '{state:"pending",context:$c,description:"Waiting for Cloudflare Workers Build",target_url:$u}')" >/dev/null
 
       - name: Wait for matching Cloudflare build
         id: wait
@@ -203,9 +174,9 @@ jobs:
             | if .id and (.versions|length)>0 then
               {active_deployment_id:.id, serving_versions:.versions}
               else error("No active Worker deployment") end' <<<"$live"
-          echo "Cloudflare upload status does NOT attest that this version serves traffic."
+          echo "Cloudflare native build completed; active deployment is listed above. Build success alone is not proof of a particular live version."
 
-      - name: Mark deploy success
+      - name: Mark build success
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -219,9 +190,9 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc --arg c "cloudflare-upload/$GITHUB_REF_NAME" --arg d "Cloudflare upload finished (NOT serving traffic)" --arg u "$RUN_URL" '{state:"success",context:$c,description:$d,target_url:$u}')" >/dev/null
+            -d "$(jq -nc --arg c "cloudflare-build/$GITHUB_REF_NAME" --arg d "Cloudflare build successful; inspect active deployment in log" --arg u "$RUN_URL" '{state:"success",context:$c,description:$d,target_url:$u}')" >/dev/null
 
-      - name: Mark deploy failure
+      - name: Mark build failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -235,63 +206,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc --arg c "cloudflare-upload/$GITHUB_REF_NAME" --arg d "Cloudflare upload failed; inspect workflow log" --arg u "$RUN_URL" '{state:"failure",context:$c,description:$d,target_url:$u}')" >/dev/null
+            -d "$(jq -nc --arg c "cloudflare-build/$GITHUB_REF_NAME" --arg d "Cloudflare build failed; inspect workflow log" --arg u "$RUN_URL" '{state:"failure",context:$c,description:$d,target_url:$u}')" >/dev/null
 
-  manual-main-inspect:
-    name: Main version/deployment inspection (GET-only)
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'inspect'
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    permissions:
-      contents: read
-    env:
-      RELEASE_MODE: inspect
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - name: Inspect existing Main deployment and latest uploaded builds (read-only)
-        run: node scripts/main-version-promotion.mjs
-
-  manual-main-promote:
-    name: Promote reviewed Main Worker Version ID to 100% (approval required)
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'promote'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    concurrency:
-      group: orders-app-main-manual-promotion
-      cancel-in-progress: false
-    environment: main-production
-    permissions:
-      contents: read
-    env:
-      RELEASE_MODE: promote
-      RELEASE_SHA: ${{ inputs.source_sha }}
-      TARGET_VERSION_ID: ${{ inputs.version_id }}
-      EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
-      EXPECTED_ACTIVE_VERSION_ID: ${{ inputs.expected_active_version_id }}
-      CONFIRM_RELEASE: ${{ inputs.confirmation }}
-      GITHUB_TOKEN: ${{ github.token }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - name: Verify exact main checkout and run full non-mutating release check
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          node scripts/main-version-promotion.mjs --self-test
-      - name: Promote already uploaded exact-SHA version (one guarded Cloudflare POST)
-        run: node scripts/main-version-promotion.mjs
