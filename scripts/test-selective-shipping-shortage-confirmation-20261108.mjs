@@ -72,6 +72,8 @@ assert.throws(()=>confirm.normalizeDispatchStockConfirmations([{
 const dispatch=fs.readFileSync('worker/domains/order-dispatch.ts','utf8')
 const cancel=fs.readFileSync('worker/domains/order-dispatch-cancel.ts','utf8')
 const ui=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
+const dispatchActions=fs.readFileSync('src/features/orders/orderTableDispatchActions.ts','utf8')
+assert(ui.includes('createOrderTableDispatchActions({'),'Order table must wire the verified typed shipping controller')
 assert(dispatch.includes('DispatchStockConfirmationRequired(requiredConfirmations)'))
 assert(dispatch.includes('quantity=?,reserved_quantity=?'),'No negative stock quantities after confirmation')
 assert(dispatch.includes("stock_writeoff_status='fulfilled'"),'Keep exact fulfillment status')
@@ -79,6 +81,6 @@ assert(dispatch.includes('inventory_operation_evidence'),'Record discrepancy evi
 assert(cancel.includes('restoreQty=restorePhysical?accountedQuantity:0'),'No phantom stock restoration on undo')
 // Exact confirmation HTTP status/code/items are asserted by
 // test-selective-shipping-shortage-http-20261108.mjs against the real Worker.
-assert(ui.includes("data.code==='dispatch_stock_confirmation_required'"))
-assert(ui.includes("askStockResolution({"))
+assert(dispatchActions.includes("data.code==='dispatch_stock_confirmation_required'"))
+assert(dispatchActions.includes("askStockResolution({"))
 console.log('SELECTIVE_SHIPPING_SHORTAGE_PASS: free=0, shortage known SKU, bounded physical deduction, no other-reservation deletion, explicit confirmation, cancellation and no double issue')
