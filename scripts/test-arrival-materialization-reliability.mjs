@@ -1,7 +1,8 @@
 import fs from 'node:fs'
-const source = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')
+const source = fs.readFileSync('worker/domains/inventory-arrival-materialization.ts', 'utf8')
+const movementSource = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')
 const start = source.indexOf('export async function resolveInventoryCreatableItemsBulk(')
-const end = source.indexOf('\n\nexport async function applyInventoryMovement(', start)
+const end = source.length
 if (start < 0 || end < 0) throw new Error('Cannot isolate inventory materializer')
 const body = source.slice(start, end)
 const check = (value, message) => { if (!value) throw new Error(message) }
@@ -12,10 +13,10 @@ check(body.indexOf('occupiedIds') < body.indexOf('INSERT OR IGNORE INTO catalog_
 console.log('ARRIVAL MATERIALIZATION RELIABILITY TESTS PASSED — retired history stays retired while a new physical incarnation can receive a unique external id')
 
 
-const applyStart = source.indexOf('export async function applyInventoryMovement(')
+const applyStart = movementSource.indexOf('export async function applyInventoryMovement(')
 check(applyStart >= 0, 'Cannot isolate inventory movement apply path')
-const applyBody = source.slice(applyStart)
-const cleanupStart = source.indexOf('async function cleanupArrivalMaterialization(')
+const applyBody = movementSource.slice(applyStart)
+const cleanupStart = source.indexOf('export async function cleanupArrivalMaterialization(')
 const cleanupEnd = source.indexOf('\n\nexport async function resolveInventoryCreatableItemsBulk(', cleanupStart)
 check(cleanupStart >= 0 && cleanupEnd > cleanupStart, 'Arrival materialization cleanup boundary missing')
 const cleanup = source.slice(cleanupStart, cleanupEnd)

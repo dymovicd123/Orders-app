@@ -2,6 +2,13 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { normalizeInventoryItem } from '../worker/domains/order-core.ts'
 import { arrivalFactsMatchCanonicalSku } from '../worker/domains/inventory-movement.ts'
+import * as arrivalMaterialization from '../worker/domains/inventory-arrival-materialization.ts'
+import * as movementCompat from '../worker/domains/inventory-movement.ts'
+
+// The previous public module must retain the exact runtime implementation and error class.
+for (const [name, implementation] of Object.entries(arrivalMaterialization)) {
+  assert.equal(movementCompat[name], implementation, `Arrival Catalog export ${name} must retain its existing import identity`)
+}
 
 const sku={
   productId:1,variantId:15,productName:'АБАЙКА',category:'adult',gender:'ЖЕН',
