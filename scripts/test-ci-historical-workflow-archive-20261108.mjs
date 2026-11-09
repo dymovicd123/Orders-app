@@ -60,8 +60,8 @@ assert(monitor.includes('build_trigger_metadata.branch == $branch'),
   'Cloudflare monitor must match the exact branch before claiming success')
 assert(monitor.includes('if [[ "$outcome" != "success" ]]; then'),
   'Missing/failed/skipped native builds must not report successful release')
-assert(monitor.includes('Mark deploy failure') && monitor.includes('Mark deploy pending'),
-  'Cloudflare monitor lost explicit failure/pending release statuses')
+assert(monitor.includes('Mark build failure') && monitor.includes('Mark build pending'),
+  'Cloudflare monitor lost explicit failure/pending build statuses')
 assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
   'GitHub monitor must not trigger an independent Worker production deploy')
 
