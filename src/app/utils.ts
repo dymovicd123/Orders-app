@@ -754,6 +754,10 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       const stockStatus = String(item.stockWriteoffStatus || '').trim()
       const sentFallback = order?.shipping_status === 'sent' && (sourceType === 'workshop' || !stockStatus)
       const issuedToClient = issuedStockStatuses.has(stockStatus) || sentFallback
+      const maxQuantity = Math.max(0, Math.trunc(Number(item.availableOperationQuantity ?? item.quantity ?? 0) || 0))
+      // For a fully sent order, preselect only goods known to have reached the
+      // client. This is a draft selection, never an acknowledgement of receipt.
+      const initiallySelected = order?.shipping_status === 'sent' && issuedToClient
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
@@ -762,12 +766,12 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
         material: item.material,
         length: item.length,
         size: item.size,
-        quantity: 0,
-        maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
+        quantity: initiallySelected ? maxQuantity : 0,
+        maxQuantity,
         sourceType,
         issuedToClient,
         restock: false,
-        physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending') as 'pending' | 'no_stock',
+        physicalState: 'pending' as const,
       }
     }).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),
   }
