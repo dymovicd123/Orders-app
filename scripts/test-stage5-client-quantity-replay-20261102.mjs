@@ -104,6 +104,7 @@ const response = (payload, status=200) => new Response(JSON.stringify(payload), 
 let modal=null
 let message=null
 let refresh=0
+let refreshOk=true
 let approveStock=true
 let approveCorrection=true
 let shortageMode=false
@@ -157,7 +158,7 @@ const actions = () => createOrderTableDispatchActions({
   askStockResolution:async()=>approveStock,
   askActionConfirmation:async()=>approveCorrection,
   setMessage:value=>{message=typeof value==='function'?value(message):value},
-  onShipmentChange:async()=>{refresh++},
+  onShipmentChange:async()=>{refresh++;return refreshOk},
 })
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
 const order={id:55,external_id:'ORD-55'}
@@ -270,6 +271,20 @@ assert.equal(modal,null)
 assert.match(message,/остаток автоматически не увеличен/)
 assert.equal(refresh,4,'success-only refresh; stale and declined operations do not refresh')
 
+// Once a POST is committed, a failed list refresh must never offer the same shipment again.
+planLines=[{orderItemId:44,productName:'КОСТЮМ',readyQuantity:1,selectedQuantity:1,selectable:true,sourceType:'warehouse'}]
+historyRows=[]
+actions().openDispatchDraft(order)
+await flush()
+refreshOk=false
+actions().submitSelectedDispatch()
+await flush()
+assert.equal(modal,null,'Confirmed shipment is closed, not offered for retry when readback fails')
+assert.match(message,/отправлено 1 шт/)
+assert.match(message,/Список заказов не обновился/)
+assert.equal(refresh,5)
+refreshOk=true
+
 
 // The modal itself is now independently TypeScript-checked, and these are
 // actual React-rendered branches rather than string-only assertions.
@@ -303,9 +318,11 @@ assert(readyMarkup.includes('aria-label="Отправка товаров"'))
 assert(readyMarkup.includes('ORD-55'))
 assert(readyMarkup.includes('Готово 1 шт.'))
 assert(readyMarkup.includes('ШАПАН ЦЕХ'))
-assert(readyMarkup.includes('aria-label="Количество КОСТЮМ"'))
-assert(readyMarkup.includes('aria-label="Количество ШАПАН ЦЕХ"'))
-const workshopQty=readyMarkup.slice(readyMarkup.indexOf('aria-label="Количество ШАПАН ЦЕХ"'),-1)
+const warehouseQtyLabel='aria-label="Количество КОСТЮМ · ХАКИ · 50 · Склад · позиция №44"'
+const workshopQtyLabel='aria-label="Количество ШАПАН ЦЕХ · ЧЁРНЫЙ · 52 · Цех · позиция №45"'
+assert(readyMarkup.includes(warehouseQtyLabel))
+assert(readyMarkup.includes(workshopQtyLabel))
+const workshopQty=readyMarkup.slice(readyMarkup.indexOf(workshopQtyLabel),-1)
 assert(workshopQty.includes('disabled'),'Workshop number control must stay read-only')
 const priorMarkup=rendered({...baseModalDraft,
   plan:{ok:true,lines:[],selectedCount:0,canConfirmIssuedOnly:true},selected:{}})
@@ -315,7 +332,7 @@ const issuedMarkup=rendered({...baseModalDraft,plan:{
   ok:true,lines:[{...lineWarehouse,dispatchPriorIssued:true}],selectedCount:1,
 }})
 assert(issuedMarkup.includes('По учёту уже выдан'))
-assert(issuedMarkup.slice(issuedMarkup.indexOf('aria-label="Количество КОСТЮМ"')).includes('disabled'),
+assert(issuedMarkup.slice(issuedMarkup.indexOf(warehouseQtyLabel)).includes('disabled'),
   'Prior-issued quantity cannot be partially edited')
 const sentHistory={dispatchItemId:99,orderItemId:44,quantity:1,cancelledQuantity:0,
   productName:'КОСТЮМ',dispatchDate:'2026-11-09'}
