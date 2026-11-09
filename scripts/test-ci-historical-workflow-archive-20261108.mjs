@@ -51,4 +51,18 @@ for (const filename of [
 const active = readdirSync('.github/workflows').filter(file => /\.ya?ml$/.test(file))
 const cfg=readFileSync('.github/workflows/quality-check.yml','utf8')
 assert(cfg.includes('npm run release:check'), 'Central regression gate must remain required')
+// The Main/Branch2 monitor may attest Cloudflare builds, but must not be
+// another privileged publisher capable of deploying when Cloudflare skips.
+const monitor = readFileSync('.github/workflows/cloudflare-deploy-monitor.yml', 'utf8')
+assert(monitor.includes('build_trigger_metadata.commit_hash == $sha'),
+  'Cloudflare monitor must match the exact commit before claiming success')
+assert(monitor.includes('build_trigger_metadata.branch == $branch'),
+  'Cloudflare monitor must match the exact branch before claiming success')
+assert(monitor.includes('if [[ "$outcome" != "success" ]]; then'),
+  'Missing/failed/skipped native builds must not report successful release')
+assert(monitor.includes('Mark deploy failure') && monitor.includes('Mark deploy pending'),
+  'Cloudflare monitor lost explicit failure/pending release statuses')
+assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
+  'GitHub monitor must not trigger an independent Worker production deploy')
+
 console.log('HISTORICAL_PROD_WORKFLOWS_ARCHIVED',JSON.stringify({preserved:historical.length,active:active.length}))
