@@ -1162,19 +1162,9 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       stockWriteOff: stockResults,
       workshopCount,
     };
-    await completeCriticalOperation(db, criticalOperation, response);
-
-    // Exact reconciliation is deliberately post-commit: it repairs historical counter drift (including
-    // an old pre-192B2A4 retry that incremented before creating the target) but can never make an
-    // otherwise valid order report failure.
-    if (customerId) {
-      try {
-        await recalculateCustomersAfterStorageCleanup(db, [customerId]);
-      } catch (error) {
-        console.warn('Customer statistics reconciliation after safe create failed', error);
-      }
-    }
-
+    // Durable order evidence MUST be attempted before the idempotent response
+    // is finalized. A lost response just after 'completed' otherwise skips
+    // both audit writes forever because cached retries return immediately.
     try {
       const existingCreateAudit = await db.prepare(
         `SELECT id FROM order_manager_audit WHERE order_id = ? AND action = 'created' AND source = 'order_create' ORDER BY id ASC LIMIT 1`
@@ -1197,8 +1187,13 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     } catch (error) {
       console.warn('Order manager audit after safe create failed', error);
     }
+    // This activity record also needs to exist before the saga is finalized.
+    // A retry of an interrupted create must not duplicate a recorded event.
     try {
-      await writeActivityLog(db, {
+      const existingCreateEvent = await db.prepare(
+        `SELECT id FROM activity_log WHERE order_id = ? AND event_type = 'order_created' AND entity_type = 'order' ORDER BY id ASC LIMIT 1`
+      ).bind(orderId).first<{id:number}>();
+      if (!existingCreateEvent?.id) await writeActivityLog(db, {
         eventType: 'order_created',
         entityType: 'order',
         entityId: orderId,
@@ -1212,6 +1207,20 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     } catch (error) {
       console.warn('Order activity log after safe create failed', error);
     }
+
+    await completeCriticalOperation(db, criticalOperation, response);
+
+    // Exact reconciliation is deliberately post-commit: it repairs historical counter drift (including
+    // an old pre-192B2A4 retry that incremented before creating the target) but can never make an
+    // otherwise valid order report failure.
+    if (customerId) {
+      try {
+        await recalculateCustomersAfterStorageCleanup(db, [customerId]);
+      } catch (error) {
+        console.warn('Customer statistics reconciliation after safe create failed', error);
+      }
+    }
+
     return response;
   } catch (error) {
     const contentAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'content_written';
