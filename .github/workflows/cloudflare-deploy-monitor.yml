@@ -199,7 +199,7 @@ jobs:
           live="$(curl --fail-with-body -fsS \
             -H "Authorization: Bearer $CF_API_TOKEN" \
             "$CF_API/accounts/$CF_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments")"
-          jq -ec '.result | sort_by(.created_on) | last
+          jq -ec '.result.deployments | sort_by(.created_on) | last
             | if .id and (.versions|length)>0 then
               {active_deployment_id:.id, serving_versions:.versions}
               else error("No active Worker deployment") end' <<<"$live"
