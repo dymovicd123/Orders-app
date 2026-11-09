@@ -65,4 +65,32 @@ assert(monitor.includes('Mark deploy failure') && monitor.includes('Mark deploy 
 assert(!/(?:fallback_required|npm run deploy|npx wrangler deploy|wrangler versions deploy|direct Production deploy fallback)/i.test(monitor),
   'GitHub monitor must not trigger an independent Worker production deploy')
 
+
+/*
+ * The 2026-10/11 one-off publishers were supplanted by Cloudflare's native
+ * exact-SHA build monitor. Git history keeps the original workflow sources.
+ * Never reactivate a second Main publisher or a completed PR803 Branch2 deploy
+ * while retaining the current verification jobs.
+ */
+for (const filename of [
+  'main345-prod-0119-oneoff-20261102.yml',
+  'main-approved-split-kpi-direct-20261103.yml',
+  'main-resolver-selective-20261022.yml',
+]) assert.equal(existsSync(join('.github/workflows', filename)), false,
+  'Retired direct publisher reactivated: ' + filename)
+
+for (const [filename, expectedJob] of [
+  ['main-manager-finance-20261024.yml', '  verify:'],
+  ['main-stage05-demand-selective-20261023.yml', '  stage05-build:'],
+  ['main-w12-operations-only-20261024.yml', '  verify:'],
+  ['w19-main-stock-operations-only.yml', '  verify:'],
+  ['main-order-source-picker-acceptance-20261106.yml', '  source-first-order-qa:'],
+]) {
+  const source = readFileSync(join('.github/workflows', filename), 'utf8')
+  assert(source.includes(expectedJob), 'Business QA job was deleted: ' + filename)
+  assert(source.includes('npm run build'), 'Build regression removed: ' + filename)
+  assert(!/(?:npx wrangler deploy|wrangler versions deploy|npm run deploy|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|deploy-branch2-pr803|release-main:)/i.test(source),
+    'Historical privileged deploy path reactivated: ' + filename)
+}
+
 console.log('HISTORICAL_PROD_WORKFLOWS_ARCHIVED',JSON.stringify({preserved:historical.length,active:active.length}))
