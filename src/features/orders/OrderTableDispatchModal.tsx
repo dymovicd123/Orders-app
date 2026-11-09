@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { OrderTableDispatchDraft, OrderTableDispatchHistoryLine } from './orderTableDispatchActions'
-import { clampDispatchQuantity, dispatchSelectionError } from './shippingSelection'
+import { clampDispatchQuantity, dispatchSelectionError, dispatchLineAccessibleName } from './shippingSelection'
 
 type Props = {
   draft: OrderTableDispatchDraft
@@ -40,7 +40,7 @@ export function OrderTableDispatchModal({
                             display:'flex',alignItems:'center',gap:10,padding:'10px 0',
                             borderBottom:'1px solid var(--border-color,#e2e8f0)'}}>
                             <input type="checkbox" checked={value>0} disabled={!line.selectable||dispatchDraft.submitting}
-                              aria-label={`Выбрать ${line.productName}`}
+                              aria-label={`Выбрать ${dispatchLineAccessibleName(line)}`}
                               onChange={event=>setDispatchDraft(d=>d?{...d,selected:{...d.selected,
                                 [line.orderItemId]:event.target.checked?line.readyQuantity:0},error:''}:d)}/>
                             <div style={{flex:1,minWidth:0}}>
@@ -61,7 +61,7 @@ export function OrderTableDispatchModal({
                               </small>
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
-                              aria-label={`Количество ${line.productName}`}
+                              aria-label={`Количество ${dispatchLineAccessibleName(line)}`}
                               disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued} value={value}
                               style={{width:72,padding:6}}
                               onChange={event=>{const quantity=clampDispatchQuantity(event.target.value,line.readyQuantity,false)
