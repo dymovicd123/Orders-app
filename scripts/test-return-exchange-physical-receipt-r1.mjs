@@ -139,6 +139,12 @@ const order = { id: 501, external_id: 'QA-501', order_status: 'active',
   items: [{ id: 61, quantity: 1, availableOperationQuantity: 1, sourceType: 'warehouse',
     productName: 'ШАПАН QA', unitPrice: 6000, lineTotal: 6000, catalogPriceSnapshot: 5200 }] }
 let draft = createReturnDraft(order)
+assert.equal(draft.items[0].quantity,1,
+  'Sent-order Return defaults to a pending physical item, not a received item')
+assert.equal(draft.items[0].physicalState,'pending')
+draft.items = draft.items.map(item => ({...item, quantity:0}))
+// A legitimate money-only refund remains available when the operator explicitly
+// deselects the preselected shipped goods; no physical Return is invented.
 draft.amount = 1200
 draft.paymentMethod = 'КАРТА'
 draft.returnDate = '2026-11-08'
