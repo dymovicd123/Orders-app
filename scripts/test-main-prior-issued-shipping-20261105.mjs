@@ -173,5 +173,7 @@ const view = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'ut
 const dispatchActions = fs.readFileSync('src/features/orders/orderTableDispatchActions.ts', 'utf8')
 assert(view.includes('createOrderTableDispatchActions({'))
 assert(dispatchActions.includes('confirmAlreadyIssued:true'))
-assert(view.includes('Подтвердить отправку без повторного списания'))
+const modal = fs.readFileSync('src/features/orders/OrderTableDispatchModal.tsx', 'utf8')
+assert(view.includes('<OrderTableDispatchModal'))
+assert(modal.includes('Подтвердить отправку без повторного списания'))
 console.log('MAIN_PRIOR_ISSUED_SHIPPING_SAFE_PASS')
