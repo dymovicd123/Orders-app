@@ -79,7 +79,11 @@ expect(types.includes('physicalTracking?: boolean'), 'return history physicalTra
 expect(types.includes('physicalReceivedAt?: string | null'), 'return history physicalReceivedAt type missing')
 expect(types.includes('oldPhysicalTracking?: boolean'), 'exchange history physical tracking type missing')
 expect(types.includes('oldPhysicalReceivedAt?: string | null'), 'exchange history physical received type missing')
-expect(utils.includes("physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'return drafts must wait for ordinary stock items and default Workshop-origin items to no-stock')
+// The form can now preselect actually-issued Workshop goods in fully sent orders.
+// It must never mark these goods as physically received (no_stock) merely on open.
+expect(utils.includes("physicalState: 'pending' as const"),
+  'Return drafts, including auto-selected Workshop goods, must await actual physical receipt')
+expect(utils.includes('restock: false'), 'Preselected Return goods must never create a stock arrival')
 expect(utils.includes('issuedToClient') && utils.includes("issuedStockStatuses.has(stockStatus)"), 'return drafts must distinguish never-issued goods from real physical returns')
 expect(utils.includes("order?.shipping_status === 'sent'") && utils.includes(": 'not_issued'"), 'unsent exchange drafts must default ordinary old items to the explicit not-issued path')
 expect(app.includes('createReturnExchangeCreationActions({') && creationActions.includes('prepareReturnCreation(returnSelectedOrder, returnDraft)') && creationActions.includes('submitReturnCreation('), 'return save must use the guarded preparation and critical POST')
