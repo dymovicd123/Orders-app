@@ -51,6 +51,10 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
+      - name: Verify isolated Branch2 Worker and D1 binding
+        if: github.base_ref == 'branch2' || github.ref_name == 'branch2'
+        run: node scripts/test-branch2-environment.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
