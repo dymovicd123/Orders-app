@@ -1,0 +1,45 @@
+name: CI-only Branch2 D1 schema read-only preflight 20261109
+on:
+  push:
+    branches: [ci-branch2-parity-validation-20261109]
+    paths: ['.github/workflows/ci-branch2-parity-d1-schema-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  branch2-schema:
+    if: github.ref == 'refs/heads/ci-branch2-parity-validation-20261109'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Guard exact isolated Branch2 target before any remote SELECT
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - name: Install Wrangler (read-only commands only)
+        run: npm ci --ignore-scripts
+      - name: Query isolated test D1 schema names, no business rows and no writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --json --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('orders','order_items','inventory_stock','inventory_reservations','order_dispatches','order_dispatch_items','order_dispatch_corrections','inventory_manual_operation_receipts','inventory_operation_attempts','order_manager_audit') ORDER BY name" > /tmp/b2-schema-tables.json
+          node -e 'const d=require("/tmp/b2-schema-tables.json");const names=(Array.isArray(d)?d:[d]).flatMap(x=>x.results||[]).map(x=>x.name);console.log("BRANCH2_D1_READONLY_TABLES",JSON.stringify(names));for(const n of ["orders","order_items","inventory_stock","inventory_reservations","order_dispatches","order_dispatch_items","order_dispatch_corrections"])if(!names.includes(n))console.log("BRANCH2_D1_REQUIRED_TABLE_MISSING",n)'
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --json --command="PRAGMA table_info(orders)" > /tmp/b2-schema-orders.json
+          node -e 'const d=require("/tmp/b2-schema-orders.json");const names=(Array.isArray(d)?d:[d]).flatMap(x=>x.results||[]).map(x=>x.name);console.log("BRANCH2_ORDERS_SCHEMA_PROOF",JSON.stringify({totalColumns:names.length,managerSnapshotName:names.includes("manager_snapshot_name")}))'
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --json --command="SELECT count(*) AS applied FROM d1_migrations" > /tmp/b2-schema-migrations.json
+          node -e 'const d=require("/tmp/b2-schema-migrations.json");console.log("BRANCH2_MIGRATION_COUNT",JSON.stringify((Array.isArray(d)?d:[d]).flatMap(x=>x.results||[])))'
+          echo 'BRANCH2_D1_READONLY_PREFLIGHT_COMPLETE — NO WRITES, NO MIGRATIONS, NO DEPLOY'
