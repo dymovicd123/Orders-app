@@ -247,7 +247,13 @@ export function createInventoryMovementActions({
       ) => {
         const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // Reuse the *same* request ID from the JSON body. The Worker already
+          // deduplicates this ID plus payload fingerprint. The shared API client
+          // retries transport failures only when an idempotency header is set.
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Idempotency-Key': isTransfer ? inventoryTransferRequestId : inventoryManualRequestId,
+          },
           body: JSON.stringify(isTransfer ? {
             requestId: inventoryTransferRequestId,
             fromSource: inventoryDraft.source,
