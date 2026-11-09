@@ -133,4 +133,4 @@ const match=run.stdout.match(/data-picker-interactive-error="([^"]*)"/)
 if(!/data-picker-interactive-pass="yes"/.test(run.stdout))console.log('INTERACTION_BROWSER_DOM_TAIL',run.stdout.slice(-3500))
 assert.match(run.stdout,/data-picker-interactive-pass="yes"/,
  'Browser React interactions failed: '+(match?.[1]||'Unknown UI failure'))
-console.log('MAIN_PICKER_BROWSER_INTERACTION_PASS: select active SKU, autocomplete zero-stock model, choose stock shortage and workshop with no mutation')
+console.log('MAIN_PICKER_AND_DISPATCH_BROWSER_INTERACTION_PASS: exact SKU picker, partial dispatch, shortage replay, prior-issued status and returned correction guard')
