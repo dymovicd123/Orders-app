@@ -16,6 +16,7 @@ if(!sqlite.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='manage
  sqlite.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
 
 let stolenLeaseBeforeOrderBatch = ''
+let stolenLeaseBeforeItemBatch = ''
 function prepared(sql,params=[]){
  const st=sqlite.prepare(sql)
  return {
@@ -37,6 +38,14 @@ const DB={
    const stolen=sqlite.prepare("UPDATE critical_operations SET lease_token=?, lease_until_ms=? WHERE request_id=? AND status='started' AND step='validated'")
      .run('another-request-owns-the-lease',Date.now()+90000,requestId)
    assert.equal(stolen.changes,1,'Fault injection must steal precisely the validated request lease')
+  }
+  if(stolenLeaseBeforeItemBatch && statements.some(stmt=>stmt.sqlText?.includes('INSERT INTO order_items ('))
+    && statements.some(stmt=>stmt.sqlText?.includes('INSERT INTO critical_operation_entities'))){
+   const requestId=stolenLeaseBeforeItemBatch
+   stolenLeaseBeforeItemBatch=''
+   const stolen=sqlite.prepare("UPDATE critical_operations SET lease_token=?, lease_until_ms=? WHERE request_id=? AND status='started' AND step='order_created'")
+     .run('another-request-owns-item-lease',Date.now()+90000,requestId)
+   assert.equal(stolen.changes,1,'Fault injection must steal the current item-stage lease')
   }
   sqlite.exec('SAVEPOINT resolver_http')
   try {const r=[];for(const stmt of statements)r.push(await stmt.run());sqlite.exec('RELEASE resolver_http');return r}
@@ -171,6 +180,26 @@ try{
  assert.equal(stolenRecord.target_id,null,'No target may be mapped to the stolen lease')
  assert.equal(stolenRecord.step,'validated','Stolen lease must not advance the operation')
  assert.equal(stolenRecord.lease_token,'another-request-owns-the-lease')
+
+ // #653 follow-up: an order header may be validly committed when its
+ // owner loses the lease during a later item insert. Never create an unmapped
+ // order item or make a phantom physical/reserved movement.
+ const itemPayload=payload('stolen-lease-before-item')
+ const beforeItemRows=sqlite.prepare('SELECT COUNT(*) AS n FROM order_items').get().n
+ const beforeItemReservations=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations').get().n
+ const beforeItemOrders=sqlite.prepare('SELECT COUNT(*) AS n FROM orders').get().n
+ stolenLeaseBeforeItemBatch=itemPayload.requestId
+ const blockedItem=await api('/api/orders','POST',itemPayload,409)
+ assert.equal(blockedItem.data.code,'critical_operation_busy')
+ assert.equal(stolenLeaseBeforeItemBatch,'','Order-item fault injection was not executed')
+ const partial=sqlite.prepare('SELECT target_id,step,lease_token FROM critical_operations WHERE request_id=?').get(itemPayload.requestId)
+ assert(partial?.target_id>0,'Prior header remains mapped to recoverable critical operation')
+ assert.equal(partial.step,'order_created')
+ assert.equal(partial.lease_token,'another-request-owns-item-lease')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM orders').get().n,beforeItemOrders+1,'One safely mapped incomplete header is allowed')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items').get().n,beforeItemRows,'Stolen lease must not produce an unmapped order item')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations').get().n,beforeItemReservations,'Stolen lease cannot reserve inventory')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(partial.target_id).n,0)
 
  console.log('MAIN_STAGE16_PENDING_RECOVERY_REAL_WORKER_HTTP_PASS',JSON.stringify({
   firstPending:firstId,firstActive:secondId,secondPending:thirdId,
