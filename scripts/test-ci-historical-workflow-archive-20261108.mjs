@@ -2,6 +2,7 @@
 // from GitHub Actions merely because somebody touched an old workflow file.
 // This is an offline filesystem check. It never calls GitHub or Cloudflare.
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -92,5 +93,51 @@ for (const [filename, expectedJob] of [
   assert(!/(?:npx wrangler deploy|wrangler versions deploy|npm run deploy|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|deploy-branch2-pr803|release-main:)/i.test(source),
     'Historical privileged deploy path reactivated: ' + filename)
 }
+
+
+// Main native Cloudflare build is upload-only. A successful upload is not a
+// live rollout. Deployment requires separate manual dispatch and exact proof.
+assert(monitor.includes('cloudflare-upload/$GITHUB_REF_NAME'),
+  'Upload status must never masquerade as deployed Production traffic')
+assert(monitor.includes('Read current live deployment without changing traffic'),
+  'Upload observer must independently show active deployment without publishing it')
+assert(monitor.includes('/workers/scripts/$WORKER_NAME/deployments'),
+  'Upload observer must read actual deployed Worker versions')
+assert(monitor.includes('Cloudflare upload finished (NOT serving traffic)'),
+  'Successful build must be labelled as upload-only')
+assert(monitor.includes("github.event_name == 'push'"),
+  'Build observer must only run for pushes')
+assert(monitor.includes("github.event_name == 'workflow_dispatch'"),
+  'Main promotion must require explicit manual workflow invocation')
+assert(monitor.includes("environment: main-production"),
+  'Main promotion must be gated by a dedicated GitHub environment')
+assert(monitor.includes("cancel-in-progress: false"),
+  'Main release promotions must never be cancelled mid-deploy')
+assert(monitor.includes("inputs.mode == 'promote'"),
+  'Explicit promote selection is mandatory')
+assert(monitor.includes("node scripts/main-version-promotion.mjs"),
+  'Main must promote an exact uploaded version rather than re-deploy Worker code')
+assert(!/npx wrangler deploy|wrangler versions deploy|npm run deploy/.test(monitor),
+  'Cloudflare upload monitor must not contain a second direct Wrangler deploy')
+const promotionScript = readFileSync('scripts/main-version-promotion.mjs', 'utf8')
+for (const guard of [
+  'MAIN_RELEASE_BLOCKED', 'PUBLISH-MAIN-100', 'RELEASE_SHA === env.GITHUB_SHA',
+  'deploymentId === env.EXPECTED_DEPLOYMENT_ID',
+  'versionId === env.EXPECTED_ACTIVE_VERSION_ID',
+  "deploy_command ?? ''", 'Target Version ID is not proven',
+  'main-production', // checked below through YAML, not executable script
+]) {
+  if (guard === 'main-production') continue
+  assert(promotionScript.includes(guard), 'Missing pinned Main release safety guard: ' + guard)
+}
+assert(!/wrangler deploy|wrangler d1 execute|migrations apply/.test(promotionScript),
+  'Manual promotion must not build or write to D1')
+const releaseSelfTest = spawnSync(process.execPath,
+  ['scripts/main-version-promotion.mjs', '--self-test'],
+  {encoding:'utf8', timeout:20000,env:{...process.env,CLOUDFLARE_API_TOKEN:'',CLOUDFLARE_ACCOUNT_ID:''}})
+assert.equal(releaseSelfTest.status, 0,
+  'Offline Main release fail-closed tests failed: ' + releaseSelfTest.stderr)
+assert(releaseSelfTest.stdout.includes('MAIN_MANUAL_PROMOTION_OFFLINE_SAFETY_PASS'),
+  'Main safety checks failed to complete')
 
 console.log('HISTORICAL_PROD_WORKFLOWS_ARCHIVED',JSON.stringify({preserved:historical.length,active:active.length}))
