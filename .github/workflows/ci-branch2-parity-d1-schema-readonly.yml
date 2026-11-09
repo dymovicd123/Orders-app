@@ -43,3 +43,4 @@ jobs:
           npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --json --command="SELECT count(*) AS applied FROM d1_migrations" > /tmp/b2-schema-migrations.json
           node -e 'const d=require("/tmp/b2-schema-migrations.json");console.log("BRANCH2_MIGRATION_COUNT",JSON.stringify((Array.isArray(d)?d:[d]).flatMap(x=>x.results||[])))'
           echo 'BRANCH2_D1_READONLY_PREFLIGHT_COMPLETE — NO WRITES, NO MIGRATIONS, NO DEPLOY'
+# Read-only retry after GitHub Actions runner incident; original target and SELECT-only queries remain unchanged.
