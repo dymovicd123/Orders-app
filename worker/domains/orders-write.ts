@@ -4,7 +4,7 @@ import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normal
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
-import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
+import { activityLogStatement, resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, prepareCriticalMappedInsert, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
@@ -621,9 +621,7 @@ export async function createWorkshopTaskForOrderItem(
   ).run();
 }
 
-
-
-export async function writeOrderManagerAudit(
+export function orderManagerAuditStatement(
   db: D1Database,
   input: {
     orderId: number;
@@ -638,15 +636,16 @@ export async function writeOrderManagerAudit(
     details?: string | null;
     createdAt?: string;
   },
+  guard?: { handle: CriticalOperationHandle; entityType: string; entityKey: string },
 ) {
   const createdAt = input.createdAt || new Date().toISOString();
-  await db.prepare(
+  return prepareCriticalMappedInsert(db,
     `INSERT INTO order_manager_audit (
       order_id, external_id, previous_manager_id, previous_manager_name,
       new_manager_id, new_manager_name, action, source,
       actor_role, actor_label, details, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
+  , [
     input.orderId,
     input.externalId,
     input.previousManagerId ?? null,
@@ -659,7 +658,13 @@ export async function writeOrderManagerAudit(
     cleanText(input.actor?.displayName || input.actor?.email) || null,
     cleanText(input.details) || null,
     createdAt,
-  ).run();
+  ], guard?.handle, guard?.entityType || 'order_manager_audit', guard?.entityKey || 'unguarded');
+}
+
+export async function writeOrderManagerAudit(
+  db: D1Database, input: Parameters<typeof orderManagerAuditStatement>[1],
+) {
+  await orderManagerAuditStatement(db,input).run();
 }
 
 
@@ -2533,6 +2538,24 @@ export async function updateOrderCritical(
       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
       paymentCorrectionCount,
     };
+    // Insert evidence atomically with critical-operation entity keys BEFORE
+    // declaring the operation completed. A retry after a lost response cannot
+    // duplicate an event even if the DB insert finished before HTTP replied.
+    if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+      await insertCriticalMappedEntity(db, criticalOperation, 'order_manager_audit', 'manager_changed', orderManagerAuditStatement(db, {
+          orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+          previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+          action: 'changed', source: 'admin_order_edit', actor,
+          details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+        }, { handle: criticalOperation, entityType: 'order_manager_audit', entityKey: 'manager_changed' }));
+    }
+    await insertCriticalMappedEntity(db, criticalOperation, 'activity_log', 'order_updated', activityLogStatement(db, {
+        eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+        title: `Изменён заказ ${p.externalId}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+        amount: p.totals.totalAmount, createdAt: p.timestamp,
+      }, { handle: criticalOperation, entityType: 'activity_log', entityKey: 'order_updated' }));
+
     await completeCriticalOperation(db, criticalOperation, completedResponse);
 
     try {
@@ -2551,26 +2574,6 @@ export async function updateOrderCritical(
       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
       : completedResponse;
 
-    if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
-      try {
-        await writeOrderManagerAudit(db, {
-          orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
-          previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
-          action: 'changed', source: 'admin_order_edit', actor,
-          details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
-        });
-      } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
-    }
-    try {
-      await writeActivityLog(db, {
-        eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
-        title: `Изменён заказ ${p.externalId}`,
-        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
-        amount: p.totals.totalAmount, createdAt: p.timestamp,
-      });
-    } catch (error) {
-      console.warn('Order activity log after safe edit failed', error);
-    }
     return response;
   } catch (error) {
     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
