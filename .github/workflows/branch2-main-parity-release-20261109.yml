@@ -34,7 +34,10 @@ jobs:
 
   release:
     name: Publish exact reviewed Branch2 code, no D1 change
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(branch2): source parity')
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): source parity')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -59,9 +62,9 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '512c2701dd0ac2c722481ffd7f89589ae7af09f4'
+          test "$(git rev-parse HEAD^)" = '4835683bc161c7aa678d48fe7f089621446f56c2'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' 'scripts/branch2-manual-release.mjs')"
+          expected='.github/workflows/branch2-main-parity-release-20261109.yml'
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
