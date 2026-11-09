@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { build } from 'esbuild'
 import {clampDispatchQuantity,dispatchSelectionError} from '../src/features/orders/shippingSelection.ts'
 import {projectOrderShipmentDisplay,isOrderShipmentCompleteForActions} from '../src/app/orderShipmentProjection.ts'
 
@@ -31,7 +32,10 @@ assert.equal(dispatchSelectionError([unresolved],{15:1}),'','Known-SKU shortage 
 assert.equal(dispatchSelectionError([unresolved],{15:2}),'')
 assert.equal(dispatchSelectionError([unresolved],{15:0}),'')
 const src=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
-assert(src.includes('const selectionError=dispatchSelectionError(d.plan?.lines||[],d.selected)'),
+const actionsSource=fs.readFileSync('src/features/orders/orderTableDispatchActions.ts','utf8')
+assert(src.includes('createOrderTableDispatchActions({'),
+  'OrdersTable must use the typed dispatch controller rather than duplicate HTTP actions')
+assert(actionsSource.includes('const selectionError=dispatchSelectionError(d.plan?.lines||[],d.selected)'),
   'Submit preflight must reject invalid quantity before POST')
 assert(src.includes('const quantity=clampDispatchQuantity('),
   'Numeric input must clamp to the ready quantity')
@@ -39,11 +43,11 @@ assert(src.includes("disabled={dispatchDraft.submitting||line.sourceType==='work
   'Workshop and already-issued quantities must not be partially editable')
 assert(src.includes('Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))'),
   'Invalid selected quantities must disable confirmation')
-assert(src.includes('body:JSON.stringify({requestId:d.requestId,items,stockConfirmations})'),
+assert(actionsSource.includes('body:JSON.stringify({requestId:d.requestId,items,stockConfirmations})'),
   'Same idempotency requestId must survive an uncertain POST response and shortage confirmation')
-assert(src.includes('let {res,data}=await submit()') && src.includes('({res,data}=await submit(data.items.map('),
+assert(actionsSource.includes('let {res,data}=await submit()') && actionsSource.includes('({res,data}=await submit(data.items.map('),
   'Shortage acknowledgement must retry with the original request ID rather than create a new dispatch')
-assert(src.includes('submitting:false,\n          error:e instanceof Error?e.message'),
+assert(actionsSource.includes('submitting:false,\n          error:e instanceof Error?e.message'),
   'On uncertain error keep the same draft/requestId for safe retry')
 // Exchange Set can retain the old order item as quantity=0 before a new line.
 // The order table still displays original item positions. A filtered shipment
@@ -69,5 +73,188 @@ const fullySentAfterExchange={...exchangedOrder,items:exchangedOrder.items.slice
 assert.equal(projectOrderShipmentDisplay(fullySentAfterExchange).state,'sent',
   'A retained zero-quantity old item cannot force a fully shipped order into partial status')
 assert.equal(isOrderShipmentCompleteForActions(fullySentAfterExchange),true)
+
+// Exercise the compiled *actual* OrdersTable HTTP controller with a disposable
+// fake transport. Existing SQLite Worker tests independently own Physical/Reserved.
+const moduleBuild = await build({
+  entryPoints: ['src/features/orders/orderTableDispatchActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', target: 'es2022',
+  write: false, logLevel: 'silent',
+})
+const {createOrderTableDispatchActions} = await import(
+  'data:text/javascript;base64,' + Buffer.from(moduleBuild.outputFiles[0].text).toString('base64')
+)
+const response = (payload, status=200) => new Response(JSON.stringify(payload), {
+  status, headers:{'Content-Type':'application/json'},
+})
+let modal=null
+let message=null
+let refresh=0
+let approveStock=true
+let approveCorrection=true
+let shortageMode=false
+let staleMode=false
+let correctionFail=false
+let priorFail=false
+let lastSelection = null
+let calls=[]
+let planLines = [
+  {orderItemId:44,productName:'КОСТЮМ',readyQuantity:1,selectedQuantity:1,
+    selectable:true,sourceType:'warehouse'},
+  {orderItemId:45,productName:'ШАПАН ЦЕХ',readyQuantity:2,selectedQuantity:2,
+    selectable:true,sourceType:'workshop'},
+]
+let canConfirmIssuedOnly=false
+let historyRows=[]
+const shortageItems=[{
+  productName:'КОСТЮМ',source:'warehouse',variantId:123,
+  trackedPhysicalQuantity:0,expectedQuantity:0,operationQuantity:1,
+}]
+const fakeApi=async (url,init) => {
+  const method=init?.method || 'GET'
+  calls.push({url,method,init})
+  if (method==='GET' && url.endsWith('/shipping/plan')) return response({
+    ok:true,lines:planLines,canConfirmIssuedOnly,
+    selectedCount:canConfirmIssuedOnly?0:planLines.filter(row=>row.selectable).length,
+  })
+  if (method==='GET' && url.endsWith('/shipping/dispatches')) return response({ok:true,dispatches:historyRows})
+  if (method==='POST' && url.endsWith('/shipping/dispatches')) {
+    lastSelection=JSON.parse(init.body)
+    if(staleMode)return response({ok:false,message:'Заказ изменился'},409)
+    if(shortageMode&&!lastSelection.stockConfirmations) return response({
+      ok:false,code:'dispatch_stock_confirmation_required',message:'Нужно уточнение',items:shortageItems,
+    },409)
+    return response({ok:true,shippedQuantity:lastSelection.items.reduce((n,item)=>n+item.quantity,0)})
+  }
+  if (method==='PATCH' && url.endsWith('/shipping')) {
+    if(priorFail)return response({ok:false,message:'Обновите отправку'},409)
+    return response({ok:true})
+  }
+  if (method==='POST' && url.includes('/dispatch-items/')) {
+    if(correctionFail)return response({ok:false,message:'Операция изменилась'},409)
+    return response({ok:true,needsStockCheck:true})
+  }
+  throw Error('Unexpected dispatch route: '+method+' '+url)
+}
+const actions = () => createOrderTableDispatchActions({
+  dispatchDraft:modal,
+  setDispatchDraft:update=>{modal=typeof update==='function'?update(modal):update},
+  apiFetch:fakeApi,
+  askStockResolution:async()=>approveStock,
+  askActionConfirmation:async()=>approveCorrection,
+  setMessage:value=>{message=typeof value==='function'?value(message):value},
+  onShipmentChange:async()=>{refresh++},
+})
+const flush=()=>new Promise(resolve=>setImmediate(resolve))
+const order={id:55,external_id:'ORD-55'}
+actions().openDispatchDraft(order)
+await flush()
+assert.deepEqual(modal.selected,{44:1,45:2},'all ready units selected by default')
+const firstId=modal.requestId
+assert.match(firstId,/^order-dispatch:/)
+assert.deepEqual(calls.slice(0,2).map(c=>c.url),[
+  '/api/orders/55/shipping/plan','/api/orders/55/shipping/dispatches',
+])
+// Block an invalid quantity before any HTTP write.
+modal={...modal,selected:{44:2,45:2}}
+const beforeInvalid=calls.length
+actions().submitSelectedDispatch()
+assert.equal(calls.length,beforeInvalid)
+assert.match(modal.error,/превышает/)
+modal={...modal,selected:{44:1,45:2},error:''}
+// A declined stock shortage must not mutate order or create a fresh requestId.
+shortageMode=true
+approveStock=false
+const beforeDeclined=refresh
+actions().submitSelectedDispatch()
+await flush()
+assert.equal(modal.requestId,firstId)
+assert.equal(modal.submitting,false)
+assert.equal(refresh,beforeDeclined)
+assert.match(modal.error,/не проведена/)
+const declinedWrites=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/shipping/dispatches'))
+assert.equal(declinedWrites.length,1)
+assert.equal(JSON.parse(declinedWrites[0].init.body).requestId,firstId)
+// Confirm only this exact shortage with the same requestId, not a global stock fix.
+approveStock=true
+actions().submitSelectedDispatch()
+await flush()
+const writes=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/shipping/dispatches'))
+assert.equal(writes.length,3)
+const payloads=writes.map(c=>JSON.parse(c.init.body))
+assert(payloads.every(p=>p.requestId===firstId))
+assert.deepEqual(payloads.at(-1).items,[
+  {orderItemId:44,quantity:1},{orderItemId:45,quantity:2},
+])
+assert.deepEqual(payloads.at(-1).stockConfirmations,[{
+  source:'warehouse',variantId:123,expectedQuantity:0,operationQuantity:1,
+}])
+assert.equal(modal,null)
+assert.equal(refresh,beforeDeclined+1)
+assert.match(message,/отправлено 3 шт/)
+// A stale 409 leaves the draft and key available for explicit retry.
+shortageMode=false
+staleMode=true
+actions().openDispatchDraft(order)
+await flush()
+const staleId=modal.requestId
+actions().submitSelectedDispatch()
+await flush()
+assert.equal(modal.requestId,staleId)
+assert.equal(modal.submitting,false)
+assert.match(modal.error,/Заказ изменился/)
+staleMode=false
+actions().submitSelectedDispatch()
+await flush()
+assert.equal(modal,null)
+// Legacy prior-issued is confirmation-only: PATCH, never another stock decrement.
+planLines=[]
+canConfirmIssuedOnly=true
+actions().openDispatchDraft(order)
+await flush()
+const priorId=modal.requestId
+priorFail=true
+actions().confirmIssuedOnlyDispatch()
+await flush()
+assert.equal(modal.requestId,priorId)
+assert.match(modal.error,/Обновите отправку/)
+priorFail=false
+actions().confirmIssuedOnlyDispatch()
+await flush()
+const priorWrites=calls.filter(c=>c.method==='PATCH'&&c.url.endsWith('/shipping'))
+assert.equal(priorWrites.length,2)
+assert(priorWrites.every(c=>c.init.headers['X-Idempotency-Key']===priorId))
+assert(priorWrites.every(c=>{
+  const body=JSON.parse(c.init.body)
+  return body.confirmAlreadyIssued===true && body.shippingStatus==='sent' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(body.shippingDate)
+}))
+assert.equal(modal,null)
+assert.match(message,/без повторного списания/)
+// Correction after a mistaken dispatch must reuse its correction key after 409.
+canConfirmIssuedOnly=false
+planLines=[]
+historyRows=[{dispatchItemId:78,orderItemId:44,productName:'КОСТЮМ',
+  quantity:1,cancelledQuantity:0}]
+actions().openDispatchDraft(order)
+await flush()
+correctionFail=true
+actions().cancelDispatchedLine(historyRows[0])
+await flush()
+assert.equal(modal.submitting,false)
+assert.match(modal.error,/Операция изменилась/)
+const correctionId=modal.correctionKey
+assert.match(correctionId,/^order-dispatch:/)
+correctionFail=false
+actions().cancelDispatchedLine(historyRows[0])
+await flush()
+const corrected=calls.filter(c=>c.method==='POST'&&c.url.includes('/dispatch-items/'))
+assert.equal(corrected.length,2)
+assert(corrected.every(c=>c.url==='/api/orders/55/shipping/dispatch-items/78/correct'))
+assert(corrected.every(c=>JSON.parse(c.init.body).requestId===correctionId))
+assert.equal(modal,null)
+assert.match(message,/остаток автоматически не увеличен/)
+assert.equal(refresh,4,'success-only refresh; stale and declined operations do not refresh')
+
 console.log('STAGE5_EXCHANGE_ZERO_QUANTITY_STATUS_ALIGNMENT_PASS')
 console.log('STAGE5_CLIENT_QUANTITY_AND_RETRY_ID_PASS')
