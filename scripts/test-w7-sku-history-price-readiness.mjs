@@ -4,6 +4,7 @@ const read = (path) => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 const inventory = read('src/features/sections/InventorySection.tsx')
+const historyWorkspace = read('src/features/inventory/useInventoryHistoryWorkspace.ts')
 const panel = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
 const sku = read('src/features/inventory/views/catalogPolishExecutionGroups.tsx')
 const history = read('src/features/inventory/views/renderInventoryHistoryPanel.tsx')
@@ -11,8 +12,16 @@ const initialSchema = read('migrations/0001_init.sql')
 const catalogIdentity = read('migrations/0048_v72_catalog_identity_v3.sql')
 const stockChecks = read('migrations/0053_v72_inventory_cycle_counts.sql')
 
-check(inventory.includes('function openSimpleStockHistory(detail: InventoryHistoryFilter)') && inventory.includes('setHistoryVariantFilter(detail)') && inventory.includes("setHistoryMode('movements')") && inventory.includes("openInventoryPanel('history')"), 'existing exact-position Warehouse history opener is missing')
-check(inventory.includes('const historyRequestRef = useRef(0)') && inventory.includes('const requestId = ++historyRequestRef.current') && inventory.includes('if (requestId !== historyRequestRef.current) return') && inventory.includes('if (requestId === historyRequestRef.current) setHistoryBusy(false)'), 'history source/SKU switching can still be overwritten by a stale in-flight response')
+check(inventory.includes('useInventoryHistoryWorkspace({') && inventory.includes('clearStockDetail: () => setSimpleStockDetail(null)'),
+  'InventorySection must use the single read-only history owner and clear old stock details')
+check(historyWorkspace.includes('function openSimpleStockHistory(detail: InventoryHistoryFilter)') && historyWorkspace.includes('setHistoryVariantFilter(detail)') && historyWorkspace.includes("setHistoryMode('movements')") && historyWorkspace.includes("openInventoryPanel('history')"), 'existing exact-position Warehouse history opener is missing')
+check(historyWorkspace.includes('const historyRequestRef = useRef(0)') && historyWorkspace.includes('const requestId = ++historyRequestRef.current') && historyWorkspace.includes('if (requestId !== historyRequestRef.current) return') && historyWorkspace.includes('if (requestId === historyRequestRef.current) setHistoryBusy(false)'), 'history source/SKU switching can still be overwritten by a stale in-flight response')
+check(historyWorkspace.includes('historyRows.filter') && historyWorkspace.includes("const seenTransfers = new Set<string>()"),
+  'Grouped transfer movement history must remain inside the history workspace')
+check(historyWorkspace.includes("beforeId: reset ? 0 : Number(historyNextBeforeId || 0)") && historyWorkspace.includes('setHistoryNextBeforeId(Number(data?.nextBeforeId || 0) || null)'),
+  'Warehouse history pagination cursor must not be lost in refactor')
+check(!inventory.includes('const historyRequestRef') && !inventory.includes('async function loadHistoryMovements('),
+  'History state/action implementation was duplicated in oversized InventorySection')
 check(inventory.includes('openSimpleStockHistory,\n        openOrderFromFinance,'), 'Catalog does not receive the existing history opener')
 check(panel.includes("| 'openSimpleStockHistory'") && panel.includes('openVariantHistory={ctx.openSimpleStockHistory}'), 'Catalog renderer does not pass history through its typed presentation boundary')
 check(sku.includes('История · Склад') && sku.includes('История · Бутик'), 'SKU card does not expose both source histories')
