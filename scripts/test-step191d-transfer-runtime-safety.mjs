@@ -414,6 +414,11 @@ assert.deepEqual(fetchCalls.map(call => call.url), [
 const submitted = fetchCalls.map(call => JSON.parse(call.init.body))
 assert.deepEqual(submitted.map(p => p.requestId), ['transfer-original-request', 'transfer-original-request'],
   'Confirmed stock shortage must reuse the exact original idempotency key')
+assert.deepEqual(fetchCalls.map(call => call.init.headers['X-Idempotency-Key']),
+  ['transfer-original-request', 'transfer-original-request'],
+  'First submit and stock confirmation must use exactly the original token in HTTP header')
+assert(fetchCalls.every(call => call.init.headers['X-Idempotency-Key'] === JSON.parse(call.init.body).requestId),
+  'HTTP idempotency token must always equal body requestId for Worker replay')
 assert.equal(submitted[1].stockConfirmations[0].expectedQuantity, 1,
   'Physical confirmation may prove possession but must not replace current baseline facts')
 assert.equal(submitted[1].items[0].variantId, '33', 'Exact SKU must not drift during the confirmation retry')
@@ -455,6 +460,8 @@ const unknownOutcome = createInventoryMovementActions({
 await unknownOutcome.saveInventoryMovement()
 assert.equal(fetchCalls.length, 1)
 assert.equal(JSON.parse(fetchCalls[0].init.body).requestId, 'same-original-token-for-retry')
+assert.equal(fetchCalls[0].init.headers['X-Idempotency-Key'], 'same-original-token-for-retry',
+  'Unknown transport outcome must retain retryable header without rotating token')
 assert.equal(numberOfResets, 0, 'Indeterminate network write must not rotate idempotency token')
 assert.match(movedError, /unknown transport outcome/)
 assert.deepEqual(currentDraft, originalDraft, 'Unknown outcome must preserve the complete operator draft')
