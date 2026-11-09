@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { transferProvidedFactsMatchCanonicalSku } from '../worker/domains/inventory-movement.ts'
+import * as operationContract from '../worker/domains/inventory-operation-contract.ts'
+import * as movementCompatibility from '../worker/domains/inventory-movement.ts'
+
+// Moved input contracts keep their original import identities for all callers.
+for (const [name, exported] of Object.entries(operationContract)) {
+  assert.equal(movementCompatibility[name], exported, `Movement compatibility export ${name} must remain identical`)
+}
 
 const canonical={
   productId:7,variantId:77,productName:'АБАЙКА',category:'adult',gender:'ЖЕН',
