@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { build } from 'esbuild'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {clampDispatchQuantity,dispatchSelectionError} from '../src/features/orders/shippingSelection.ts'
 import {projectOrderShipmentDisplay,isOrderShipmentCompleteForActions} from '../src/app/orderShipmentProjection.ts'
 
@@ -33,15 +35,17 @@ assert.equal(dispatchSelectionError([unresolved],{15:2}),'')
 assert.equal(dispatchSelectionError([unresolved],{15:0}),'')
 const src=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 const actionsSource=fs.readFileSync('src/features/orders/orderTableDispatchActions.ts','utf8')
+const modalSource=fs.readFileSync('src/features/orders/OrderTableDispatchModal.tsx','utf8')
+assert(src.includes('<OrderTableDispatchModal'),'OrdersTable must wire the typed shipping modal')
 assert(src.includes('createOrderTableDispatchActions({'),
   'OrdersTable must use the typed dispatch controller rather than duplicate HTTP actions')
 assert(actionsSource.includes('const selectionError=dispatchSelectionError(d.plan?.lines||[],d.selected)'),
   'Submit preflight must reject invalid quantity before POST')
-assert(src.includes('const quantity=clampDispatchQuantity('),
+assert(modalSource.includes('const quantity=clampDispatchQuantity('),
   'Numeric input must clamp to the ready quantity')
-assert(src.includes("disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued}"),
+assert(modalSource.includes("disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued}"),
   'Workshop and already-issued quantities must not be partially editable')
-assert(src.includes('Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))'),
+assert(modalSource.includes('Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))'),
   'Invalid selected quantities must disable confirmation')
 assert(actionsSource.includes('body:JSON.stringify({requestId:d.requestId,items,stockConfirmations})'),
   'Same idempotency requestId must survive an uncertain POST response and shortage confirmation')
@@ -255,6 +259,65 @@ assert(corrected.every(c=>JSON.parse(c.init.body).requestId===correctionId))
 assert.equal(modal,null)
 assert.match(message,/остаток автоматически не увеличен/)
 assert.equal(refresh,4,'success-only refresh; stale and declined operations do not refresh')
+
+
+// The modal itself is now independently TypeScript-checked, and these are
+// actual React-rendered branches rather than string-only assertions.
+const builtModal = await build({
+  entryPoints:['src/features/orders/OrderTableDispatchModal.tsx'],
+  bundle:true, platform:'node', format:'esm', jsx:'automatic',
+  target:'es2022', write:false, logLevel:'silent',
+})
+const {OrderTableDispatchModal} = await import(
+  'data:text/javascript;base64,' + Buffer.from(builtModal.outputFiles[0].text).toString('base64')
+)
+const lineWarehouse={orderItemId:44,productName:'КОСТЮМ',readyQuantity:1,
+  selectedQuantity:1,selectable:true,sourceType:'warehouse',
+  color:'ХАКИ',material:'СТАНДАРТ',size:'50'}
+const lineWorkshop={orderItemId:45,productName:'ШАПАН ЦЕХ',readyQuantity:2,
+  selectedQuantity:2,selectable:true,sourceType:'workshop',
+  color:'ЧЁРНЫЙ',size:'52'}
+const baseModalDraft={
+  order:{id:55,external_id:'ORD-55'},
+  plan:{ok:true,lines:[lineWarehouse,lineWorkshop],selectedCount:2,canConfirmIssuedOnly:false},
+  history:[],loading:false,submitting:false,error:'',selected:{44:1,45:2},
+  requestId:'order-dispatch:test-id',correctionKey:'',correctionItemId:0,
+}
+const modalProps = draft => ({
+  draft,setDraft:()=>{},submitSelectedDispatch:()=>{},
+  confirmIssuedOnlyDispatch:()=>{},cancelDispatchedLine:()=>{},
+})
+const rendered = draft => renderToStaticMarkup(createElement(OrderTableDispatchModal,modalProps(draft)))
+const readyMarkup=rendered(baseModalDraft)
+assert(readyMarkup.includes('aria-label="Отправка товаров"'))
+assert(readyMarkup.includes('ORD-55'))
+assert(readyMarkup.includes('Готово 1 шт.'))
+assert(readyMarkup.includes('ШАПАН ЦЕХ'))
+assert(readyMarkup.includes('aria-label="Количество КОСТЮМ"'))
+assert(readyMarkup.includes('aria-label="Количество ШАПАН ЦЕХ"'))
+const workshopQty=readyMarkup.slice(readyMarkup.indexOf('aria-label="Количество ШАПАН ЦЕХ"'),-1)
+assert(workshopQty.includes('disabled'),'Workshop number control must stay read-only')
+const priorMarkup=rendered({...baseModalDraft,
+  plan:{ok:true,lines:[],selectedCount:0,canConfirmIssuedOnly:true},selected:{}})
+assert(priorMarkup.includes('Подтвердить отправку без повторного списания'))
+assert(priorMarkup.includes('само по себе не подтверждает отправку клиенту'))
+const issuedMarkup=rendered({...baseModalDraft,plan:{
+  ok:true,lines:[{...lineWarehouse,dispatchPriorIssued:true}],selectedCount:1,
+}})
+assert(issuedMarkup.includes('По учёту уже выдан'))
+assert(issuedMarkup.slice(issuedMarkup.indexOf('aria-label="Количество КОСТЮМ"')).includes('disabled'),
+  'Prior-issued quantity cannot be partially edited')
+const sentHistory={dispatchItemId:99,orderItemId:44,quantity:1,cancelledQuantity:0,
+  productName:'КОСТЮМ',dispatchDate:'2026-11-09'}
+const correctionMarkup=rendered({...baseModalDraft,history:[sentHistory]})
+assert(correctionMarkup.includes('Исправить ошибочную отправку'))
+assert(correctionMarkup.includes('Ранее отправлено'))
+const returnedMarkup=rendered({...baseModalDraft,history:[{...sentHistory,hasReturn:true}]})
+assert(returnedMarkup.includes('Есть возврат'))
+assert(!returnedMarkup.includes('Исправить ошибочную отправку'),
+  'Already returned unit cannot offer unsafe dispatch correction')
+const staleMarkup=rendered({...baseModalDraft,error:'Обновите отправку'})
+assert(staleMarkup.includes('role="alert"') && staleMarkup.includes('Обновите отправку'))
 
 console.log('STAGE5_EXCHANGE_ZERO_QUANTITY_STATUS_ALIGNMENT_PASS')
 console.log('STAGE5_CLIENT_QUANTITY_AND_RETRY_ID_PASS')
