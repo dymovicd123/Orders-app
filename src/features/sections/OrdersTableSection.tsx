@@ -48,7 +48,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     correctRecordedPaymentMethod,
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
-    loadExchangeCancellationPreview,
     loadOrderExchangeCancellationPlan,
     cancelOrderExchangeChain,
     loadOrderReturnCancellationChoices,
@@ -69,7 +68,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     isAdmin,
     kaspiMode = false,
     ManagerBadge,
-    markOrderSentToClient,
     apiFetch,
     askActionConfirmation,
     askStockResolution,
@@ -88,7 +86,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     sectorStyle,
     selectedOrderId,
     setExpandedOrderItemCounts,
-    shippingStatusLabel,
     suggestionValues,
     summarizeOrderItemLines,
     summarizeOrderPaymentLines,
@@ -135,7 +132,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
     &&!adminDeleteDraft.preview.activeSaga
     &&(adminDeleteDraft.preview.requiresPhysicalFact
-      ||(adminDeleteDraft.preview.appliedStockReview?.appliedCount>0
+      ||((adminDeleteDraft.preview.appliedStockReview?.appliedCount ?? 0)>0
         &&adminDeleteDraft.preview.appliedStockReview?.allowed)))
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
@@ -529,7 +526,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  if(projection.canEdit)handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  if(projection.canEdit)handleEditOrder(order, 'orders')
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
@@ -694,7 +691,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <h4>Товар действительно передавался клиенту?</h4>
                             <p className="muted">
                               {adminDeleteDraft.preview?.requiresPhysicalFact
-                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
+                                ||(adminDeleteDraft.preview?.appliedStockReview?.appliedCount ?? 0)>0
                                 ?'В учёте есть движения товара или отметки выдачи.'
                                 :'В учёте нет подтверждённой выдачи.'}
                               {' '}Перед удалением подтвердите, что произошло на самом деле.
@@ -758,7 +755,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 <p className="muted">При нулевом списании отмена снимет ошибочную учётную выдачу, не прибавляя товар к остатку.
                                   Реальные списания и резервы обрабатываются отдельно.</p>
                                 <ul style={{paddingLeft:18}}>
-                                  {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect)=>(
+                                  {adminDeleteDraft.preview.appliedStockReview?.reversals.map((effect)=>(
                                     <li key={effect.eventId}>
                                       <strong>{effect.name}</strong> ·
                                       {' '}{effect.source==='warehouse'?'Склад':
@@ -803,7 +800,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <ol style={{display:'grid',gap:12,paddingLeft:22}}>
                               {adminDeleteDraft.preview.chainPlan.steps.map((step)=>{
                                 const exchange=step.type==='exchange'
-                                  ?(adminDeleteDraft.preview.impact?.exchanges||[]).find((item)=>item.id===step.id)
+                                  ?(adminDeleteDraft.preview?.impact?.exchanges||[]).find((item)=>item.id===step.id)
                                   :null
                                 const exchangeSource=(source:string)=>source==='not_issued'?'не выдавался'
                                   :source==='warehouse'?'склад':source==='boutique'?'бутик'
@@ -910,6 +907,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ||(physicalQuestionRequired&&adminDeleteDraft.physicalAnswer!=='not_issued')}
                           onClick={()=>{void(async()=>{
                             const draft=adminDeleteDraft
+                            if (!draft.preview) return
                             const answer=physicalQuestionRequired ?'not_issued':undefined
                             setAdminDeleteDraft(d=>d?{...d,submitting:true,error:''}:d)
                             try{
