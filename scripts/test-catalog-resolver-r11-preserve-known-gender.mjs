@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 
 const workspace = fs.readFileSync('src/app/controllers/useWorkspaceViewModel.tsx', 'utf8')
-const resolver = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
+const resolver = fs.readFileSync('worker/domains/order-catalog-identity.ts', 'utf8')
 const review = fs.readFileSync('worker/domains/catalog-review.ts', 'utf8')
 const modal = fs.readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx', 'utf8')
 
