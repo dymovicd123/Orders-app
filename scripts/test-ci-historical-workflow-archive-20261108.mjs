@@ -99,6 +99,10 @@ for (const [filename, expectedJob] of [
 // live rollout. Deployment requires separate manual dispatch and exact proof.
 assert(monitor.includes('cloudflare-upload/$GITHUB_REF_NAME'),
   'Upload status must never masquerade as deployed Production traffic')
+assert(monitor.includes('Read current live deployment without changing traffic'),
+  'Upload observer must independently show active deployment without publishing it')
+assert(monitor.includes('/workers/scripts/$WORKER_NAME/deployments'),
+  'Upload observer must read actual deployed Worker versions')
 assert(monitor.includes('Cloudflare upload finished (NOT serving traffic)'),
   'Successful build must be labelled as upload-only')
 assert(monitor.includes("github.event_name == 'push'"),
