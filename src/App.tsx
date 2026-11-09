@@ -2537,6 +2537,7 @@ function App() {
 
       // Orders including Kaspi use the same paginated read and period summary.
       // Do not add a duplicate D1 summary read during each page fetch.
+      return ordersData
     } catch (err) {
       if (!isCurrentRead()) return null
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
@@ -3903,7 +3904,7 @@ function removeDebtPayment(index: number) {
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
         <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text), askStockResolution,
-        onShipmentChange: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false) },
+        onShipmentChange: async () => { invalidateInventoryStockCaches(true); return (await loadDashboard(false)) != null },
         setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
