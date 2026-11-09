@@ -56,3 +56,4 @@ jobs:
           echo 'MAIN_AND_BRANCH2_CLOUDFLARE_READONLY_PROOF_COMPLETE'
 
 # Read-only retry after GitHub Actions runner incident; original target and SELECT-only queries remain unchanged.
+# Final post-release deployment READ-ONLY proof for Branch2 SHA 627df8e03e1c7802ca1055b6091ff95db7bfc9a9.
