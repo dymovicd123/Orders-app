@@ -1,0 +1,73 @@
+name: Branch2 parity source synchronization — single authorized test Worker release
+# This is a ONE-SHOT Branch2-only bridge after PR #879. No Main release, D1 writes or migrations.
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-main-parity-release-20261109.yml'
+      - 'scripts/branch2-manual-release.mjs'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-main-parity-release-20261109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-parity-one-shot-20261109
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Verify Branch2 exact config, build and Cloudflare DRY-RUN (NO DEPLOY)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify target is isolated Branch2, not Production
+        run: node scripts/branch2-manual-release.mjs --check
+      - name: Build current Worker+assets and package only
+        run: node scripts/branch2-manual-release.mjs --ci-preview
+
+  release:
+    name: Publish exact reviewed Branch2 code, no D1 change
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(branch2): source parity')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify immutable source parity parent, narrow release diff and exact test-only bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '512c2701dd0ac2c722481ffd7f89589ae7af09f4'
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' 'scripts/branch2-manual-release.mjs')"
+          test "$actual" = "$expected"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
