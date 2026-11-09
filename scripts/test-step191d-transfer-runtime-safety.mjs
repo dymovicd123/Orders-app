@@ -466,4 +466,81 @@ assert.equal(numberOfResets, 0, 'Indeterminate network write must not rotate ide
 assert.match(movedError, /unknown transport outcome/)
 assert.deepEqual(currentDraft, originalDraft, 'Unknown outcome must preserve the complete operator draft')
 
+
+// The same frontend workflow also handles Arrival through the movement route.
+// Its existing request ID must match the HTTP header on both normal saves and
+// uncertain transport responses; only a confirmed success rotates the ID.
+const arrivalRequestId = 'arrival-original-transport-token'
+const arrivalCalls = []
+const arrivalIdRotations = []
+const arrivalDraft = {
+  ...structuredClone(originalDraft),
+  movementType: 'arrival',
+  comment: 'Обычный приход без повторного учёта',
+  items: [{...transferItem, quantity: 1, expectedQuantity: 1}],
+}
+const arrivalProps = {
+  inventoryMovementBusy: false,
+  setInventoryMovementBusy: () => {},
+  setInventoryMovementError: () => {},
+  setError: () => {},
+  setMessage: () => {},
+  inventoryDraft: arrivalDraft,
+  setInventoryDraft: () => {},
+  flattenInventoryArrivalPositions: () => [],
+  inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult',
+  inventoryTransferRequestId: 'transfer-unused',
+  inventoryManualRequestId: arrivalRequestId,
+  apiFetch: async (url, init = {}) => {
+    arrivalCalls.push({url: String(url), init})
+    return new Response(JSON.stringify({ok: true, operationId: arrivalRequestId, arrivalReceipt: {
+      verified: true, source: 'warehouse', items: [{
+        variantId: 33, productName: stockRow.productName, color: stockRow.color,
+        size: stockRow.size, received: 1, currentQuantity: 2,
+      }],
+    }}), {status: 201, headers: {'content-type': 'application/json'}})
+  },
+  loadInventoryData: async () => ({ok:true,items:[stockRow]}),
+  loadCatalogData: async () => ({ok:true,items:[]}),
+  setInventoryTransferRequestId: () => { throw new Error('Arrival must not rotate transfer token') },
+  setInventoryManualRequestId: next => arrivalIdRotations.push(next),
+  makeCashRequestId: prefix => 'next-' + prefix,
+  setInventoryArrivalPositions: () => {},
+  setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {},
+  setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {},
+  setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {},
+  setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: {current: null},
+  askStockResolution: async () => { throw new Error('Arrival cannot ask transfer possession confirmation') },
+}
+await createInventoryMovementActions(arrivalProps).saveInventoryMovement()
+assert.equal(arrivalCalls.length, 1)
+assert.equal(arrivalCalls[0].url, '/api/inventory/movements?returnInventory=0')
+assert.equal(arrivalCalls[0].init.headers['X-Idempotency-Key'], arrivalRequestId)
+assert.equal(JSON.parse(arrivalCalls[0].init.body).requestId, arrivalRequestId)
+assert.deepEqual(arrivalIdRotations, ['next-inventory-manual'],
+  'A saved arrival must rotate the original token exactly once')
+
+arrivalCalls.length = 0
+arrivalIdRotations.length = 0
+let arrivalUnknownError = ''
+await createInventoryMovementActions({
+  ...arrivalProps,
+  apiFetch: async (url, init = {}) => {
+    arrivalCalls.push({url: String(url), init})
+    throw new Error('arrival transport response lost')
+  },
+  setInventoryMovementError: value => { arrivalUnknownError = value },
+  setInventoryDraft: () => { throw new Error('Unknown Arrival cannot clear the draft') },
+}).saveInventoryMovement()
+assert.equal(arrivalCalls.length, 1)
+assert.equal(arrivalCalls[0].init.headers['X-Idempotency-Key'], arrivalRequestId)
+assert.equal(JSON.parse(arrivalCalls[0].init.body).requestId, arrivalRequestId)
+assert.equal(arrivalIdRotations.length, 0, 'Uncertain Arrival must not rotate token')
+assert.match(arrivalUnknownError, /arrival transport response lost/)
+
 console.log('STEP 191D TRANSFER RUNTIME SAFETY TESTS PASSED — exact video row 1→0, absent target, 0 reserved; 60-line bind budget preserved')
