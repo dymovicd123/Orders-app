@@ -739,6 +739,12 @@ export async function saveDepartmentPlan(db: D1Database, input: DepartmentPlanIn
 
 
 
+function canAssignToTimesheet(name:unknown, role:unknown) {
+  const n=String(name||'').toLocaleLowerCase('ru-RU')
+  const r=String(role||'').toLocaleLowerCase('ru-RU')
+  return !n.includes('сымбат') && !r.includes('админ')
+}
+
 export async function listTeamTimesheet(db: D1Database, url: URL) {
   const month = normalizeMonthParam(url.searchParams.get('month'));
   const { startDate, endDate } = getMonthRange(month);
@@ -770,14 +776,16 @@ export async function listTeamTimesheet(db: D1Database, url: URL) {
     month,
     startDate,
     endDate,
-    employees: mapSqlRows(employeesResult).map((row: any) => ({
-      id: Number(row.id || 0),
-      name: cleanText(row.name),
-      role: cleanText(row.role),
-      isActive: Boolean(row.is_active),
-      colorKey: normalizeManagerColor(row.color_key, Number(row.id || 0) - 1),
-      hiredAt: cleanText(row.hired_at),
-    })),
+    employees: mapSqlRows(employeesResult)
+      .filter((row:any)=>canAssignToTimesheet(row.name,row.role))
+      .map((row: any) => ({
+        id: Number(row.id || 0),
+        name: cleanText(row.name),
+        role: cleanText(row.role),
+        isActive: Boolean(row.is_active),
+        colorKey: normalizeManagerColor(row.color_key, Number(row.id || 0) - 1),
+        hiredAt: cleanText(row.hired_at),
+      })),
     entries: mapSqlRows(entriesResult).map((row: any) => ({
       id: Number(row.id || 0),
       date: cleanText(row.work_date),
@@ -803,13 +811,11 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
   if (!shouldClear && !managerIds.length) throw new Error('Выберите сотрудников.');
 
   const allowedResult = await db.prepare(
-    `SELECT id
-     FROM managers
-     WHERE is_active = 1
-       AND UPPER(COALESCE(name, '')) NOT LIKE '%СЫМБАТ%'
-       AND UPPER(COALESCE(role, '')) NOT LIKE '%АДМИН%'`
+    `SELECT id,name,COALESCE(role,'') AS role FROM managers WHERE is_active = 1`
   ).all<any>();
-  const allowedIds = new Set(mapSqlRows(allowedResult).map((row: any) => Number(row.id || 0)).filter(Boolean));
+  const allowedIds = new Set(mapSqlRows(allowedResult)
+    .filter((row:any)=>canAssignToTimesheet(row.name,row.role))
+    .map((row: any) => Number(row.id || 0)).filter(Boolean));
   const safeManagerIds = managerIds.filter(id => allowedIds.has(id));
   if (!shouldClear && !safeManagerIds.length) throw new Error('В табель можно назначать только обычных активных сотрудников.');
 
