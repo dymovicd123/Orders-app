@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../worker/domains/warehouse-capital.ts'
+import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 import type { WarehouseDemandResponse, WarehouseDemandRow, WarehouseReportChoice } from './warehouseReportExcel'
 import './warehouse-report-workspace.css'
 
@@ -26,8 +26,6 @@ const scopes:{value:'orders'|'shipped';name:string}[]=[
   {value:'orders',name:'Оформленные заказы'},
   {value:'shipped',name:'Отправленные товары'},
 ]
-const sourceNames:Record<string,string>={all:'Склад и бутик',warehouse:'Склад',boutique:'Бутик',workshop:'Цех'}
-const categoryNames:Record<string,string>={all:'Все категории',adult:'Взрослые',child:'Детские',unknown:'Без категории'}
 function rowsForDemand(rows:WarehouseDemandRow[],source:string,category:string){
   return rows.filter(row=>(source==='all'||row.source===source)&&
     (category==='all'||row.category===category))
@@ -54,7 +52,7 @@ function stockGroups(rows:WarehouseCapitalRow[]){
   }
   return [...out.values()].sort((a,b)=>b.cost-a.cost||b.quantity-a.quantity)
 }
-function freshSummary(rows:WarehouseCapitalRow[],source:'all'|'warehouse'|'boutique',capital:WarehouseCapitalSnapshot){
+function freshSummary(source:'all'|'warehouse'|'boutique',capital:WarehouseCapitalSnapshot){
   if(source==='all')return capital.totals
   return capital.bySource[source]
 }
@@ -118,7 +116,7 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
     (category==='all'||r.category===category)),[capital,source,category])
   const capitalTotals=useMemo(()=>{
     if(!capital)return null
-    if(category==='all'&&source!=='workshop')return freshSummary(capitalRows,source as 'all'|'warehouse'|'boutique',capital)
+    if(category==='all'&&source!=='workshop')return freshSummary(source as 'all'|'warehouse'|'boutique',capital)
     // Both source and category filters must affect financial totals; only positive rows.
     const t={...capital.totals}
     for(const key of Object.keys(t) as Array<keyof typeof t>)(t[key] as number)=0
@@ -170,11 +168,11 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
       <button role="tab" aria-selected={mode==='export'} className={mode==='export'?'chosen':''}
         type="button" onClick={()=>setMode('export')}>Excel и спрос</button>
       {isAdmin&&<button role="tab" aria-selected={mode==='capital'} className={mode==='capital'?'chosen':''}
-        type="button" onClick={()=>setMode('capital')}>Стоимость запасов</button>}
+        type="button" onClick={()=>{setMode('capital');if(source==='workshop')setSource('all')}}>Стоимость запасов</button>}
     </div>
     <div className="warehouse-report-filters">
       <label>Источник <select value={source} onChange={e=>setSource(e.target.value)}>
-        <option value="all">Склад и бутик</option><option value="warehouse">Склад</option>
+        <option value="all">{mode==='export'?'Все источники':'Склад и бутик'}</option><option value="warehouse">Склад</option>
         <option value="boutique">Бутик</option>{mode==='export'&&<option value="workshop">Цех (спрос)</option>}
       </select></label>
       <label>Категория <select value={category} onChange={e=>setCategory(e.target.value)}>
