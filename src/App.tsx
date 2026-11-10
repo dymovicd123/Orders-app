@@ -1815,11 +1815,12 @@ function App() {
 
   useEffect(() => {
     if (!authReady || activeSector !== 'team') return
+    if (authUser?.role === 'manager') { void loadTeamTimesheet(); return }
     if (teamMode === 'timesheet') void loadTeamTimesheet()
     if (teamMode === 'plan') void loadPlans()
     if (teamMode === 'salary') void loadTeamSalaryReport()
     if (teamMode === 'activity') void loadTeamActivityReport()
-  }, [activeSector, authReady, teamMode, timesheetMonth])
+  }, [activeSector, authReady, teamMode, timesheetMonth, authUser?.role])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'finance' || financeMode === 'cash' || financeMode === 'methods' || financeMode === 'dds') return
@@ -3513,11 +3514,11 @@ function removeDebtPayment(index: number) {
               key={module.id}
               className={`erp-primary-nav-button ${module.status === 'planned' ? 'is-planned' : ''} ${(module.id === 'dashboard' ? activeSector === 'overview' : module.id === activeSector) ? 'is-current' : ''}`}
               href={module.href}
-              title={module.note}
+              title={module.id === 'team' && !isAdmin ? 'Быстрая отметка прихода и ухода' : module.note}
               onClick={() => setMobileNavOpen(false)}
             >
               <span className="erp-nav-icon">{module.icon}</span>
-              <span>{module.label}</span>
+              <span>{module.id === 'team' && !isAdmin ? 'Посещаемость' : module.label}</span>
             </a>
           ))}
         </nav>
@@ -3978,7 +3979,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
-        <TeamSection ctx={{ apiFetch, askActionConfirmation, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
+        <TeamSection ctx={{ apiFetch, askActionConfirmation, authUser, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'leads'} label="Лиды">

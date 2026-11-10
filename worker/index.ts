@@ -69,6 +69,7 @@ import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabase
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
+import { readTeamAttendance, saveTeamAttendance } from './domains/team-attendance.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { activateWorkshopSettlements, postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
@@ -791,7 +792,13 @@ export default {
       }
 
       if (url.pathname === '/api/team/timesheet' && request.method === 'GET') {
-        return json(await listTeamTimesheet(env.DB, url));
+        const schedule = await listTeamTimesheet(env.DB, url)
+        return json({ ...schedule, attendance: await readTeamAttendance(env.DB, schedule.month) })
+      }
+      if (url.pathname === '/api/team/attendance' && request.method === 'POST') {
+        if (!authUser) return json({ok:false,message:'Войдите в систему, чтобы отметить явку.'},{status:401})
+        const input = await readJson<{date?:unknown;managerId?:unknown;status?:unknown;finishedAt?:unknown;comment?:unknown}>(request)
+        return json(await saveTeamAttendance(env.DB, input, authUser), {status:201})
       }
 
       if (url.pathname === '/api/team/timesheet' && request.method === 'POST') {

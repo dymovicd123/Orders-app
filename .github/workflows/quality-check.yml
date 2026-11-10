@@ -68,6 +68,16 @@ jobs:
           node scripts/test-simple-dds-ledger-20261110.mjs
           node scripts/test-dds-excel-ux-20261110.mjs
 
+      - name: Verify Main timesheet preserves shifts, attendance role rights and mobile UX
+        if: github.base_ref == 'main'
+        run: |
+          node scripts/test-main-attendance-schema-preserve-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
