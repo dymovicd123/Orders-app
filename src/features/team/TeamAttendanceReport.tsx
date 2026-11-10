@@ -70,6 +70,25 @@ export function TeamAttendanceReport({data,todayDate,onOpenDay}:Props){
         </tbody>
       </table>
     </div>
-    <p className="tw-report-footnote">«Не отмечено» означает, что явку ещё не проверили, а не отсутствие сотрудника. Нажмите дату, чтобы внести или исправить отметки.</p>
+    <div className="tw-report-mobile-days" aria-label="Журнал посещаемости по датам">
+      {dates.map(day=><article className="tw-report-mobile-day" key={day.date}>
+        <button type="button" className="tw-report-mobile-day-head" onClick={()=>onOpenDay(day.date)}>
+          <strong>{formatDate(day.date)}</strong>
+          <span>{people.filter(person=>day.cells.has(person.id)).length} сотрудников</span>
+          <span className="tw-report-mobile-open">Открыть день</span>
+        </button>
+        <div className="tw-report-mobile-people">
+          {people.filter(person=>day.cells.has(person.id)).map(person=><div className="tw-report-mobile-person" key={person.id}>
+            <div className="tw-report-mobile-person-name">
+              <span className="tw-dot" style={{background:person.color}}/>{person.name}
+            </div>
+            <ReportCell cell={day.cells.get(person.id)}/>
+          </div>)}
+        </div>
+      </article>)}
+      {!dates.length&&<p className="tw-report-mobile-empty">{onlyPending?
+        'Нет дней с незаполненными отметками.':'За этот месяц пока нет смен и отметок.'}</p>}
+    </div>
+    <p className="tw-report-footnote">«Не отмечено» — явку ещё не проверили. Выберите дату для отметки или исправления.</p>
   </section>
 }
