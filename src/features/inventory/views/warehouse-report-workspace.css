@@ -1,0 +1,59 @@
+.warehouse-report-page{display:grid;gap:18px;min-width:0;margin:0;padding:16px 0 24px;color:inherit}
+.warehouse-report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.warehouse-report-head h2{font-size:23px;margin:2px 0 7px;line-height:1.25}
+.warehouse-report-head p{font-size:13px;color:#718096;margin:0;line-height:1.5}
+.warehouse-report-eyebrow{font-weight:800;font-size:10px;letter-spacing:1.3px;color:#237262}
+.warehouse-report-head button{min-height:39px}
+.warehouse-report-tabs{display:flex;gap:7px;padding:4px;border-radius:12px;background:var(--surface,#f1f5f7);width:fit-content;max-width:100%}
+.warehouse-report-tabs button{border:0;background:transparent;border-radius:9px;padding:11px 17px;min-height:40px;font-size:13px;font-weight:750;color:inherit;cursor:pointer}
+.warehouse-report-tabs button.chosen{background:var(--card,#fff);box-shadow:0 1px 6px #17374a17}
+.warehouse-report-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+.warehouse-report-filters label,.warehouse-report-custom label{display:grid;gap:6px;font-weight:700;font-size:12px;color:inherit}
+.warehouse-report-filters select,.warehouse-report-custom input{font:inherit;border:1px solid #d6e1e7;background:var(--card,#fff);color:inherit;border-radius:9px;padding:9px 11px;min-height:40px;max-width:100%}
+.warehouse-report-filters select{min-width:170px}
+.warehouse-report-period{display:grid;gap:12px;border:1px solid #dae5eb;border-radius:13px;padding:16px}
+.warehouse-report-month{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.warehouse-report-month strong{text-transform:capitalize;font-size:15px;padding:0 7px;min-width:125px;text-align:center}
+.warehouse-report-month button,.warehouse-report-custom button{border:1px solid #d6e1e7;border-radius:8px;background:var(--card,#fff);color:inherit;min-height:37px;padding:8px 12px;font-size:12px;cursor:pointer}
+.warehouse-report-custom{display:flex;flex-wrap:wrap;gap:9px;align-items:end}
+.warehouse-report-scope{display:flex;gap:8px;flex-wrap:wrap}
+.warehouse-report-scope button{border:1px solid #d6e1e7;background:var(--card,#fff);color:inherit;border-radius:9px;padding:10px 13px;min-height:40px;font-size:12px;cursor:pointer}
+.warehouse-report-scope button.chosen{border-color:#4b8b72;background:#ebf6ee;color:#256247;font-weight:750}
+.warehouse-report-period>small,.warehouse-report-smallnote{color:#748496;font-size:12px;line-height:1.5}
+.warehouse-report-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.warehouse-report-kpis>div{border:1px solid #dbe6eb;background:var(--card,#fff);border-radius:11px;padding:15px 13px;display:grid;gap:8px;align-content:start;min-width:0}
+.warehouse-report-kpis span{color:#657a8b;font-size:12px;font-weight:650}
+.warehouse-report-kpis strong{font-size:21px;line-height:1.2;overflow-wrap:anywhere}
+.warehouse-report-kpis small{font-size:11px;color:#718092;line-height:1.45}
+.warehouse-report-snapshot{font-size:12px;color:#62798c;margin:0}
+.warehouse-report-note{background:var(--surface,#f2f6f8);border-radius:10px;padding:13px 15px;font-size:12px;line-height:1.6}
+.warehouse-report-download{display:flex;justify-content:space-between;align-items:center;gap:20px;border:1px solid #d8e6dd;background:var(--card,#fff);border-radius:13px;padding:18px;flex-wrap:wrap}
+.warehouse-report-download>div{flex:1;min-width:215px}
+.warehouse-report-download h3{font-size:17px;margin:0 0 7px}
+.warehouse-report-download p{font-size:12px;color:#63798a;line-height:1.6;margin:0 0 7px}
+.warehouse-report-download small{font-size:11px;color:#75889a}
+.warehouse-report-download button{min-height:44px;padding:10px 18px;white-space:normal}
+.warehouse-report-page button:disabled{opacity:.6;cursor:not-allowed}
+.warehouse-report-list{border:1px solid #dae4e9;border-radius:13px;overflow:hidden}
+.warehouse-report-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--surface,#f5f7f9);padding:13px 16px}
+.warehouse-report-list-head h3{margin:0;font-size:15px}
+.warehouse-report-list-head span,.warehouse-report-list-head small{color:#6d8091;font-size:11px}
+.warehouse-report-list-row{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:13px 16px;border-top:1px solid #e0e8ed;font-size:13px}
+.warehouse-report-list-row>span{min-width:0;overflow-wrap:anywhere;font-weight:650}
+.warehouse-report-list-row>span>small{display:block;font-weight:400;color:#8291a1;margin-top:4px}
+.warehouse-report-list-row>b{white-space:nowrap;font-size:13px;text-align:right}
+.warehouse-report-list>p{padding:14px;margin:0;color:#6d8091}
+.warehouse-report-error{padding:11px 13px;background:#fff0ef;border:1px solid #f0c9c5;border-radius:9px;color:#a23b30;font-size:13px;margin:0}
+.warehouse-report-info{padding:11px 13px;background:var(--surface,#f0f5f8);border-radius:9px;color:#617b8c;font-size:13px;margin:0}
+@media(max-width:1100px){.warehouse-report-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.warehouse-report-head h2{font-size:20px}.warehouse-report-head button{width:100%}
+.warehouse-report-tabs{width:100%}.warehouse-report-tabs button{flex:1;padding:10px 7px}
+.warehouse-report-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.warehouse-report-filters select{min-width:0;width:100%}.warehouse-report-period{padding:12px}
+.warehouse-report-month strong{flex:1;min-width:0}.warehouse-report-month button:nth-last-child(-n+2){flex:1}
+.warehouse-report-kpis{gap:7px}.warehouse-report-kpis>div{padding:11px}.warehouse-report-kpis strong{font-size:18px}
+.warehouse-report-download{padding:14px}.warehouse-report-download button{width:100%}
+.warehouse-report-list-row{padding:12px;font-size:12px}.warehouse-report-list-row>b{font-size:12px}}
+@media(max-width:370px){.warehouse-report-kpis{grid-template-columns:1fr}
+.warehouse-report-filters{grid-template-columns:1fr}.warehouse-report-list-row{align-items:start}
+.warehouse-report-list-row>b{white-space:normal}.warehouse-report-scope button{flex:1}}
