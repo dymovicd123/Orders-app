@@ -61,6 +61,10 @@ jobs:
           node scripts/test-atomic-reservation-admission-20261030.mjs
           node scripts/test-p0-critical-order-reservation-retry-20261030.mjs
 
+      - name: Verify all active Branch2 confirmations are accessible dialogs
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-branch2-safe-dialogs-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

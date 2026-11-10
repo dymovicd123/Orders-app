@@ -37,7 +37,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): reserves and safe dialogs')
+      startsWith(github.event.head_commit.message, 'release(branch2): stage3 accessible dialogs')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,9 +62,9 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '627df8e03e1c7802ca1055b6091ff95db7bfc9a9'
+          test "$(git rev-parse HEAD^)" = '6295a16bec5533e20d7dab86a3c5206ceed38fa5'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-main-product-kpi-20261027.mjs' 'src/App.tsx' 'src/components/dialogs/ActionConfirmationModal.tsx' 'src/components/dialogs/action-confirmation.css' 'src/features/sections/InventorySection.tsx' 'src/features/sections/OrdersTableSection.tsx' 'src/features/sections/PlanSection.tsx' 'src/features/sections/ProductKpiSection.tsx' 'src/features/sections/ReferenceIntegrityPanel.tsx' 'src/features/sections/ReferenceMergeWorkspace.tsx' 'src/features/sections/ReferencesSection.tsx' 'src/features/sections/TeamSection.tsx')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-auth-production-team-access.mjs' 'scripts/test-branch2-safe-dialogs-20261110.mjs' 'scripts/test-finance-day-transparency.mjs' 'scripts/test-main-product-kpi-20261027.mjs' 'scripts/test-operational-autonomy-a4-handover-correction.mjs' 'src/App.tsx' 'src/components/dialogs/ActionTextPromptModal.tsx' 'src/components/dialogs/action-confirmation.css' 'src/features/auth/managedAccountActions.ts' 'src/features/finance/cashRegisterActions.ts' 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx' 'src/features/inventory/views/renderInventoryMovementPanel.tsx' 'src/features/inventory/warehouseGovernanceActions.ts' 'src/features/orders/OrderCatalogResolutionModal.tsx' 'src/features/orders/orderCreationActions.ts' 'src/features/orders/orderShippingHandoverActions.ts' 'src/features/orders/returnExchangeAftercareActions.ts' 'src/features/plans/planActions.ts' 'src/features/sections/InventorySection.tsx' 'src/features/sections/WorkshopSection.tsx' 'src/features/team/teamEmployeeActions.ts' 'src/features/workshop/WorkshopSettlementsPanel.tsx')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"

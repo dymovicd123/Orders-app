@@ -76,8 +76,6 @@ try {
     checkpointAt: '2026-10-04T09:00:00Z', checkpointId: 13, checkpointKind: 'revision',
     source: 'warehouse', variantId: 71,
   }
-  const globalWindow = globalThis.window
-  globalThis.window = { confirm: () => true }
   try {
     let calls = [], completed = [], confirmations = [], invalidations = [], messages = [], errors = []
     let orderMutations = [], shipmentRefreshes = [], actionItemIds = []
@@ -94,6 +92,7 @@ try {
       setOrderCatalogResolutionOrder: () => {},
       apiFetch: async () => { throw Error('test must explicitly select an HTTP result') },
       askStockResolution: async prompt => { confirmations.push(prompt); return true },
+      askActionConfirmation: async () => true,
       getOrderOperationalProjection: async () => ({ canShip: true, canCorrectShipping: true }),
       prepareCriticalRequest: prepare,
       completeCriticalRequest: (key, requestId) => completed.push({ key, requestId }),
@@ -199,8 +198,7 @@ try {
     assert.deepEqual(invalidations, [], 'Unknown correction outcome cannot pretend physical stock changed')
     assert.match(errors.at(-1), /unknown correction transport result/)
   } finally {
-    if (globalWindow === undefined) delete globalThis.window
-    else globalThis.window = globalWindow
+    // Only disposable in-memory state is used; no browser dialog global is installed.
   }
 
   console.log('Operational Autonomy A4 handover correction checks passed.')

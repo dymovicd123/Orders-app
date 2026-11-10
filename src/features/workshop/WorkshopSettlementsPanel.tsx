@@ -40,10 +40,12 @@ function paymentIdempotency(body:string):string {
 }
 function clearPaymentId(){try{sessionStorage.removeItem(requestKey)}catch{ /* optional */ }}
 
-export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice,isAdmin}:{
+export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice,isAdmin,askActionConfirmation,askActionTextPrompt}:{
   openUnpricedRequest:number;onUnpricedCountChange:(count:number)=>void;
   openCatalogPrice:(productId:number|null,name:string)=>void;
   isAdmin:boolean;
+  askActionConfirmation:(message:string)=>Promise<boolean>;
+  askActionTextPrompt:(title:string,initialValue?:string,minLength?:number)=>Promise<string|null>;
 }) {
   const today=todayKz()
   const [view,setView]=useState<View>('home')
@@ -142,7 +144,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   const activate=async(e:FormEvent)=>{
     e.preventDefault()
     if(writeLocked.current||!mayActivate)return
-    if(!window.confirm('Запустить учёт цеха с начальным долгом '+money(openingAmount)+'? Готовые ранее изделия повторно не начисляются. Изменить эту сумму через форму после запуска нельзя.'))return
+    if(!(await askActionConfirmation('Запустить учёт цеха с начальным долгом '+money(openingAmount)+'? Готовые ранее изделия повторно не начисляются. Изменить эту сумму через форму после запуска нельзя.')))return
     writeLocked.current=true;setBusy(true);setError('');setNotice('')
     try {
       await api('/api/workshop/settlements/activate',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -169,10 +171,10 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   }
   const reversePayment=async(event:LedgerEvent)=>{
     if(!isAdmin||writeLocked.current||!activated)return
-    const reason=window.prompt('Причина отмены выплаты (сохранится в истории):')
+    const reason=await askActionTextPrompt('Причина отмены выплаты (сохранится в истории)', '', 5)
     if(reason===null)return
     if(reason.trim().length<5){setError('Укажите причину отмены не короче 5 символов.');return}
-    if(!window.confirm('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.'))return
+    if(!(await askActionConfirmation('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.')))return
     writeLocked.current=true;setBusy(true);setError('')
     try {
       await api('/api/workshop/settlements/payments/'+event.id+'/reverse',
@@ -183,8 +185,8 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   }
   const resolveCost=async(item:Unpriced)=>{
     if(!isAdmin||writeLocked.current||!activated||item.availableUnitCost===null)return
-    if(!window.confirm('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
-      ' за «'+item.productName+'» ('+item.quantity+' шт.)?'))return
+    if(!(await askActionConfirmation('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
+      ' за «'+item.productName+'» ('+item.quantity+' шт.)?')))return
     writeLocked.current=true;setBusy(true);setError('')
     try {
       await api('/api/workshop/settlements/unpriced/'+item.id+'/confirm-cost',{method:'POST'})

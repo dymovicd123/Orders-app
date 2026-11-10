@@ -26,6 +26,8 @@ type CashRegisterActionsArgs = {
   setMessage: Dispatch<SetStateAction<string | null>>
   apiFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   makeCashRequestId: (prefix: string) => string
+  askActionConfirmation: (message: string) => Promise<boolean>
+  askActionTextPrompt: (title: string, initialValue?: string) => Promise<string | null>
 }
 
 // Keep existing cash ledger and reconciliation operator operations together.
@@ -52,6 +54,8 @@ export function createCashRegisterActions({
   setMessage,
   apiFetch,
   makeCashRequestId,
+  askActionConfirmation,
+  askActionTextPrompt,
 }: CashRegisterActionsArgs) {
   async function runCashMutation<T>(action: () => Promise<T>) {
     if (cashMutationLockRef.current) return null
@@ -105,7 +109,7 @@ export function createCashRegisterActions({
 
   async function setupCashRegister() {
     const amount = Math.max(0, Math.trunc(Number(cashSetupAmount || 0)))
-    if (!window.confirm(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`)) return
+    if (!(await askActionConfirmation(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`))) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/setup', {
@@ -128,7 +132,7 @@ export function createCashRegisterActions({
     const prompt = enabled
       ? 'Включить автоучёт? Новые наличные оплаты будут увеличивать кассу, а возвраты наличными — уменьшать.'
       : 'Остановить автоучёт? Журнал, ручные операции и сверка остатка останутся доступны, но новые операции по заказам временно не будут менять кассу автоматически.'
-    if (!window.confirm(prompt)) return
+    if (!(await askActionConfirmation(prompt))) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/auto-tracking', {
@@ -172,8 +176,8 @@ export function createCashRegisterActions({
     }
     if (historicalBusinessDate) {
       const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
-      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
-    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
+      if (!(await askActionConfirmation(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`))) return
+    } else if (cashMovementDraft.direction === 'out' && !(await askActionConfirmation(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`))) return
     const requestId = makeCashRequestId('manual')
     await runCashMutation(async () => {
       try {
@@ -208,7 +212,7 @@ export function createCashRegisterActions({
       setMessage('Фактический остаток уже совпадает с учётом.')
       return
     }
-    if (!window.confirm(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`)) return
+    if (!(await askActionConfirmation(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`))) return
     const requestId = makeCashRequestId('reconcile')
     await runCashMutation(async () => {
       try {
@@ -230,7 +234,7 @@ export function createCashRegisterActions({
   }
 
   async function reverseCashRegisterMovement(entryId: number) {
-    if (!window.confirm('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.')) return
+    if (!(await askActionConfirmation('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.'))) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch(`/api/finance/cash-register/movements/${entryId}/reverse`, { method: 'POST' })
@@ -250,9 +254,9 @@ export function createCashRegisterActions({
       setError('Начать новый цикл учёта может только администратор.')
       return
     }
-    const comment = window.prompt('Причина сброса текущего журнала:', 'Перезапуск учёта наличных после сверки')?.trim() || ''
+    const comment = (await askActionTextPrompt('Причина сброса текущего журнала', 'Перезапуск учёта наличных после сверки'))?.trim() || ''
     if (!comment) return
-    if (!window.confirm('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
+    if (!(await askActionConfirmation('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.'))) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/reset-cycle', {

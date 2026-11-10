@@ -81,9 +81,10 @@ try {
   const respond = (body, status=200) => new Response(JSON.stringify(body), {
     status, headers: { 'Content-Type': 'application/json' },
   })
-  globalThis.window = { confirm: () => true }
+  const teamDialogMessages = []
   const args = {
     isAdmin: true, teamDraft: draft, teamEmployees: [], authUsers: [],
+    askActionConfirmation: async (message) => { teamDialogMessages.push(message); return true },
     setTeamBusy: () => {},
     setTeamEmployees: () => {},
     setTeamDraft: (fn) => { employeeDraft = typeof fn === 'function' ? fn(employeeDraft) : fn },
@@ -247,6 +248,7 @@ try {
     setAuthUserDraft: value => { draftAfterSave = value },
     authUserDraft:authDraft, authUsers:[],
     loadAuthUsers:async () => { managedReloads++ },
+    askActionConfirmation: async () => canDisable,
   }
   await loadManagedAuthUsers(managedArgs)
   assert.equal(managedUsers[0].managerId,17)
@@ -266,7 +268,6 @@ try {
   await loadManagedAuthUsers({ ...managedArgs, isAdmin:false })
   await disableManagedAuthUser(12,{ ...managedArgs, isAdmin:false })
   assert.equal(managedCalls.length,beforeManager)
-  globalThis.window.confirm = () => canDisable
   await disableManagedAuthUser(12,managedArgs)
   assert.equal(managedCalls.length,beforeManager)
   canDisable = true
