@@ -19,6 +19,9 @@ function nameField(value:unknown,max:number,label:string){
   if(!name||name.length>max)throw invalid(label+' должен содержать от 1 до '+max+' символов.')
   return name
 }
+function normalizedName(name:string){
+  return name.normalize('NFKC').toLocaleLowerCase('ru-RU')
+}
 function positiveId(id:number){
   if(!Number.isSafeInteger(id)||id<1)throw invalid('Неверный идентификатор записи.')
   return id
@@ -42,10 +45,11 @@ export async function readDdsDirectory(db:D1Database,actor:AuthUser|null):Promis
 export async function addDdsCategory(db:D1Database,nameInput:unknown,actor:AuthUser|null){
   requireAccess(actor,true)
   const name=nameField(nameInput,80,'Название категории')
-  await db.prepare(`INSERT OR IGNORE INTO dds_categories(name,sort_order)
-    VALUES(?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM dds_categories))`).bind(name).run()
-  const category=await db.prepare('SELECT id,name,is_active FROM dds_categories WHERE name=?')
-    .bind(name).first<Row>()
+  const key=normalizedName(name)
+  await db.prepare(`INSERT OR IGNORE INTO dds_categories(name,name_key,sort_order)
+    VALUES(?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM dds_categories))`).bind(name,key).run()
+  const category=await db.prepare('SELECT id,name,is_active FROM dds_categories WHERE name_key=?')
+    .bind(key).first<Row>()
   if(!category)throw invalid('Не удалось создать категорию.')
   return {ok:true,id:category.id,name:category.name,active:Boolean(category.is_active)}
 }
@@ -57,11 +61,12 @@ export async function addDdsArticle(db:D1Database,categoryId:number,nameInput:un
     .bind(categoryId).first<Row>()
   if(!parent)throw invalid('Категория не найдена.',404)
   if(!parent.is_active)throw invalid('Сначала восстановите скрытую категорию.',409)
-  await db.prepare(`INSERT OR IGNORE INTO dds_articles(category_id,name,sort_order)
-    VALUES(?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM dds_articles WHERE category_id=?))`)
-    .bind(categoryId,name,categoryId).run()
-  const article=await db.prepare('SELECT id,name,is_active FROM dds_articles WHERE category_id=? AND name=?')
-    .bind(categoryId,name).first<Row>()
+  const key=normalizedName(name)
+  await db.prepare(`INSERT OR IGNORE INTO dds_articles(category_id,name,name_key,sort_order)
+    VALUES(?,?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM dds_articles WHERE category_id=?))`)
+    .bind(categoryId,name,key,categoryId).run()
+  const article=await db.prepare('SELECT id,name,is_active FROM dds_articles WHERE category_id=? AND name_key=?')
+    .bind(categoryId,key).first<Row>()
   if(!article)throw invalid('Не удалось создать статью.')
   return {ok:true,id:article.id,name:article.name,active:Boolean(article.is_active)}
 }
