@@ -74,6 +74,7 @@ export type TimesheetInput = {
   workUntil?: unknown;
   comment?: unknown;
   clear?: unknown;
+  preserveExisting?: unknown;
 };
 
 
@@ -807,6 +808,7 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
   const rawManagerIds = Array.isArray(input.managerIds) ? input.managerIds : [];
   const managerIds = Array.from(new Set(rawManagerIds.map(value => toInt(value, 0)).filter(id => id > 0)));
   const shouldClear = Boolean(input.clear);
+  const preserveExisting = input.preserveExisting === true;
   if (!dates.length) throw new Error('Выберите дни табеля.');
   if (!shouldClear && !managerIds.length) throw new Error('Выберите сотрудников.');
 
@@ -840,16 +842,18 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
       ).bind(datesJson).run();
     }
   } else {
+    // Bulk planning adds only missing employee/day pairs. Explicit single-shift edits
+    // keep the original update behavior; existing records are never overwritten by addition.
+    const conflictAction = preserveExisting
+      ? 'DO NOTHING'
+      : 'DO UPDATE SET work_until = excluded.work_until, comment = excluded.comment, updated_at = excluded.updated_at';
     await db.prepare(
       `INSERT INTO team_timesheet (work_date, manager_id, work_until, comment, created_at, updated_at)
        SELECT CAST(d.value AS TEXT), CAST(m.value AS INTEGER), ?, ?, ?, ?
        FROM json_each(?) d
        CROSS JOIN json_each(?) m
        WHERE 1
-       ON CONFLICT(work_date, manager_id) DO UPDATE SET
-         work_until = excluded.work_until,
-         comment = excluded.comment,
-         updated_at = excluded.updated_at`
+       ON CONFLICT(work_date, manager_id) ${conflictAction}`
     ).bind(workUntil || null, comment || null, now, now, datesJson, managerIdsJson).run();
   }
 
@@ -857,7 +861,7 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
     eventType: shouldClear ? 'timesheet_cleared' : 'timesheet_saved',
     entityType: 'team_timesheet',
     title: shouldClear ? 'Очищен табель' : 'Сохранён табель',
-    details: `Дней: ${dates.length}; сотрудников: ${safeManagerIds.length}${workUntil ? `; до ${workUntil}` : ''}`,
+    details: `Дней: ${dates.length}; сотрудников: ${safeManagerIds.length}; режим: ${preserveExisting ? 'добавление без замены' : 'редактирование'}${workUntil ? `; до ${workUntil}` : ''}`,
   });
 
   return { ok: true, dates: dates.length, managers: safeManagerIds.length, cleared: shouldClear };
