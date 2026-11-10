@@ -394,7 +394,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
           return <button type="button" className={'tw-mobile-schedule-day'+(day===current?' today':'')}
             key={day} onClick={()=>{setDate(day);setShowCalendarDay(true)}} aria-label={'Открыть '+dayLabel(day)}>
             <span className="tw-mobile-schedule-date"><strong>{dayLabel(day)}</strong>
-              <small>{assigned.length?assigned.length+' по графику':'Нет смен'}</small></span>
+              <small>{assigned.length?assigned.length+' по графику':(data?.attendance||[]).some(mark=>mark.date===day)?'Есть отметки':'Нет смен'}</small></span>
             {assigned.length>0&&<span className="tw-mobile-schedule-people">{assigned.map(shift=>
               <span className="tw-mobile-schedule-person" key={shift.id}>
                 <i style={{background:shift.managerColor||'#718096'}}/>
