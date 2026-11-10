@@ -130,7 +130,8 @@ let managerDraftValue = null
 let departmentDraftValue = null
 let financeRefreshes = 0
 let responseCode = 200
-globalThis.confirm = () => true
+let planDialogApproved = true
+const planDialogMessages = []
 const managerDraft = {
   id: 0, periodStart: '2026-11-01', periodEnd: '2026-11-30',
   managerId: 9, managerName: 'Менеджер', plannedAmount: 500000,
@@ -144,6 +145,7 @@ const planArgs = {
   isAdmin: true,
   planFilters: { dateFrom: '2026-11-01', dateTo: '2026-11-30' },
   planReport: null, managerPlanDraft: managerDraft, departmentPlanDraft: departmentDraft,
+  askActionConfirmation: async (message) => { planDialogMessages.push(message); return planDialogApproved }
   setManagerPlanDraft: (value) => { managerDraftValue = value },
   setDepartmentPlanDraft: (value) => { departmentDraftValue = value },
   setPlanBusy: () => {},
@@ -186,6 +188,14 @@ assert(calls.some(c => c.url === '/api/plans/12' && c.init.method === 'DELETE'))
 await plans.deleteDepartmentPlan(15)
 assert(calls.some(c => c.url === '/api/department-plans/15' && c.init.method === 'DELETE'))
 assert.equal(financeRefreshes, 4, 'Both deletion paths must refresh finance after success')
+assert.equal(planDialogMessages.length, 2, 'Both deletes require an explicit in-app confirmation')
+assert.match(planDialogMessages[0], /Удалить план менеджера/)
+assert.match(planDialogMessages[1], /Удалить план отдела/)
+const beforeCancelled = calls.length
+planDialogApproved = false
+await plans.deleteManagerPlan(12)
+assert.equal(calls.length, beforeCancelled, 'Cancelling a plan deletion must not issue a DELETE')
+planDialogApproved = true
 // An admin plan HTTP failure must not silently publish a successful save or refresh.
 responseCode = 409
 planMessage = null
