@@ -76,6 +76,7 @@ import { createReturnExchangeCreationActions } from './features/orders/returnExc
 import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
 import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
 import { ActionConfirmationModal } from './components/dialogs/ActionConfirmationModal'
+import { ActionTextPromptModal, useActionTextPrompt } from './components/dialogs/ActionTextPromptModal'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
@@ -178,6 +179,8 @@ function App() {
     actionConfirmationDecisionRef.current?.(false)
     actionConfirmationDecisionRef.current = null
   }, [])
+
+  const { request: actionTextRequest, askActionText, answerActionText } = useActionTextPrompt()
 
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -448,8 +451,8 @@ function App() {
   }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
   const disableAuthUser = useCallback(async (id: number) => {
-    return disableManagedAuthUser(id, { isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
-  }, [apiFetch, isAdmin, loadAuthUsers])
+    return disableManagedAuthUser(id, { isAdmin, apiFetch, askActionConfirmation, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
+  }, [apiFetch, askActionConfirmation, isAdmin, loadAuthUsers])
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
@@ -1353,6 +1356,7 @@ function App() {
     applyPendingInventoryWriteoffs,
     reverseInventoryMovement,
   } = createWarehouseGovernanceActions({
+    askActionConfirmation,
     canManageWarehouse,
     inventoryAuditBusy,
     setInventoryAuditBusy,
@@ -1381,6 +1385,7 @@ function App() {
     resetCreateOrderDraft,
     createOrderFromDraft,
   } = createOrderCreationActions({
+    askActionConfirmation,
     createDraft,
     setCreateDraft,
     catalogData,
@@ -1488,6 +1493,7 @@ function App() {
     markOrderSentToClient,
     correctMistakenOrderShipping,
   } = createOrderShippingHandoverActions({
+    askActionConfirmation,
     orders,
     stockHandoverOrder,
     stockHandoverActionItemId,
@@ -2036,6 +2042,8 @@ function App() {
     reverseCashRegisterMovement,
     resetCashRegisterCycle,
   } = createCashRegisterActions({
+    askActionConfirmation,
+    askActionText,
     isAdmin,
     cashRegister,
     cashRegisterCycles,
@@ -2083,6 +2091,7 @@ function App() {
     setTeamEmployeeEmploymentStatus,
     removeTeamEmployee,
   } = createTeamEmployeeActions({
+    askActionConfirmation,
     isAdmin,
     teamDraft,
     teamEmployees,
@@ -2146,6 +2155,7 @@ function App() {
     saveManagerPlan,
     saveDepartmentPlan,
   } = createPlanActions({
+    askActionConfirmation,
     isAdmin,
     planFilters,
     planReport,
@@ -3634,6 +3644,7 @@ function removeDebtPayment(index: number) {
       ) : null}
 
       <ActionConfirmationModal message={actionConfirmationText} onDecision={answerActionConfirmation} />
+      <ActionTextPromptModal request={actionTextRequest} onDecision={answerActionText} />
        <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
@@ -3670,6 +3681,7 @@ function removeDebtPayment(index: number) {
 
       <Suspense fallback={null}>
       <OrderCatalogResolutionModal
+        askActionConfirmation={askActionConfirmation}
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
@@ -3905,7 +3917,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ askActionConfirmation, activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
