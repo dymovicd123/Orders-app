@@ -304,6 +304,25 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     : null
   const systemAdmins = authUsers.filter((user) => user.role === 'admin' && !user.managerId)
 
+  // Managers may mark attendance, but must never enter employee/role/salary management.
+  // Keep the full Team administrator interface below completely isolated.
+  if (!isAdmin) return (
+    <article className="card wide sector-team" id="team" style={sectorStyle('team')}>
+      <TeamTimesheetWorkspace
+        apiFetch={apiFetch}
+        isAdmin={false}
+        canMarkAttendance={authUser?.role === 'manager' && Number(authUser.managerId) > 0 &&
+          !['Завсклад', 'Упаковщик'].includes(authUser.employeeRole || '')}
+        timesheetMonth={timesheetMonth}
+        timesheetData={timesheetData}
+        timesheetBusy={timesheetBusy}
+        setTimesheetMonth={setTimesheetMonth}
+        loadTeamTimesheet={loadTeamTimesheet}
+        loadTeamSalaryReport={loadTeamSalaryReport}
+      />
+    </article>
+  )
+
   return (
     <article className="card wide sector-team" id="team" style={sectorStyle('team')}>
               <div className="card-label">Команда</div>
