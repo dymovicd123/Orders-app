@@ -21,6 +21,7 @@ export type TeamEmployeeDraft = {
 
 type TeamEmployeeActionsArgs = {
   isAdmin: boolean
+  askActionConfirmation: (message: string) => Promise<boolean>
   teamDraft: TeamEmployeeDraft
   teamEmployees: TeamEmployee[]
   authUsers: ManagedAuthUser[]
@@ -41,6 +42,7 @@ type TeamEmployeeActionsArgs = {
 // account-creation recovery and preserve historical employee references.
 export function createTeamEmployeeActions({
   isAdmin,
+  askActionConfirmation,
   teamDraft,
   teamEmployees,
   authUsers,
@@ -183,7 +185,7 @@ export function createTeamEmployeeActions({
     const confirmation = isActive
       ? `Вернуть сотрудника ${employee.name} в активную команду? Он снова появится в новых заказах и назначениях.`
       : `Отметить сотрудника ${employee.name} как уволенного? Старые заказы, планы, выплаты и отчёты сохранятся.`
-    if (!window.confirm(confirmation)) return
+    if (!(await askActionConfirmation(confirmation))) return
 
     setTeamBusy(true)
     setError(null)
@@ -213,7 +215,7 @@ export function createTeamEmployeeActions({
       return
     }
     if (!employee?.id) return
-    if (!window.confirm(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`)) return
+    if (!(await askActionConfirmation(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`))) return
     setTeamBusy(true)
     setError(null)
     setMessage(null)

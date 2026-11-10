@@ -51,6 +51,17 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
+      - name: Verify Main atomic last-piece reservation, pending retry and HTTP recovery
+        if: github.base_ref == 'main'
+        run: |
+          node scripts/test-main-stage16-atomic-reservation-20261101.mjs
+          node scripts/test-main-stage15-exact-pending-reserve-retry-20261101.mjs
+          node scripts/test-main-stage16-worker-shipping-recovery-20261101.mjs
+
+      - name: Verify Main in-app confirmations and reason inputs
+        if: github.base_ref == 'main'
+        run: node scripts/test-main-safe-dialogs-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

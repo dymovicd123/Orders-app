@@ -183,10 +183,7 @@ async function compileController(file) {
 const { createCashRegisterActions } = await compileController('src/features/finance/cashRegisterActions.ts')
 const { createFinancePaymentMethodActions } = await compileController('src/features/finance/paymentMethodActions.ts')
 const prompts = []
-globalThis.window = {
-  confirm: (prompt) => { prompts.push(prompt); return true },
-  prompt: () => 'Проверка кассы',
-}
+let approveCashConfirmation = true
 const cashCalls = []
 let cashBalanceState = null
 let cashError = null
@@ -197,6 +194,8 @@ let responseData = { ok: true, initialized: true, currentBalance: 6200, entries:
 const movementDraft = { direction: 'in', amount: 1200, comment: 'Внесено наличными', businessDate: '2026-09-05' }
 const cashArgs = {
   isAdmin: true,
+  askActionConfirmation: async (message) => { prompts.push(message); return approveCashConfirmation },
+  askActionTextPrompt: async () => 'Проверка кассы',
   cashRegister: { initialized: true, currentBalance: 5000 },
   cashRegisterCycles: [], cashRegisterCyclesOpen: false,
   cashSetupAmount: 5000, cashMovementDraft: movementDraft,
@@ -257,6 +256,8 @@ const lockedActions = createCashRegisterActions({
 })
 const first = lockedActions.saveCashRegisterMovement()
 const second = lockedActions.saveCashRegisterMovement()
+await Promise.resolve()
+await Promise.resolve()
 assert.equal(lockedCalls, 1, 'second cash action must not write while previous one is unresolved')
 unblock(new Response(JSON.stringify({ ok: true, initialized: true, currentBalance: 7000 }), {
   headers: { 'Content-Type': 'application/json' },

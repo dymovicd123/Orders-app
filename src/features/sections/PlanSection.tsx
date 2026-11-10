@@ -43,7 +43,7 @@ export function PlanSection({ ctx }: { ctx: SectionContext }) {
                 {isAdmin ? <button className={`secondary compact ${page==='money'?'is-active':''}`} type="button" onClick={()=>setPage('money')}>Денежный план</button> : null}
                 <button className={`secondary compact ${page==='kpi'?'is-active':''}`} type="button" onClick={()=>setPage('kpi')}>KPI по товарам</button>
               </div>
-              {page === 'kpi' || !isAdmin ? <ProductKpiSection apiFetch={apiFetch} isAdmin={isAdmin} currentManagerId={currentManagerId} formatMoney={formatMoney} /> : <>
+              {page === 'kpi' || !isAdmin ? <ProductKpiSection apiFetch={apiFetch} isAdmin={isAdmin} currentManagerId={currentManagerId} formatMoney={formatMoney} askActionConfirmation={ctx.askActionConfirmation} /> : <>
               <div className="card-meta">План менеджера, план отдела и выполнение собраны в одном модуле.</div>
               <div className="form-grid compact-form">
                 <label>Начало<input type="date" value={managerPlanDraft.periodStart} onChange={(event) => setManagerPlanDraft((draft) => ({ ...draft, periodStart: event.target.value }))} /></label>

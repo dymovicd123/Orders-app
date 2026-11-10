@@ -52,10 +52,12 @@ export function ReferenceIntegrityPanel({
   apiFetch,
   isAdmin,
   onHidden,
+  askActionConfirmation,
 }: {
   apiFetch: (input: string, init?: RequestInit) => Promise<Response>;
   isAdmin: boolean;
   onHidden: () => Promise<void>;
+  askActionConfirmation: (message: string) => Promise<boolean>;
 }) {
   const [groups, setGroups] = useState<DuplicateGroup[] | null>(null)
   const [limited, setLimited] = useState(false)
@@ -170,7 +172,7 @@ export function ReferenceIntegrityPanel({
     const verifiedStockDecisions=confirmedSkuStockDecisions(skuPreview,stockChoices)
     if(verifiedStockDecisions===null)return
     const { source, target } = skuPreview
-    if (!window.confirm(
+    if (!(await askActionConfirmation(
       'Объединить вариант #' + source.id + ' с основным #' + target.id + '? '
       + (verifiedStockDecisions.length
         ? 'Подтверждённые решения по остатку: '
@@ -185,7 +187,7 @@ export function ReferenceIntegrityPanel({
         ? 'Действующие резервы ' + skuPreview.reservationCount + ' строк заказов перейдут на основной вариант. '
         : '')
       + 'Исторические документы и деньги сохранятся. При исправлении количества система запишет отдельную складскую корректировку, не фиктивное списание.'
-    )) return
+    ))) return
     setActionBusy(true)
     setError('')
     try {
@@ -212,7 +214,7 @@ export function ReferenceIntegrityPanel({
 
   async function hideSafeSource() {
     if (actionBusy || !preview?.safeToHideSource) return
-    if (!window.confirm('Убрать «' + preview.source.value + '» из рабочих списков? Действующие товары, остатки и история не изменятся.')) return
+    if (!(await askActionConfirmation('Убрать «' + preview.source.value + '» из рабочих списков? Действующие товары, остатки и история не изменятся.'))) return
     setActionBusy(true)
     setError('')
     const targetId = preview.target.id

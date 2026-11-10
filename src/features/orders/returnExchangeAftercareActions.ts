@@ -8,6 +8,7 @@ import { cancelReturnCriticalRequest, cancelExchangeCriticalRequest, correctExch
 type ReturnExchangeAftercareArgs = {
   apiFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   askStockResolution: (prompt: StockResolutionPrompt) => Promise<boolean>
+  askActionConfirmation: (message: string) => Promise<boolean>
   criticalReturnExchangeClient: Pick<ReturnType<typeof useApiClient>, 'apiFetch' | 'prepareCriticalRequest' | 'completeCriticalRequest'>
   setReturnBusy: Dispatch<SetStateAction<boolean>>
   setExchangeBusy: Dispatch<SetStateAction<boolean>>
@@ -41,6 +42,7 @@ type ReturnExchangeAftercareArgs = {
 export function createReturnExchangeAftercareActions({
   apiFetch,
   askStockResolution,
+  askActionConfirmation,
   criticalReturnExchangeClient,
   setReturnBusy,
   setExchangeBusy,
@@ -176,7 +178,7 @@ export function createReturnExchangeAftercareActions({
   }
 
   async function cancelReturnEntry(entry: ReturnHistoryEntry) {
-    if (!window.confirm(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
+    if (!(await askActionConfirmation(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`))) return
     setReturnBusy(true)
     setError(null)
     setMessage(null)
@@ -262,7 +264,7 @@ export function createReturnExchangeAftercareActions({
 
   async function cancelExchangeEntry(entry: ExchangeHistoryEntry) {
 
-    if (!window.confirm(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
+    if (!(await askActionConfirmation(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`))) return
     setExchangeBusy(true)
     setError(null)
     setMessage(null)
