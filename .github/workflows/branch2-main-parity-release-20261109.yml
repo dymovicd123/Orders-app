@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT reviewed DDS UX/XLSX release. No schema or D1 mutation; never Main.
+# ONE-SHOT DDS directory release. Additive DDS-only schema on Branch2; never Main.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish exact reviewed Branch2 DDS UX and Excel (no D1 change)
+    name: Publish reviewed Branch2 DDS directory after isolated schema validation
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): dds report ux xlsx')
+      startsWith(github.event.head_commit.message, 'release(branch2): dds directory')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,13 +62,32 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '0f4c64134f7ac4dcb5345ff3f01514d55417a777'
+          test "$(git rev-parse HEAD^)" = 'ae2bb3bd8dddb27491a947f371626c72fe32406d'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'package-lock.json' 'package.json' 'scripts/test-dds-excel-ux-20261110.mjs' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/finance/ddsExcel.ts' 'src/features/finance/ddsTypes.ts')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' 'migrations/0121_dds_directory.sql' 'scripts/test-dds-excel-ux-20261110.mjs' 'scripts/test-simple-dds-ledger-20261110.mjs' 'src/features/finance/DdsDirectoryPanel.tsx' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/finance/ddsExcel.ts' 'src/features/finance/ddsTypes.ts' 'src/features/sections/FinanceSection.tsx' 'worker/domains/dds-directory.ts' 'worker/domains/dds.ts' 'worker/index.ts')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
+      - name: Apply only DDS directory migration to Branch2 test D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/branch2-manual-release.mjs --check
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          npm ci
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+          # The migration creates dds_categories, dds_articles and a DDS expense guard.
+          # Existing DDS money records and all non-DDS tables are left unchanged.
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0121_dds_directory.sql
+          category_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM dds_categories" --json)"
+          article_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM dds_articles" --json)"
+          trigger_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name='dds_expense_active_article_guard'" --json)"
+          printf '%s' "$category_json" | jq -e 'if type == "array" then .[0].results[0].n >= 12 else .results[0].n >= 12 end'
+          printf '%s' "$article_json" | jq -e 'if type == "array" then .[0].results[0].n >= 50 else .results[0].n >= 50 end'
+          printf '%s' "$trigger_json" | jq -e 'if type == "array" then .[0].results[0].n == 1 else .results[0].n == 1 end'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |

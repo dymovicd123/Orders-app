@@ -1,5 +1,4 @@
 import { strToU8, zipSync } from 'fflate'
-import { DDS_CATEGORIES } from '../../../shared/dds-categories.ts'
 import { ddsKindLabel, ddsSignedAmount, ddsMonthLabel, type DdsReport } from './ddsTypes.ts'
 
 // Minimal real OOXML workbook. Comments stay text (never formulas); amounts are Excel numbers.
@@ -84,15 +83,26 @@ function makeSheets(data:DdsReport):Sheet[]{
     [C('Статьи расходов • '+month,1)],[C('Утверждённый список и фактические суммы по каждой статье',2)],
     [],[C('Категория / статья',8),C('Сумма',8),C('Примечание',8)]
   ]
-  DDS_CATEGORIES.forEach(group=>{
+  // Use the editable directory, including archived names. Keep unmatched historical articles
+  // if an older report contains entries saved before the directory was introduced.
+  const catalog=(data.directory||[]).map(group=>({
+    name:group.name,articles:group.articles.map(article=>article.name),
+  }))
+  for(const row of data.categories){
+    let group=catalog.find(item=>item.name===row.name)
+    if(!group){group={name:row.name,articles:[]};catalog.push(group)}
+    for(const article of row.articles)
+      if(!group.articles.includes(article.name))group.articles.push(article.name)
+  }
+  for(const group of catalog){
     const current=data.categories.find(x=>x.name===group.name)
     articles.push([C(group.name,10),M(current?.total||0),C('Категория',2)])
-    group.articles.forEach(name=>{
+    for(const name of group.articles){
       const value=current?.articles.find(x=>x.name===name)?.amount||0
       articles.push([C('    '+name),M(value,11),C(value!==0?'Были расходы':'',2)])
-    })
+    }
     articles.push([])
-  })
+  }
   articles.push([C('ИТОГО',4),M(data.monthSpent),C('С учётом отмен',2)])
   const operations:Sheet['rows']=[
     [C('История операций • '+month,1)],[C('Пополнения, расходы и исправления; суммы хранятся числом, даты — датой',2)],

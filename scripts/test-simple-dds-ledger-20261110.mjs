@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { DDS_CATEGORIES } from '../shared/dds-categories.ts'
 import { addDdsExpense, addDdsFunds, readDdsMonth, reverseDdsEntry } from '../worker/domains/dds.ts'
+import { addDdsCategory, addDdsArticle, readDdsDirectory, setDdsCategoryActive, setDdsArticleActive } from '../worker/domains/dds-directory.ts'
 
 const sql = new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 sql.exec(readFileSync('migrations/0120_shared_dds_ledger.sql','utf8'))
+sql.exec(readFileSync('migrations/0121_dds_directory.sql','utf8'))
 const db = {
   prepare(query) {
     return { bind(...args) {
@@ -33,6 +35,10 @@ const id=()=>('dds-test-request-'+String(++i).padStart(5,'0'))
 const report=()=>readDdsMonth(db,month,manager)
 
 assert.equal(DDS_CATEGORIES.length,12)
+const initialDirectory = await readDdsDirectory(db,manager)
+assert.equal(initialDirectory.length,12,'All original categories must be migrated')
+assert.equal(initialDirectory.reduce((sum,group)=>sum+group.articles.length,0),50,'All original articles must be migrated')
+assert.ok(initialDirectory.every(group=>group.active&&group.articles.every(article=>article.active)))
 assert.equal((await report()).currentBalance,0)
 await assert.rejects(()=>addDdsFunds(db,{amount:1000,businessDate:date,requestId:id()},manager),/администратор/)
 await assert.rejects(()=>addDdsExpense(db,{amount:200,businessDate:date,category:'Упаковка',article:'Некорректно',requestId:id()},manager),/статью/)
@@ -69,4 +75,42 @@ assert.deepEqual([state.monthAdded,state.monthSpent,state.closingBalance],[12000
 assert.equal(state.categories.find(c=>c.name==='Упаковка').total,0)
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM dds_entries').get().n,5,'No duplicate entries after replay and rejected writes')
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='cash_register_entries'").get().n,0)
-console.log('SIMPLE_DDS_LEDGER_PASS: roles, repeated topups, independent month, atomic nonnegative balance, retry, reversal, 12 categories')
+
+// Client-managed directory is admin-only, never modifies historical money or category strings.
+await assert.rejects(()=>addDdsCategory(db,'Командировки',manager),/администратор/)
+const newCategory=await addDdsCategory(db,'Командировки',admin)
+assert.equal(newCategory.ok,true)
+assert.equal((await addDdsCategory(db,'командировки',admin)).id,newCategory.id,'Case-insensitive duplicate must not create another')
+const newArticle=await addDdsArticle(db,newCategory.id,'Такси',admin)
+assert.equal((await addDdsArticle(db,newCategory.id,'такси',admin)).id,newArticle.id)
+assert.equal((await readDdsDirectory(db,manager)).length,13)
+await assert.rejects(()=>addDdsArticle(db,newCategory.id,'Отель',manager),/администратор/)
+const newExpense=await addDdsExpense(db,{
+  amount:1000,businessDate:date,category:'Командировки',article:'Такси',
+  comment:'Поездка в цех',requestId:id(),
+},manager)
+assert.equal(newExpense.ok,true)
+assert.equal((await report()).currentBalance,59000)
+assert.equal((await report()).categories.find(group=>group.name==='Командировки').total,1000)
+await assert.rejects(()=>setDdsArticleActive(db,newArticle.id,false,manager),/администратор/)
+await setDdsArticleActive(db,newArticle.id,false,admin)
+await assert.rejects(()=>addDdsExpense(db,{
+  amount:100,businessDate:date,category:'Командировки',article:'Такси',requestId:id(),
+},manager),/статью/)
+assert.equal((await report()).categories.find(group=>group.name==='Командировки').total,1000,
+  'Archived article remains in historical monthly reports')
+// Even a concurrent raw insert cannot bypass archived-article validation.
+assert.throws(()=>sql.prepare(`INSERT INTO dds_entries
+  (request_id,kind,amount,business_date,category,article,comment,created_at)
+  VALUES(?,?,?,?,?,?,?,?)`).run(id(),'expense',100,date,'Командировки','Такси','',date),
+  /DDS_INVALID_ARTICLE/)
+await setDdsArticleActive(db,newArticle.id,true,admin)
+await setDdsCategoryActive(db,newCategory.id,false,admin)
+await assert.rejects(()=>addDdsExpense(db,{
+  amount:100,businessDate:date,category:'Командировки',article:'Такси',requestId:id(),
+},manager),/статью/)
+assert.equal((await report()).categories.find(group=>group.name==='Командировки').total,1000)
+await setDdsCategoryActive(db,newCategory.id,true,admin)
+assert.ok((await readDdsDirectory(db,manager)).find(group=>group.name==='Командировки').active)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM dds_entries").get().n,6)
+console.log('SIMPLE_DDS_LEDGER_PASS: 12+1 categories, 50+1 articles, self-managed directory, history preserved, archived article write guard, repeated funds and nonnegative balances')

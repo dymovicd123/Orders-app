@@ -18,7 +18,6 @@ export function FinanceSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className="card wide sector-finance" id="finance" style={sectorStyle('finance')}>
       <div className="card-label">Финансы</div>
-      <div className="card-meta">Деньги показаны по дате операции. Время внесения хранится для аудита и не меняет день, к которому относится операция.</div>
 
       {periodApplies ? (
         <div className="orders-filter-panel finance-workspace-panel">
@@ -54,13 +53,11 @@ export function FinanceSection({ ctx }: { ctx: SectionContext }) {
             </div>
           </div>
         </div>
-      ) : (
+      ) : financeMode === 'dds' ? null : (
         <div className="muted-note finance-current-scope-note">
-          {financeMode === 'dds'
-            ? 'ДДС — отдельный журнал. Выберите месяц внутри вкладки; касса и оплаты заказов не затрагиваются.'
-            : financeMode === 'cash'
-              ? 'Касса показывает текущее состояние наличных. Выбранный на других вкладках период здесь не применяется.'
-              : 'Справочник способов оплаты не зависит от выбранного периода.'}
+          {financeMode === 'cash'
+            ? 'Касса показывает текущее состояние наличных. Выбранный на других вкладках период здесь не применяется.'
+            : 'Справочник способов оплаты не зависит от выбранного периода.'}
         </div>
       )}
 

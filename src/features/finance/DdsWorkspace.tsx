@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { DDS_CATEGORIES } from '../../../shared/dds-categories'
+import { DdsDirectoryPanel } from './DdsDirectoryPanel'
 import { ddsDateLabel, ddsKindLabel, ddsMoney, ddsMonthLabel, ddsSignedAmount, type DdsEntry, type DdsReport } from './ddsTypes'
 import './dds.css'
 
 type Props={apiFetch:(url:string, init?:RequestInit)=>Promise<Response>;isAdmin:boolean}
-type View='expenses'|'report'
+type View='expenses'|'funds'|'report'|'directory'
 const currentDay=()=>{
   const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date())
   const part=(name:string)=>parts.find(value=>value.type===name)?.value||''
@@ -67,7 +67,10 @@ function DdsTransactions({entries,isAdmin,saving,onReverse,short=false}:{
           <div className="dds-transaction-title">
             <strong>{name}</strong>
             <span>{ddsKindLabel[entry.kind]}{entry.category?' · '+entry.category:''}</span>
-            {entry.comment&&<small>{entry.comment}</small>}
+            {entry.comment&&<div className="dds-transaction-comment">
+              <span>{entry.kind==='funding'?'Кому / назначение:':'Комментарий:'}</span>
+              <strong>{entry.comment}</strong>
+            </div>}
             {Boolean(entry.reversed)&&<small className="dds-reversed">Исходная запись отменена</small>}
           </div>
           <div className="dds-transaction-side">
@@ -92,14 +95,12 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   const [notice,setNotice]=useState('')
   const [expense,setExpense]=useState(freshExpense)
   const [funds,setFunds]=useState(freshFunds)
-  const [fundingOpen,setFundingOpen]=useState(false)
   const [reverseId,setReverseId]=useState<number|null>(null)
   const [reverseReason,setReverseReason]=useState('')
   const readToken=useRef(0)
   const requestRef=useRef<{fingerprint:string;id:string}|null>(null)
   const savingRef=useRef(false)
 
-  const closeFunding=useCallback(()=>setFundingOpen(false),[])
   const closeReversal=useCallback(()=>setReverseId(null),[])
   const refresh=useCallback(async(forMonth:string)=>{
     const token=++readToken.current
@@ -115,11 +116,11 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   },[apiFetch])
   useEffect(()=>{void refresh(month);return()=>{readToken.current++}},[month,refresh])
 
-  const category=DDS_CATEGORIES.find(group=>group.name===expense.category)
+  const accurate=data?.month===month?data:null
+  const category=accurate?.directory.find(group=>group.name===expense.category&&group.active)
   const needsComment=expense.category.startsWith('Зарплата')||expense.article==='Прочее'
   const canSaveExpense=Boolean(expense.date&&integerAmount(expense.amount)&&category&&
-    category.articles.some(article=>article===expense.article)&&(!needsComment||expense.comment.trim()))
-  const accurate=data?.month===month?data:null
+    category.articles.some(article=>article.active&&article.name===expense.article)&&(!needsComment||expense.comment.trim()))
   const shownCategories=useMemo(()=>accurate?.categories.filter(group=>group.total!==0)||[],[accurate])
   const maxCategory=Math.max(1,...shownCategories.map(x=>Math.abs(x.total)))
 
@@ -163,7 +164,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
       businessDate:funds.date,amount:Number(funds.amount),comment:funds.comment.trim()
     })
     if(result){
-      setFundingOpen(false);setFunds(freshFunds())
+      setFunds(freshFunds())
       if(month!==funds.date.slice(0,7))setMonth(funds.date.slice(0,7))
       setNotice('Пополнение сохранено.')
     }
@@ -173,6 +174,26 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     if(await post('/api/dds/entries/'+reverseId+'/reverse',{comment:reverseReason.trim()})){
       setReverseId(null);setReverseReason('');setNotice('Исправление сохранено в истории.')
     }
+  }
+  async function addDirectoryCategory(name:string){
+    const success=await post('/api/dds/directory/categories',{name})
+    if(success)setNotice('Категория «'+name+'» сохранена.')
+    return success
+  }
+  async function addDirectoryArticle(categoryId:number,name:string){
+    const success=await post('/api/dds/directory/categories/'+categoryId+'/articles',{name})
+    if(success)setNotice('Статья «'+name+'» сохранена.')
+    return success
+  }
+  async function changeDirectoryCategory(categoryId:number,active:boolean){
+    const success=await post('/api/dds/directory/categories/'+categoryId+'/active',{active})
+    if(success)setNotice(active?'Категория снова доступна.':'Категория скрыта из новых расходов.')
+    return success
+  }
+  async function changeDirectoryArticle(articleId:number,active:boolean){
+    const success=await post('/api/dds/directory/articles/'+articleId+'/active',{active})
+    if(success)setNotice(active?'Статья снова доступна.':'Статья скрыта из новых расходов.')
+    return success
   }
   async function exportXlsx(){
     if(!accurate||loading||exporting)return
@@ -194,14 +215,13 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
 
   return <section className="dds-workspace">
     <div className="dds-page-header">
-      <div><p className="dds-eyebrow">УЧЁТ РАСХОДОВ</p><h2>Движение денежных средств</h2>
-        <p>Записывайте расходы по статьям и смотрите итог за месяц.</p></div>
+      <div><p className="dds-eyebrow">УЧЁТ РАСХОДОВ</p><h2>Движение денежных средств</h2></div>
       <button className="secondary compact" type="button" disabled={loading||saving} onClick={()=>void refresh(month)}>Обновить</button>
     </div>
     <div className="dds-wallet">
       <div><span>Доступный остаток</span><strong>{data?ddsMoney(data.currentBalance):'—'}</strong>
         <small>Общие средства для расходов</small></div>
-      {isAdmin&&<button type="button" className="secondary dds-add-funds" onClick={()=>setFundingOpen(true)}>+ Пополнить</button>}
+      {isAdmin&&<button type="button" className="secondary dds-add-funds" onClick={()=>setView('funds')}>+ Пополнить баланс</button>}
     </div>
 
     {error&&<div className="dds-alert is-error" role="alert">{error}</div>}
@@ -210,8 +230,12 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     <div className="dds-switch" role="tablist" aria-label="Разделы ДДС">
       <button type="button" role="tab" aria-selected={view==='expenses'} className={view==='expenses'?'is-active':''}
         onClick={()=>setView('expenses')}>Расходы</button>
+      {isAdmin&&<button type="button" role="tab" aria-selected={view==='funds'} className={view==='funds'?'is-active':''}
+        onClick={()=>setView('funds')}>Пополнения</button>}
       <button type="button" role="tab" aria-selected={view==='report'} className={view==='report'?'is-active':''}
         onClick={()=>setView('report')}>Отчёт за месяц</button>
+      {isAdmin&&<button type="button" role="tab" aria-selected={view==='directory'} className={view==='directory'?'is-active':''}
+        onClick={()=>setView('directory')}>Справочник</button>}
     </div>
 
     {view==='expenses'&&<>
@@ -225,12 +249,12 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
           <label>Категория<select required value={expense.category}
             onChange={e=>setExpense(s=>({...s,category:e.target.value,article:''}))}>
             <option value="">Выберите категорию</option>
-            {DDS_CATEGORIES.map(group=><option key={group.name} value={group.name}>{group.name}</option>)}
+            {accurate?.directory.filter(group=>group.active).map(group=><option key={group.id} value={group.name}>{group.name}</option>)}
           </select></label>
           <label>Статья<select required disabled={!category} value={expense.article}
             onChange={e=>setExpense(s=>({...s,article:e.target.value}))}>
             <option value="">Выберите статью</option>
-            {category?.articles.map(article=><option key={article} value={article}>{article}</option>)}
+            {category?.articles.filter(article=>article.active).map(article=><option key={article.id} value={article.name}>{article.name}</option>)}
           </select></label>
           <label className="dds-wide">Комментарий{needsComment?' *':''}<input maxLength={500}
             value={expense.comment} placeholder="Например, упаковка 20 заказов"
@@ -256,6 +280,46 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
             onReverse={id=>{setReverseId(id);setReverseReason('')}} short/>}
       </section>
     </>}
+
+    {isAdmin&&view==='funds'&&<div className="dds-funding-page">
+      <form className="dds-primary-form dds-funding-form" onSubmit={event=>void saveFunds(event)}>
+        <div className="dds-section-title"><div>
+          <h3>Пополнить баланс</h3>
+          <p>Добавьте сумму, выделенную на расходы. Пополнять можно в любое время.</p>
+        </div></div>
+        <div className="dds-form-grid">
+          <label>Сумма, ₸<input className="dds-money-field" required type="number" min="1" max="1000000000" step="1"
+            value={funds.amount} placeholder="0" onChange={e=>setFunds(current=>({...current,amount:e.target.value}))}/></label>
+          <label>Дата пополнения<input required type="date" max={currentDay()} value={funds.date}
+            onChange={e=>setFunds(current=>({...current,date:e.target.value}))}/></label>
+          <label className="dds-wide">Кому и на что выделены деньги
+            <input maxLength={500} value={funds.comment}
+              placeholder="Например, Асия — упаковка и доставка заказов"
+              onChange={e=>setFunds(current=>({...current,comment:e.target.value}))}/>
+          </label>
+        </div>
+        <div className="dds-form-footer">
+          <span>После пополнения будет: <strong>{data?ddsMoney(data.currentBalance+Number(funds.amount||0)):'—'}</strong></span>
+          <button type="submit" className="primary" disabled={saving||loading||!integerAmount(funds.amount)}>
+            {saving?'Сохраняю…':'Добавить деньги'}
+          </button>
+        </div>
+      </form>
+      <section className="dds-section">
+        <div className="dds-section-title">
+          <div><h3>История пополнений</h3><p>Даты, суммы и назначение выделенных средств.</p></div>
+          <input type="month" aria-label="Месяц пополнений" max={currentDay().slice(0,7)} value={month}
+            onChange={e=>{if(validMonth(e.target.value))setMonth(e.target.value)}}/>
+        </div>
+        <DdsTransactions entries={transactions.filter(entry=>entry.kind==='funding'||entry.kind==='reversal_funding')}
+          isAdmin={isAdmin} saving={saving} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
+      </section>
+    </div>}
+
+    {isAdmin&&view==='directory'&&
+      <DdsDirectoryPanel categories={accurate?.directory||[]} busy={saving||loading}
+        onAddCategory={addDirectoryCategory} onAddArticle={addDirectoryArticle}
+        onSetCategoryActive={changeDirectoryCategory} onSetArticleActive={changeDirectoryArticle}/>}
 
     {view==='report'&&<div className="dds-month-report">
       <div className="dds-report-heading">
@@ -306,24 +370,6 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
         </section>
       </>}
     </div>}
-
-    {isAdmin&&fundingOpen&&<DdsDialog title="Пополнить ДДС" description="Добавьте средства к общему остатку. Количество пополнений не ограничено." onClose={closeFunding}>
-      <form className="dds-modal-form" onSubmit={event=>void saveFunds(event)}>
-        <label>Сумма, ₸<input required autoFocus type="number" min="1" max="1000000000" step="1"
-          value={funds.amount} placeholder="0" onChange={e=>setFunds(s=>({...s,amount:e.target.value}))}/></label>
-        <label>Дата<input required type="date" max={currentDay()} value={funds.date}
-          onChange={e=>setFunds(s=>({...s,date:e.target.value}))}/></label>
-        <label>Комментарий<input maxLength={500} placeholder="Для каких расходов выделены средства"
-          value={funds.comment} onChange={e=>setFunds(s=>({...s,comment:e.target.value}))}/></label>
-        <div className="dds-modal-preview">Остаток после пополнения:
-          <strong>{data?ddsMoney(data.currentBalance+Number(funds.amount||0)):'—'}</strong></div>
-        <div className="dds-modal-actions">
-          <button type="button" className="secondary" onClick={closeFunding}>Отмена</button>
-          <button type="submit" className="primary" disabled={!integerAmount(funds.amount)||saving||loading}>
-            {saving?'Сохраняю…':'Добавить деньги'}</button>
-        </div>
-      </form>
-    </DdsDialog>}
 
     {isAdmin&&reverseId!==null&&<DdsDialog title="Отменить запись?" description="Исходная запись останется в истории, остаток пересчитается автоматически." onClose={closeReversal}>
       <div className="dds-modal-form">

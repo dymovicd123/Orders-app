@@ -18,6 +18,15 @@ const report={
       comment:'=HYPERLINK("fake") <опасно> & тест',createdAt:'2026-11-10T12:00:00Z',reversesEntryId:null,reversed:0},
   ],
 }
+// The Excel hierarchy comes from the editable DDS directory, including newly added articles.
+report.directory=[
+  ...DDS_CATEGORIES.map((group,index)=>({
+    id:index+1,name:group.name,active:true,
+    articles:group.articles.map((name,j)=>({id:index*100+j+1,name,active:true})),
+  })),
+  {id:99,name:'Командировки',active:true,articles:[{id:990,name:'Такси',active:true}]},
+]
+report.categories.push({name:'Командировки',total:0,articles:[]})
 const bytes=buildDdsXlsx(report)
 assert.equal(bytes[0],0x50)
 assert.equal(bytes[1],0x4b)
@@ -36,6 +45,7 @@ assert.match(overview,/91(?:000)?/)
 assert.ok(overview.includes('<v>91000</v>'),'Closing balance must be a number, not formatted text')
 const articles=read('xl/worksheets/sheet2.xml')
 assert.ok(articles.includes('Доставка клиенту')&&articles.includes('Закуп товара')&&articles.includes('Коробки'))
+assert.ok(articles.includes('Командировки')&&articles.includes('Такси'),'New editable directory items must appear in Excel')
 assert.ok(articles.includes('<v>9000</v>'))
 const ops=read('xl/worksheets/sheet3.xml')
 assert.ok(ops.includes('autoFilter ref="A4:H6"'))
@@ -49,7 +59,10 @@ assert.ok(read('xl/styles.xml').includes('numFmtId="164"'))
 assert.throws(()=>buildDdsXlsx({...report,entries:Array(2000).fill(report.entries[0])}),/Неполный|2000/)
 const ui=readFileSync('src/features/finance/DdsWorkspace.tsx','utf8')
 assert.ok(ui.includes("view==='expenses'")&&ui.includes("view==='report'"))
-assert.ok(ui.includes("isAdmin&&fundingOpen&&<DdsDialog"),'Admin funding must be a separate dialog')
+assert.ok(ui.includes("isAdmin&&view==='funds'"),'Admin funding must be a dedicated tab')
+assert.ok(ui.includes("view==='directory'"),'DDS directory must be a separate tab')
+assert.ok(ui.includes('Кому и на что выделены деньги'),'Funding must ask for its purpose')
+assert.ok(ui.includes('dds-transaction-comment'),'Comments must be visible in the operations history')
 assert.ok(ui.includes('Скачать Excel (.xlsx)')&&!ui.includes('Скачать для Excel (CSV)'))
 assert.ok(ui.includes("await import('./ddsExcel')"),'Spreadsheet writer must load only when exporting')
-console.log('DDS_UX_XLSX_PASS: 3 real workbook sheets, Russian labels, dates, numbers, styles, sanitized comments, on-demand export, admin funding dialog')
+console.log('DDS_UX_XLSX_PASS: 3 real workbook sheets, text safety, dedicated funding and category directory tabs')
