@@ -56,10 +56,11 @@ export async function saveTeamAttendance(db:D1Database,input:TeamAttendanceInput
     throw invalid('Время ухода можно указать только для сотрудника, который пришёл.')
   const comment=text(input.comment)
   if(comment.length>350)throw invalid('Комментарий не должен превышать 350 символов.')
-  const person=await db.prepare(`SELECT id FROM managers WHERE id=?
-    AND UPPER(COALESCE(name,'')) NOT LIKE '%СЫМБАТ%'
-    AND UPPER(COALESCE(role,'')) NOT LIKE '%АДМИН%'`).bind(managerId).first<{id:number}>()
-  if(!person)throw invalid('Сотрудник не найден или не участвует в табеле.',404)
+  const person=await db.prepare('SELECT id,name,role FROM managers WHERE id=?')
+    .bind(managerId).first<{id:number;name:string;role:string}>()
+  if(!person||String(person.name||'').toLocaleLowerCase('ru-RU').includes('сымбат')
+    ||String(person.role||'').toLocaleLowerCase('ru-RU').includes('админ'))
+    throw invalid('Сотрудник не найден или не участвует в табеле.',404)
   const scheduled=await db.prepare(`SELECT 1 AS found FROM team_timesheet
      WHERE manager_id=? AND work_date=?`).bind(managerId,date).first<{found:number}>()
   const existing=await db.prepare(`SELECT id,status,finished_at,comment FROM team_attendance_marks
