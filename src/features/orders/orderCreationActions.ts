@@ -8,6 +8,7 @@ import {
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from '../../app/order-pricing'
 
 type OrderCreationActionsArgs = {
+  askActionConfirmation: (text: string) => Promise<boolean>
   createDraft: EditorDraft
   setCreateDraft: Dispatch<SetStateAction<EditorDraft>>
   catalogData: CatalogResponse | null
@@ -37,6 +38,7 @@ type OrderCreationActionsArgs = {
 // One behavior-preserving create-order boundary: exact SKU, historical catalog price,
 // multi-payment draft dates, one critical write and its explicit post-commit state.
 export function createOrderCreationActions({
+  askActionConfirmation,
   createDraft,
   setCreateDraft,
   catalogData,
@@ -339,7 +341,7 @@ export function createOrderCreationActions({
         }
         const names = [...new Set(result.retiredItems.map((item) => String(item.productName || '').trim()).filter(Boolean))]
         const label = names.length ? names.map((name) => `«${name}»`).join(', ') : 'выбранная позиция'
-        const confirmed = window.confirm(
+        const confirmed = await askActionConfirmation(
           `${label} раньше была удалена из рабочего каталога. Вернуть её как новую рабочую позицию?\n\nСтарые заказы и история не изменятся. Старые остатки и резервы не вернутся; новая рабочая позиция начнёт с нуля.`,
         )
         if (!confirmed) {
