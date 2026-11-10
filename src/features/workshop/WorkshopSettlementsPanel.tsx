@@ -45,7 +45,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   openCatalogPrice:(productId:number|null,name:string)=>void;
   isAdmin:boolean;
   askActionConfirmation:(message:string)=>Promise<boolean>;
-  askActionTextPrompt:(title:string,initialValue?:string)=>Promise<string|null>;
+  askActionTextPrompt:(title:string,initialValue?:string,minLength?:number)=>Promise<string|null>;
 }) {
   const today=todayKz()
   const [view,setView]=useState<View>('home')
@@ -171,7 +171,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   }
   const reversePayment=async(event:LedgerEvent)=>{
     if(!isAdmin||writeLocked.current||!activated)return
-    const reason=await askActionTextPrompt('Причина отмены выплаты (сохранится в истории)')
+    const reason=await askActionTextPrompt('Причина отмены выплаты (сохранится в истории)', '', 5)
     if(reason===null)return
     if(reason.trim().length<5){setError('Укажите причину отмены не короче 5 символов.');return}
     if(!(await askActionConfirmation('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.')))return
