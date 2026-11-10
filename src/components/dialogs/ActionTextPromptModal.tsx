@@ -4,14 +4,15 @@ import './action-confirmation.css'
 type Props = {
   title: string
   initialValue: string
+  minLength?: number
   onDecision: (value: string | null) => void
 }
 
-export function ActionTextPromptModal({ title, initialValue, onDecision }: Props) {
+export function ActionTextPromptModal({ title, initialValue, minLength = 1, onDecision }: Props) {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const approveRef = useRef<HTMLButtonElement | null>(null)
-  const valid = value.trim().length > 0
+  const valid = value.trim().length >= minLength
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -55,11 +56,11 @@ export function ActionTextPromptModal({ title, initialValue, onDecision }: Props
         <p className="action-confirmation-eyebrow">Причина операции</p>
         <h2 id="action-text-prompt-title">{title}</h2>
         <label className="action-confirmation-input-label" htmlFor="action-text-prompt-input">
-          Укажите причину
+          {minLength > 1 ? `Укажите причину (не менее ${minLength} символов)` : 'Укажите причину'}
         </label>
         <textarea id="action-text-prompt-input" ref={inputRef} rows={3}
           className="action-confirmation-text-input" value={value}
-          required onChange={(event) => setValue(event.target.value)} />
+          required minLength={minLength} maxLength={500} onChange={(event) => setValue(event.target.value)} />
         <p id="action-text-prompt-help" className="action-confirmation-hint">
           Причина сохранится в истории операции. Если не хотите продолжать, выберите «Отмена».
         </p>
