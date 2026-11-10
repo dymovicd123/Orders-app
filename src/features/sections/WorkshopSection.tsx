@@ -240,7 +240,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
       {workshopChannel === 'settlements' && canSeeSettlements ? (
         <WorkshopSettlementsPanel openUnpricedRequest={openUnpricedRequest}
           onUnpricedCountChange={setUnpricedCount}
-          openCatalogPrice={ctx.openWorkshopCatalogPrice} isAdmin={Boolean(ctx.isAdmin)}/>
+          openCatalogPrice={ctx.openWorkshopCatalogPrice} isAdmin={Boolean(ctx.isAdmin)}
+          askActionConfirmation={ctx.askActionConfirmation}/>
       ) : <>
       <div className="workshop-section-tabs" role="tablist" aria-label="Раздел цеха">
         <button type="button" className={workshopPanel === 'orders' ? 'is-active' : ''} onClick={openOrders}>Заказы</button>
