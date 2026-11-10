@@ -162,7 +162,7 @@ function App() {
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [actionConfirmationText, setActionConfirmationText] = useState<string | null>(null)
   const actionConfirmationDecisionRef = useRef<((approved: boolean) => void) | null>(null)
-  const [actionTextPrompt, setActionTextPrompt] = useState<{ title: string; initialValue: string } | null>(null)
+  const [actionTextPrompt, setActionTextPrompt] = useState<{ title: string; initialValue: string; minLength: number } | null>(null)
   const actionTextDecisionRef = useRef<((value: string | null) => void) | null>(null)
   const askActionConfirmation = useCallback((text: string) => {
     if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(false)
@@ -177,11 +177,11 @@ function App() {
     setActionConfirmationText(null)
     resolve?.(approved)
   }, [])
-  const askActionTextPrompt = useCallback((title: string, initialValue = '') => {
+  const askActionTextPrompt = useCallback((title: string, initialValue = '', minLength = 1) => {
     if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(null)
     return new Promise<string | null>((resolve) => {
       actionTextDecisionRef.current = resolve
-      setActionTextPrompt({ title, initialValue })
+      setActionTextPrompt({ title, initialValue, minLength })
     })
   }, [])
   const answerActionTextPrompt = useCallback((value: string | null) => {
@@ -3662,7 +3662,7 @@ function removeDebtPayment(index: number) {
       <ActionConfirmationModal message={actionConfirmationText} onDecision={answerActionConfirmation} />
       {actionTextPrompt ? (
         <ActionTextPromptModal title={actionTextPrompt.title}
-          initialValue={actionTextPrompt.initialValue} onDecision={answerActionTextPrompt} />
+          initialValue={actionTextPrompt.initialValue} minLength={actionTextPrompt.minLength} onDecision={answerActionTextPrompt} />
       ) : null}
        <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
