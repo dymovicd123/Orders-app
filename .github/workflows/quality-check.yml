@@ -79,6 +79,9 @@ jobs:
       - name: Verify daily navigation and monthly date-by-employee timesheet journal
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-timesheet-report-v2-20261110.mjs
+      - name: Verify bulk shifts preserve existing assignments and precise edits
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-team-timesheet-bulk-safe-20261110.mjs
 
       - name: Run cumulative regression gate
         run: npm run release:check
