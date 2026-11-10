@@ -7,6 +7,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const {
     apiFetch,
     askActionConfirmation,
+    authUser,
     authUsers,
     authUsersBusy,
     exportTeamPlanReportWord,
@@ -813,6 +814,8 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                 <TeamTimesheetWorkspace
                   apiFetch={apiFetch}
                   isAdmin={isAdmin}
+                  canMarkAttendance={isAdmin || (authUser?.role === 'manager' && Number(authUser.managerId) > 0
+                    && !['Завсклад','Упаковщик'].includes(authUser.employeeRole || ''))}
                   timesheetMonth={timesheetMonth}
                   timesheetData={timesheetData}
                   timesheetBusy={timesheetBusy}
