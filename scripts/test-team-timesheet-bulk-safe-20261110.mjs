@@ -24,11 +24,14 @@ sqlite.exec(`
     ('2026-11-10',2,'19:00','Другой сотрудник','2026-11-01','2026-11-01'),
     ('2026-11-11',1,'17:30','Вторая дата','2026-11-01','2026-11-01');
 `)
-const db={prepare(query){return {bind(...args){return {
-  async all(){return {results:sqlite.prepare(query).all(...args)}},
-  async first(){return sqlite.prepare(query).get(...args)||null},
-  async run(){const r=sqlite.prepare(query).run(...args);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},
-}}}}}
+const db={prepare(query){
+  const bound=(args=[])=>({
+    async all(){return {results:sqlite.prepare(query).all(...args)}},
+    async first(){return sqlite.prepare(query).get(...args)||null},
+    async run(){const r=sqlite.prepare(query).run(...args);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},
+  })
+  return {...bound(),bind(...args){return bound(args)}}
+}}
 const shifts=()=>sqlite.prepare('SELECT work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY work_date,manager_id').all()
 const original=shifts()
 await saveTeamTimesheet(db,{dates:['2026-11-10','2026-11-11'],managerIds:[1,3],
