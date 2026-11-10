@@ -145,7 +145,7 @@ const planArgs = {
   isAdmin: true,
   planFilters: { dateFrom: '2026-11-01', dateTo: '2026-11-30' },
   planReport: null, managerPlanDraft: managerDraft, departmentPlanDraft: departmentDraft,
-  askActionConfirmation: async (message) => { planDialogMessages.push(message); return planDialogApproved }
+  askActionConfirmation: async (message) => { planDialogMessages.push(message); return planDialogApproved },
   setManagerPlanDraft: (value) => { managerDraftValue = value },
   setDepartmentPlanDraft: (value) => { departmentDraftValue = value },
   setPlanBusy: () => {},
