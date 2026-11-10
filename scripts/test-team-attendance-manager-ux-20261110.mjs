@@ -14,7 +14,7 @@ assert.ok(ui.includes('const closeRef=useRef(onClose)'))
 assert.ok(ui.includes('closeRef.current=onClose'))
 assert.ok(ui.includes("if(e.key==='Escape'){e.preventDefault();closeRef.current()}"))
 assert.ok(ui.includes('  },[])'), 'Dialog focus effect must only run on mount')
-assert.ok(ui.includes('firstField||items().find'), 'Dialog should focus its editor, not the X button')
+assert.ok(ui.includes("items().find(x=>!x.classList.contains('tw-close'))"), 'Dialog should focus its first content control, not the X button')
 
 // Attendance is a manager job, not an administrator-only action.
 assert.ok(app.includes('askActionConfirmation, authUser, authUsers'))
@@ -39,6 +39,7 @@ assert.ok(ui.includes('setMarkErrors(previous=>'), 'Failed saves must be made vi
 assert.ok(ui.includes("record(row,'present')")&&ui.includes("record(row,'absent')"))
 assert.ok(ui.includes("record(row,'excused')"))
 assert.ok(ui.includes("record(row,'present',currentDepartureTime(),row.mark?.comment||'')"))
+assert.ok(ui.includes('tw-mark-options')&&ui.includes('aria-pressed={markState===value}'))
 assert.ok(ui.includes("timeZone:'Asia/Almaty'"))
 assert.ok(css.includes('.tw-quick.departed')&&css.includes('.tw-quick.excused'))
 console.log('TEAM_ATTENDANCE_MANAGER_UX_PASS: dialog focus stability, manager role, optimistic per-row save and instant departure')
