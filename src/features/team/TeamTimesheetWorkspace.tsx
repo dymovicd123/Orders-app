@@ -78,6 +78,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
   const [markEnded,setMarkEnded]=useState('')
   const [markNote,setMarkNote]=useState('')
   const [planning,setPlanning]=useState(false)
+  const [showCalendarDay,setShowCalendarDay]=useState(false)
   const [planDates,setPlanDates]=useState<string[]>([])
   const [planPeople,setPlanPeople]=useState<number[]>([])
   const [planUntil,setPlanUntil]=useState('18:00')
@@ -142,12 +143,12 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     setConfirmClear(false);setPlanning(true);setError('')
   }
   function openPlannerForDate(day:string){
-    setDate(day)
+    setDate(day);setShowCalendarDay(false)
     setPlanDates([day]);setPlanPeople([]);setPlanUntil('18:00');setPlanNote('')
     setConfirmClear(false);setPlanning(true);setError('')
   }
   function openShiftEditor(shift:TeamTimesheetEntry){
-    setEditingShift(shift);setEditShiftUntil(shift.workUntil||'')
+    setShowCalendarDay(false);setEditingShift(shift);setEditShiftUntil(shift.workUntil||'')
     setEditShiftNote(shift.comment||'');setConfirmShiftRemove(false);setError('')
   }
   async function saveEditedShift(clear:boolean){
@@ -297,7 +298,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         {days.map(d=>{
           const count=counts.get(d)
           const assigned=(data?.entries||[]).filter(shift=>shift.date===d)
-          return <button key={d} type="button" onClick={()=>setDate(d)}
+          return <button key={d} type="button" onClick={()=>{setDate(d);setShowCalendarDay(true)}}
             className={'tw-calendar-day'+(d===current?' today':'')+(d===date?' chosen':'')}
             aria-pressed={d===date} aria-label={dateLabel(d)+' · '+(count?.planned||0)+' назначений · '+assigned.map(x=>x.manager).join(', ')}>
             <strong>{Number(d.slice(-2))}</strong>
@@ -317,22 +318,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
           </button>
         })}
       </div></div>
-      {date.slice(0,7)===timesheetMonth&&<section className="tw-calendar-detail">
-        <div className="tw-calendar-detail-head"><div>
-          <span className="tw-kicker">СМЕНЫ ВЫБРАННОГО ДНЯ</span>
-          <h4>{dayLabel(date)}</h4>
-          <p>{dayPlanEntries.length?dayPlanEntries.length+' сотрудников по графику':'На этот день смен пока нет'}</p>
-        </div><div className="tw-calendar-detail-actions">
-          {isAdmin&&<button type="button" className="tw-primary-assign" onClick={()=>openPlannerForDate(date)}>+ Добавить сотрудников</button>}
-          <button type="button" className="secondary compact" onClick={()=>chooseDay(date)}>Отметить явку</button>
-        </div></div>
-        {dayPlanEntries.length?<div className="tw-calendar-detail-list">{dayPlanEntries.map(shift=><div className="tw-calendar-detail-person" key={shift.id}>
-          <span className="tw-calendar-detail-name"><i style={{background:shift.managerColor||'#718096'}}/>{shift.manager}</span>
-          <span className="tw-calendar-detail-time">По графику {shift.workUntil?'до '+shift.workUntil:'без времени'}</span>
-          {shift.comment&&<small title={shift.comment}>{shift.comment}</small>}
-          {isAdmin&&<button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>}
-        </div>)}</div>:<p className="tw-calendar-empty">Добавьте сотрудников на этот день или включите его в массовое назначение.</p>}
-      </section>}
+
     </>:<>
       <div className="tw-section-head"><div><span className="tw-kicker">ПОДРОБНЫЙ ОТЧЁТ</span>
         <h4>Посещаемость · {monthName(timesheetMonth)}</h4></div>
@@ -345,6 +331,27 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
       </div>
       <TeamAttendanceReport data={data} todayDate={current} onOpenDay={chooseDay}/>
     </>}
+    {view==='calendar'&&showCalendarDay&&date.slice(0,7)===timesheetMonth&&
+      <Dialog title={'Смены · '+dayLabel(date)} note="Просмотр и точечное изменение графика этого дня" onClose={()=>setShowCalendarDay(false)}>
+        <div className="tw-calendar-detail">
+
+        <div className="tw-calendar-detail-head"><div>
+          <span className="tw-kicker">СМЕНЫ ВЫБРАННОГО ДНЯ</span>
+          <h4>{dayLabel(date)}</h4>
+          <p>{dayPlanEntries.length?dayPlanEntries.length+' сотрудников по графику':'На этот день смен пока нет'}</p>
+        </div><div className="tw-calendar-detail-actions">
+          {isAdmin&&<button type="button" className="tw-primary-assign" onClick={()=>openPlannerForDate(date)}>+ Добавить сотрудников</button>}
+          <button type="button" className="secondary compact" onClick={()=>{setShowCalendarDay(false);chooseDay(date)}}>Отметить явку</button>
+        </div></div>
+        {dayPlanEntries.length?<div className="tw-calendar-detail-list">{dayPlanEntries.map(shift=><div className="tw-calendar-detail-person" key={shift.id}>
+          <span className="tw-calendar-detail-name"><i style={{background:shift.managerColor||'#718096'}}/>{shift.manager}</span>
+          <span className="tw-calendar-detail-time">По графику {shift.workUntil?'до '+shift.workUntil:'без времени'}</span>
+          {shift.comment&&<small title={shift.comment}>{shift.comment}</small>}
+          {isAdmin&&<button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>}
+        </div>)}</div>:<p className="tw-calendar-empty">Добавьте сотрудников на этот день или включите его в массовое назначение.</p>}
+
+        </div>
+      </Dialog>}
     {editor&&<Dialog title={'Отметка: '+editor.name} note={dateLabel(date)+' · явку можно исправить или добавить время ухода.'} onClose={closeEdit}>
       <form className="tw-form" onSubmit={onEditSubmit}>
         <label>Явка<select value={markState} onChange={e=>{setMarkState(e.target.value as MarkState);if(e.target.value!=='present')setMarkEnded('')}}>
