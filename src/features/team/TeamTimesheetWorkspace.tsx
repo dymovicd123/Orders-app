@@ -122,9 +122,14 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     timesheetMonth===current.slice(0,7)?current:timesheetMonth+'-01')
     setView('day')
   }
+  const selectMonth=(next:string)=>{
+    if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(next))return
+    setTimesheetMonth(next)
+    if(view==='day')setDate(next===current.slice(0,7)?current:next+'-01')
+  }
   const shiftMonth=(delta:number)=>{
     const [y,m]=timesheetMonth.split('-').map(Number)
-    setTimesheetMonth(new Date(Date.UTC(y,m-1+delta,1)).toISOString().slice(0,7))
+    selectMonth(new Date(Date.UTC(y,m-1+delta,1)).toISOString().slice(0,7))
   }
   function openEditor(row:DayRow){
     setEditor(row);setMarkState(row.mark?.status||'unmarked');setMarkEnded(row.mark?.finishedAt||'')
@@ -166,6 +171,8 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
   }
   const toggleDate=(d:string)=>setPlanDates(a=>a.includes(d)?a.filter(x=>x!==d):[...a,d])
   const toggleEmployee=(id:number)=>setPlanPeople(a=>a.includes(id)?a.filter(x=>x!==id):[...a,id])
+  const duplicateAssignments=planDates.reduce((sum,d)=>sum+planPeople.filter(id=>
+    data?.entries.some(entry=>entry.date===d&&entry.managerId===id)).length,0)
   const canMark=isAdmin&&date<=current&&!saving
   const closeEdit=()=>{if(!saving)setEditor(null)}
   const closePlan=()=>{if(!saving){setPlanning(false);setConfirmClear(false)}}
@@ -201,7 +208,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         <div className="tw-month-controls">
           <button type="button" className="tw-month-arrow" aria-label="Предыдущий месяц" onClick={()=>shiftMonth(-1)}>‹</button>
           <label>Месяц <input type="month" value={timesheetMonth}
-            onChange={e=>{if(e.target.value)setTimesheetMonth(e.target.value)}}/></label>
+            onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/></label>
           <button type="button" className="tw-month-arrow" aria-label="Следующий месяц" onClick={()=>shiftMonth(1)}>›</button>
         </div>
         <label className="tw-date-direct">Перейти к дате <input type="date" value={date}
@@ -249,7 +256,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     </>:view==='calendar'?<>
       <div className="tw-section-head"><div><span className="tw-kicker">ПЛАН СМЕН</span><h4>{monthName(timesheetMonth)}</h4></div>
         <div className="tw-tools"><button type="button" className="secondary compact" onClick={()=>shiftMonth(-1)}>←</button>
-          <input aria-label="Месяц табеля" type="month" value={timesheetMonth} onChange={e=>{if(e.target.value)setTimesheetMonth(e.target.value)}}/>
+          <input aria-label="Месяц табеля" type="month" value={timesheetMonth} onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/>
           <button type="button" className="secondary compact" onClick={()=>shiftMonth(1)}>→</button>
           <button type="button" className="secondary compact" onClick={()=>setTimesheetMonth(current.slice(0,7))}>Этот месяц</button></div>
       </div>
@@ -276,7 +283,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         <div className="tw-tools">
           <button type="button" className="secondary compact" aria-label="Предыдущий месяц" onClick={()=>shiftMonth(-1)}>←</button>
           <input type="month" value={timesheetMonth} aria-label="Месяц журнала"
-            onChange={e=>{if(e.target.value)setTimesheetMonth(e.target.value)}}/>
+            onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/>
           <button type="button" className="secondary compact" aria-label="Следующий месяц" onClick={()=>shiftMonth(1)}>→</button>
         </div>
       </div>
@@ -327,6 +334,9 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         <div className="tw-plan-fields"><label>Работают до<input type="time" value={planUntil} onChange={e=>setPlanUntil(e.target.value)}/></label>
           <label>Комментарий<input maxLength={300} value={planNote} placeholder="Необязательно" onChange={e=>setPlanNote(e.target.value)}/></label></div>
       </div>
+      {!confirmClear&&duplicateAssignments>0&&<p className="tw-plan-existing" role="note">
+        Уже назначено {duplicateAssignments} из выбранных смен. При сохранении время по графику и комментарий для них обновятся.
+      </p>}
       {confirmClear?<div className="tw-confirm"><strong>Убрать выбранные назначения?</strong>
         <p>Только выбранные сотрудники и даты. Сохранённые отметки явки останутся.</p>
         <div className="tw-actions"><button className="secondary" type="button" onClick={()=>setConfirmClear(false)}>Назад</button>
