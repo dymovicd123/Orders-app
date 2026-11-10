@@ -388,7 +388,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
             {showEmptyCalendarDays?'Скрыть пустые дни':'Показать все дни'}
           </button>
         </div>
-        {days.filter(day=>showEmptyCalendarDays||(data?.entries||[]).some(shift=>shift.date===day)).map(day=>{
+        {days.filter(day=>showEmptyCalendarDays||(data?.entries||[]).some(shift=>shift.date===day)||(data?.attendance||[]).some(mark=>mark.date===day)).map(day=>{
           const assigned=(data?.entries||[]).filter(shift=>shift.date===day)
           const count=counts.get(day)
           return <button type="button" className={'tw-mobile-schedule-day'+(day===current?' today':'')}
@@ -400,10 +400,15 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
                 <i style={{background:shift.managerColor||'#718096'}}/>
                 <span>{shift.manager}</span><b>{shift.workUntil||'—'}</b>
               </span>)}</span>}
-            {(count?.pending||0)>0&&day<=current&&<small className="tw-mobile-schedule-pending">{count?.pending} без отметки</small>}
+            <span className="tw-mobile-schedule-status">
+              {(count?.present||0)>0&&<small className="green">{count?.present} пришли</small>}
+              {(count?.absent||0)>0&&<small className="red">{count?.absent} не пришли</small>}
+              {(count?.excused||0)>0&&<small className="amber">{count?.excused} уваж.</small>}
+              {(count?.pending||0)>0&&day<=current&&<small className="amber">{count?.pending} без отметки</small>}
+            </span>
           </button>
         })}
-        {!showEmptyCalendarDays&&!(data?.entries||[]).length&&<div className="tw-calendar-empty-mobile">
+        {!showEmptyCalendarDays&&!(data?.entries||[]).length&&!(data?.attendance||[]).length&&<div className="tw-calendar-empty-mobile">
           В этом месяце смен пока нет.
           {isAdmin&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить смены</button>}
           <button type="button" className="secondary compact" onClick={()=>setShowEmptyCalendarDays(true)}>Выбрать дату</button>
@@ -503,7 +508,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
             const assignedCount=(data?.entries||[]).filter(entry=>entry.date===d).length
             return <button key={d} type="button" title={dayLabel(d)+(assignedCount?' · уже '+assignedCount+' смен':'')}
               aria-pressed={planDates.includes(d)} className={planDates.includes(d)?'active':''} onClick={()=>toggleDate(d)}>
-              <span>{Number(d.slice(-2))}</span>{assignedCount>0&&<small>{assignedCount} в графике</small>}
+              <span>{Number(d.slice(-2))}</span>{assignedCount>0&&<small>{assignedCount} см.</small>}
             </button>
           })}
         </div>
