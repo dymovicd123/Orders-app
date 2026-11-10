@@ -819,6 +819,9 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
     .filter((row:any)=>canAssignToTimesheet(row.name,row.role))
     .map((row: any) => Number(row.id || 0)).filter(Boolean));
   const safeManagerIds = managerIds.filter(id => allowedIds.has(id));
+  if (shouldClear && managerIds.length && !safeManagerIds.length) {
+    throw new Error('Выбранные сотрудники больше недоступны. Обновите график перед снятием смен.');
+  }
   if (!shouldClear && !safeManagerIds.length) throw new Error('В табель можно назначать только обычных активных сотрудников.');
 
   const workUntil = cleanText(input.workUntil);
