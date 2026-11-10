@@ -21,7 +21,7 @@ type SaveArgs = Base & {
   setAuthUserDraft: Dispatch<SetStateAction<ManagedAuthUserDraft>>
   loadAuthUsers: () => Promise<void>
 }
-type DisableArgs = Base & { loadAuthUsers: () => Promise<void> }
+type DisableArgs = Base & { loadAuthUsers: () => Promise<void>; askActionConfirmation: (message: string) => Promise<boolean> }
 
 // Admin account controls are separate from login/session state and never
 // bypass the existing Worker role checks or duplicate manager identity guard.
@@ -82,9 +82,9 @@ export async function saveManagedAuthUser({
 }
 
 export async function disableManagedAuthUser(id: number, {
-  isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers,
+  isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers, askActionConfirmation,
 }: DisableArgs): Promise<void> {
-    if (!isAdmin || !window.confirm('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
+    if (!isAdmin || !(await askActionConfirmation('Отключить этот аккаунт? Его активные сессии будут закрыты.'))) return
     setAuthUsersBusy(true)
     try {
       const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
