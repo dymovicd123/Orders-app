@@ -62,16 +62,20 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'bc503e2d3c21504b30d1e4d4e6bce89dbd91f2a3'
+          test "$(git rev-parse HEAD^)" = '21e0f8899aa659b6ba2abc00ff6c8de6e216d03a'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-main-manager-three-workspaces-20261022.mjs' 'scripts/test-team-attendance-v1-20261110.mjs' 'scripts/test-team-timesheet-report-v2-20261110.mjs' 'src/features/team/TeamAttendanceReport.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetReport.ts' 'src/features/team/teamTimesheetWorkspace.css')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml')"
           test "$actual" = "$expected"
-          # The previous merged commit is immutable; only this release gate changes now.
+          # The reviewed UI commit 21e0f889 is immutable; only this release guard changes now.
           test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
           test "$(git hash-object worker/domains/team-attendance.ts)" = '7e0386d4fb32321f6bf1ad94852b737dde5a1b73'
           test "$(git hash-object worker/domains/team.ts)" = '733f1b038aef15a7a0866c0c77f5683733c3d345'
-          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'f0a6653ecdbe4118c1b62e297c4a9eb95a6ac9b0'
-          test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = '0c4367d299c8d7f01925d59ce81bffdff877a704'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'fc2fb6ab6f70c3753eb80b81cb766c356681e7b2'
+          test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = 'c1cce4f434f955ab0ab7c83398665fcc433fb26f'
+          test "$(git hash-object src/features/team/TeamAttendanceReport.tsx)" = 'bd6c354670ddaed29e947604d4ef4ddcd3607bc3'
+          test "$(git hash-object src/features/team/teamTimesheetReport.ts)" = 'c1aeed25ea9abc6a61a6b8b88c786a5d8ce3639a'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '5c2ac722d494826fb7ea60e85874d6d91b9b712a'
+          test "$(git hash-object scripts/test-team-timesheet-report-v2-20261110.mjs)" = 'c7406fe1b89e26406bcee04ce58dc22aeac7c8e2'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
