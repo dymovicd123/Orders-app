@@ -1,0 +1,115 @@
+name: DDS production schema first (one-shot, before UI release)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-dds-schema-20261110.yml'
+      - 'migrations/0120_shared_dds_ledger.sql'
+      - 'migrations/0121_dds_directory.sql'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-dds-schema-once
+  cancel-in-progress: false
+
+jobs:
+  create-dds-schema:
+    if: "${{ github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'schema(main): dds isolated tables') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Confirm production binding, exact parent and two additive migrations only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD^)" = 'cfe88e81de03e61633639230d67c87373fb0fdd9'
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/main-dds-schema-20261110.yml' 'migrations/0120_shared_dds_ledger.sql' 'migrations/0121_dds_directory.sql')"
+          test "$actual" = "$expected"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test "$(git hash-object migrations/0120_shared_dds_ledger.sql)" = 'c7e521fb6d8fe003d157263bc8886bd6e2f0a98b'
+          test "$(git hash-object migrations/0121_dds_directory.sql)" = '974d21a1b89bc6e7079a30cec0023d2fc5cba59d'
+          ! grep -Ei '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0120_shared_dds_ledger.sql
+          ! grep -Ei '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0121_dds_directory.sql
+          echo 'MAIN_DDS_SCHEMA_EXACT_SCOPE_PASS'
+      - run: npm ci
+      - name: Prove additive schema works twice on disposable SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { DatabaseSync } from 'node:sqlite'
+          import { readFileSync } from 'node:fs'
+          import assert from 'node:assert/strict'
+          const db = new DatabaseSync(':memory:')
+          db.exec('PRAGMA foreign_keys=ON')
+          for (const file of ['migrations/0120_shared_dds_ledger.sql','migrations/0121_dds_directory.sql']) {
+            const sql=readFileSync(file,'utf8'); db.exec(sql); db.exec(sql)
+          }
+          assert.equal(db.prepare('SELECT COUNT(*) AS n FROM dds_categories').get().n,12)
+          assert.equal(db.prepare('SELECT COUNT(*) AS n FROM dds_articles').get().n,50)
+          assert.equal(db.prepare('SELECT COUNT(*) AS n FROM dds_entries').get().n,0)
+          assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name LIKE 'dds_%'").get().n,2)
+          db.close()
+          console.log('MAIN_DDS_LOCAL_SCHEMA_IDEMPOTENCE_PASS')
+          NODE
+      - name: Read only production schema preflight; reject unexpected/partial DDS objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('dds_entries','dds_categories','dds_articles')) AS dds_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('dds_prevent_overdraft','dds_expense_active_article_guard')) AS dds_triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category')) AS dds_indexes
+          " --json | jq -cSe '.[0].results[0]' > /tmp/prod-dds-before.json
+          jq -e '.dds_tables==0 and .dds_triggers==0 and .dds_indexes==0' /tmp/prod-dds-before.json
+          echo 'MAIN_DDS_PRODUCTION_PRECHECK_EMPTY_PASS'
+      - name: Capture Cloudflare D1 Time Travel bookmark prior to schema write
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No D1 bookmark") end' > /tmp/dds-restore-bookmark
+          test -s /tmp/dds-restore-bookmark
+          echo 'Production pre-DDС bookmark captured; never auto-restore a live database.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Install only isolated DDS tables and article directory on production
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /tmp/dds-restore-bookmark
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0120_shared_dds_ledger.sql
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0121_dds_directory.sql
+      - name: Validate installed schema and all 12 approved categories / 50 articles
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('dds_entries','dds_categories','dds_articles')) AS dds_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('dds_prevent_overdraft','dds_expense_active_article_guard')) AS dds_triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category')) AS dds_indexes,
+              (SELECT COUNT(*) FROM dds_categories) AS categories,
+              (SELECT COUNT(*) FROM dds_articles) AS articles,
+              (SELECT COUNT(*) FROM dds_entries) AS entry_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/prod-dds-after.json
+          jq -e '.dds_tables==3 and .dds_triggers==2 and .dds_indexes==3 and .categories==12 and .articles==50 and .entry_count==0' /tmp/prod-dds-after.json
+          echo 'MAIN_DDS_PRODUCTION_SCHEMA_READY: 3 isolated tables, 2 triggers, 12 categories, 50 articles'
