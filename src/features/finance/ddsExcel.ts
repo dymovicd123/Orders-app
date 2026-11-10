@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from 'fflate'
-import { DDS_CATEGORIES } from '../../../shared/dds-categories'
-import { ddsKindLabel, ddsSignedAmount, ddsMonthLabel, type DdsReport } from './ddsTypes'
+import { DDS_CATEGORIES } from '../../../shared/dds-categories.ts'
+import { ddsKindLabel, ddsSignedAmount, ddsMonthLabel, type DdsReport } from './ddsTypes.ts'
 
 // Minimal real OOXML workbook. Comments stay text (never formulas); amounts are Excel numbers.
 type Cell={value:string|number;style?:number;date?:boolean}
