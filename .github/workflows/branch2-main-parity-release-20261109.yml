@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT DDS directory release. Additive DDS-only schema on Branch2; never Main.
+# ONE-SHOT Branch2 attendance UX release: additive test-only schema, no Main or Client3.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish reviewed Branch2 DDS directory after isolated schema validation
+    name: Publish reviewed Branch2 daily attendance UX after test-only migration
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): dds directory')
+      startsWith(github.event.head_commit.message, 'release(branch2): attendance day calendar')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,36 +62,38 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'ae2bb3bd8dddb27491a947f371626c72fe32406d'
+          test "$(git rev-parse HEAD^)" = 'e7a8179e87b818c98eef2cc85e33a7fac93438e4'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' 'migrations/0121_dds_directory.sql' 'scripts/test-dds-excel-ux-20261110.mjs' 'scripts/test-simple-dds-ledger-20261110.mjs' 'src/features/finance/DdsDirectoryPanel.tsx' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/finance/ddsExcel.ts' 'src/features/finance/ddsTypes.ts' 'src/features/sections/FinanceSection.tsx' 'worker/domains/dds-directory.ts' 'worker/domains/dds.ts' 'worker/index.ts')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'migrations/0122_team_actual_attendance.sql' 'scripts/test-team-attendance-v1-20261110.mjs' 'src/app/types.ts' 'src/features/sections/TeamSection.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetWorkspace.css' 'worker/domains/team-attendance.ts' 'worker/domains/team.ts' 'worker/index.ts')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
-      - name: Apply only DDS directory migration to Branch2 test D1
+      - name: Install only actual attendance tables in Branch2 D1
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/branch2-manual-release.mjs --check
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
           npm ci
-          node scripts/test-simple-dds-ledger-20261110.mjs
-          node scripts/test-dds-excel-ux-20261110.mjs
-          # The migration creates dds_categories, dds_articles and a DDS expense guard.
-          # Existing DDS money records and all non-DDS tables are left unchanged.
-          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0121_dds_directory.sql
-          category_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM dds_categories" --json)"
-          article_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM dds_articles" --json)"
-          trigger_json="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name='dds_expense_active_article_guard'" --json)"
-          printf '%s' "$category_json" | jq -e 'if type == "array" then .[0].results[0].n >= 12 else .results[0].n >= 12 end'
-          printf '%s' "$article_json" | jq -e 'if type == "array" then .[0].results[0].n >= 50 else .results[0].n >= 50 end'
-          printf '%s' "$trigger_json" | jq -e 'if type == "array" then .[0].results[0].n == 1 else .results[0].n == 1 end'
+          node scripts/test-team-attendance-v1-20261110.mjs
+          before="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM team_timesheet" --json | jq -er 'if type == "array" then .[0].results[0].n else .results[0].n end')"
+          test -n "$before"
+          preflight="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('team_attendance_marks','team_attendance_changes')" --json)"
+          printf '%s' "$preflight" | jq -e 'if type == "array" then .[0].results[0].n == 0 else .results[0].n == 0 end'
+          # Only the two NEW attendance tables, their indexes and audit triggers.
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0122_team_actual_attendance.sql
+          after="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM team_timesheet" --json | jq -er 'if type == "array" then .[0].results[0].n else .results[0].n end')"
+          test "$after" = "$before"
+          verified="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers, (SELECT COUNT(*) FROM team_attendance_marks) AS marks" --json)"
+          printf '%s' "$verified" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3 and .marks == 0'
+          echo 'BRANCH2_ATTENDANCE_SCHEMA_READY: old planned shifts unchanged, new attendance starts empty'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          node scripts/test-dds-excel-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
           node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
