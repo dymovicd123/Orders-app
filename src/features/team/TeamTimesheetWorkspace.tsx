@@ -6,7 +6,7 @@ import './teamTimesheetWorkspace.css'
 type MarkState = 'present' | 'absent' | 'excused' | 'unmarked'
 type DayRow = {id:number; name:string; role:string; color:string; schedule?:TeamTimesheetEntry; mark?:TeamAttendanceMark}
 type Props = {
-  apiFetch:(path:string,init?:RequestInit)=>Promise<Response>; isAdmin:boolean
+  apiFetch:(path:string,init?:RequestInit)=>Promise<Response>; isAdmin:boolean; canMarkAttendance:boolean
   timesheetMonth:string;timesheetData:TeamTimesheetResponse|null;timesheetBusy:boolean
   setTimesheetMonth:(value:string)=>void
   loadTeamTimesheet:(value?:string)=>Promise<TeamTimesheetResponse|null>
@@ -46,12 +46,15 @@ function rowsForDay(data:TeamTimesheetResponse|null,date:string):DayRow[]{
 }
 function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:()=>void;children:ReactNode}){
   const area=useRef<HTMLDivElement>(null)
+  const closeRef=useRef(onClose)
+  closeRef.current=onClose
   useEffect(()=>{
     const previous=document.activeElement instanceof HTMLElement?document.activeElement:null
     const items=()=>Array.from(area.current?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')||[])
-    items()[0]?.focus()
+    const firstField=area.current?.querySelector<HTMLElement>('input:not([disabled]),select:not([disabled]),textarea:not([disabled])')
+    ;(firstField||items().find(x=>!x.classList.contains('tw-close'))||items()[0])?.focus()
     const keydown=(e:KeyboardEvent)=>{
-      if(e.key==='Escape'){e.preventDefault();onClose()}
+      if(e.key==='Escape'){e.preventDefault();closeRef.current()}
       if(e.key==='Tab'){
         const all=items();if(!all.length)return
         if(e.shiftKey&&document.activeElement===all[0]){e.preventDefault();all[all.length-1].focus()}
@@ -60,7 +63,7 @@ function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:
     }
     document.addEventListener('keydown',keydown)
     return()=>{document.removeEventListener('keydown',keydown);if(previous?.isConnected)previous.focus()}
-  },[onClose])
+  },[])
   return <div className="tw-overlay" role="presentation"><section ref={area} className="tw-dialog" role="dialog" aria-modal="true" aria-label={title}>
     <div className="tw-dialog-head"><div><h3>{title}</h3><p>{note}</p></div>
       <button type="button" className="tw-close" aria-label="Закрыть" onClick={onClose}>×</button></div>
@@ -68,7 +71,7 @@ function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:
   </section></div>
 }
 
-export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timesheetData,timesheetBusy,
+export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,timesheetMonth,timesheetData,timesheetBusy,
   setTimesheetMonth,loadTeamTimesheet,loadTeamSalaryReport}:Props){
   const current=today()
   const [view,setView]=useState<'day'|'report'|'calendar'>('day')
@@ -91,9 +94,38 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
+  const [optimisticMarks,setOptimisticMarks]=useState<Record<string,TeamAttendanceMark|null>>({})
+  const [pendingMarks,setPendingMarks]=useState<Record<string,boolean>>({})
+  const [markErrors,setMarkErrors]=useState<Record<string,string>>({})
+  const markingRef=useRef(new Set<string>())
   const busy=useRef(false)
   const dateStripRef=useRef<HTMLDivElement>(null)
-  const data=timesheetData?.month===timesheetMonth?timesheetData:null
+  const baseData=timesheetData?.month===timesheetMonth?timesheetData:null
+  const data=useMemo(()=>{
+    if(!baseData)return null
+    const attendance=baseData.attendance.filter(mark=>
+      !Object.prototype.hasOwnProperty.call(optimisticMarks,mark.date+':'+mark.managerId))
+    for(const [key,mark] of Object.entries(optimisticMarks)){
+      if(key.startsWith(baseData.month+'-')&&mark)attendance.push(mark)
+    }
+    return {...baseData,attendance}
+  },[baseData,optimisticMarks])
+  useEffect(()=>{
+    if(!baseData)return
+    setOptimisticMarks(previous=>{
+      let changed=false
+      const next={...previous}
+      for(const [key,local] of Object.entries(previous)){
+        if(!key.startsWith(baseData.month+'-')||markingRef.current.has(key))continue
+        const stored=baseData.attendance.find(item=>item.date+':'+item.managerId===key)
+        if(local===null?!stored:!!stored&&local.status===stored.status
+          &&local.finishedAt===stored.finishedAt&&local.comment===stored.comment){
+          delete next[key];changed=true
+        }
+      }
+      return changed?next:previous
+    })
+  },[baseData])
   const dayData=data?.month===date.slice(0,7)?data:null
   const rows=rowsForDay(dayData,date)
   const days=useMemo(()=>daysOfMonth(timesheetMonth),[timesheetMonth])
@@ -168,17 +200,39 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     finally{busy.current=false;setSaving(false)}
   }
   async function record(row:DayRow,status:MarkState,finishedAt='',comment=''){
-    if(!isAdmin||busy.current||date>current)return
-    busy.current=true;setSaving(true);setError('');setNotice('')
+    const key=date+':'+row.id
+    if(!canMarkAttendance||markingRef.current.has(key)||date>current)return
+    markingRef.current.add(key)
+    setPendingMarks(previous=>({...previous,[key]:true}))
+    setMarkErrors(previous=>{const next={...previous};delete next[key];return next})
+    setNotice('')
+    const hadLocal=Object.prototype.hasOwnProperty.call(optimisticMarks,key)
+    const priorLocal=optimisticMarks[key]
+    const nextMark:TeamAttendanceMark|null=status==='unmarked'?null:{
+      id:row.mark?.id||-1,date,managerId:row.id,manager:row.name,managerColor:row.color,
+      status,finishedAt:status==='present'?finishedAt:'',comment,updatedAt:new Date().toISOString(),
+    }
+    setOptimisticMarks(previous=>({...previous,[key]:nextMark}))
+    setEditor(null)
     try{
       const response=await apiFetch('/api/team/attendance',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({date,managerId:row.id,status,finishedAt:status==='present'?finishedAt:'',comment})})
       const payload=await response.json() as {ok?:boolean;message?:string}
       if(!response.ok||!payload.ok)throw new Error(payload.message||'Не удалось сохранить отметку.')
-      await loadTeamTimesheet(date.slice(0,7))
-      setEditor(null);setNotice(status==='unmarked'?'Отметка очищена.':'Явка сохранена.')
-    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка сохранения явки.')}
-    finally{busy.current=false;setSaving(false)}
+      // Refresh in the background. The row has already changed, so there is no full-page wait.
+      void loadTeamTimesheet(date.slice(0,7)).catch(()=>{})
+    }catch(cause){
+      setOptimisticMarks(previous=>{
+        const next={...previous}
+        if(hadLocal)next[key]=priorLocal
+        else delete next[key]
+        return next
+      })
+      setMarkErrors(previous=>({...previous,[key]:cause instanceof Error?cause.message:'Отметка не сохранилась.'}))
+    }finally{
+      markingRef.current.delete(key)
+      setPendingMarks(previous=>{const next={...previous};delete next[key];return next})
+    }
   }
   function onEditSubmit(e:FormEvent){e.preventDefault();if(editor)void record(editor,markState,markEnded,markNote.trim())}
   async function saveSchedule(clear:boolean){
@@ -202,13 +256,12 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     data?.entries.some(entry=>entry.date===d&&entry.managerId===id)).length,0)
   const newAssignments=planPeople.length*planDates.length-duplicateAssignments
   const dayPlanEntries=(data?.entries||[]).filter(x=>x.date===date)
-  const canMark=isAdmin&&date<=current&&!saving
+  const canMark=canMarkAttendance&&date<=current
   const closeEdit=()=>{if(!saving)setEditor(null)}
   const closePlan=()=>{if(!saving){setPlanning(false);setConfirmClear(false)}}
   const closeShiftEditor=()=>{if(!saving){setEditingShift(null);setConfirmShiftRemove(false)}}
   return <section className="tw-workspace">
-    <div className="tw-header"><div><span className="tw-kicker">КОМАНДА</span><h3>Табель сотрудников</h3>
-      <p>Отмечайте явку за день, проверяйте журнал и планируйте смены.</p></div>
+    <div className="tw-header"><div><span className="tw-kicker">КОМАНДА</span><h3>Табель сотрудников</h3></div>
       <div className="tw-header-actions">
         {isAdmin&&<button type="button" className="tw-primary-assign" onClick={openPlanner}>+ Составить график</button>}
         <button type="button" className="secondary compact" disabled={timesheetBusy||saving}
@@ -227,7 +280,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     {view==='day'?<>
       <div className="tw-day-heading">
         <div><span className="tw-kicker">ЕЖЕДНЕВНЫЙ УЧЁТ</span><h4>{dayLabel(date)}</h4>
-          <p>{rows.filter(x=>x.schedule).length} назначено · {rows.filter(x=>x.mark).length} отмечено</p></div>
+          <p>{rows.filter(x=>x.mark).length} из {rows.filter(x=>x.schedule).length} отмечено{rows.filter(x=>x.schedule&&!x.mark).length&&date<=current?' · осталось '+rows.filter(x=>x.schedule&&!x.mark).length:''}</p></div>
         <div className="tw-day-heading-actions">
           {unmarkedTotal>0&&<button type="button" className="tw-needs-attention"
             onClick={()=>chooseDay(unmarkedDays[0][0])}>Не проверено: {unmarkedTotal} · перейти к {dateLabel(unmarkedDays[0][0])}</button>}
@@ -276,14 +329,17 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
             {row.schedule?.comment&&!row.mark?.comment&&<p className="tw-comment">График: {row.schedule.comment}</p>}
           </div>
           <div className="tw-person-actions">{canMark&&!row.mark&&row.schedule?<>
-            <button type="button" className="tw-quick arrived" onClick={()=>void record(row,'present')}>Пришёл</button>
-            <button type="button" className="tw-quick absent" onClick={()=>void record(row,'absent')}>Не пришёл</button>
-            <button type="button" className="tw-quiet" onClick={()=>openEditor(row)}>Другое</button>
-          </>:canMark?<button type="button" className="secondary compact" onClick={()=>openEditor(row)}>
-            {row.mark?.status==='present'&&!row.mark.finishedAt?'Уход / изменить':'Изменить'}</button>:null}</div>
+            <button type="button" className="tw-quick arrived" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'present')}>Пришёл</button>
+            <button type="button" className="tw-quick absent" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'absent')}>Не пришёл</button>
+            <button type="button" className="tw-quick excused" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'excused')}>Уваж. причина</button>
+          </>:canMark?<button type="button" className="secondary compact" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>openEditor(row)}>
+            {row.mark?.status==='present'&&!row.mark.finishedAt?'Указать уход / изменить':'Изменить отметку'}</button>:null}
+            {pendingMarks[date+':'+row.id]&&<small className="tw-mark-saving">Сохраняется…</small>}
+            {markErrors[date+':'+row.id]&&<small className="tw-mark-failed" role="alert">{markErrors[date+':'+row.id]}</small>}
+          </div>
         </article>
       })}</div>}
-      <p className="tw-note">Нет отметки — не значит, что сотрудник отсутствовал. Время ухода необязательно.</p>
+      <p className="tw-note">Неотмеченные смены не считаются отсутствиями.</p>
     </>:view==='calendar'?<>
       <div className="tw-section-head"><div><span className="tw-kicker">ПЛАН СМЕН</span><h4>{monthName(timesheetMonth)}</h4></div>
         <div className="tw-tools"><button type="button" className="secondary compact" onClick={()=>shiftMonth(-1)}>←</button>
