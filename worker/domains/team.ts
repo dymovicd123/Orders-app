@@ -74,6 +74,7 @@ export type TimesheetInput = {
   workUntil?: unknown;
   comment?: unknown;
   clear?: unknown;
+  preserveExisting?: unknown;
 };
 
 
@@ -739,6 +740,12 @@ export async function saveDepartmentPlan(db: D1Database, input: DepartmentPlanIn
 
 
 
+function canAssignToTimesheet(name:unknown, role:unknown) {
+  const n=String(name||'').toLocaleLowerCase('ru-RU')
+  const r=String(role||'').toLocaleLowerCase('ru-RU')
+  return !n.includes('сымбат') && !r.includes('админ')
+}
+
 export async function listTeamTimesheet(db: D1Database, url: URL) {
   const month = normalizeMonthParam(url.searchParams.get('month'));
   const { startDate, endDate } = getMonthRange(month);
@@ -752,7 +759,7 @@ export async function listTeamTimesheet(db: D1Database, url: URL) {
        ORDER BY name ASC`
     ).all<any>(),
     db.prepare(
-      `SELECT tt.id, tt.work_date, tt.manager_id, m.name AS manager, COALESCE(m.color_key, '#475569') AS manager_color,
+      `SELECT tt.id, tt.work_date, tt.manager_id, m.name AS manager, COALESCE(m.role,'') AS manager_role, COALESCE(m.color_key, '#475569') AS manager_color,
               COALESCE(tt.work_until, '') AS work_until,
               COALESCE(tt.comment, '') AS comment,
               tt.created_at, tt.updated_at
@@ -770,15 +777,17 @@ export async function listTeamTimesheet(db: D1Database, url: URL) {
     month,
     startDate,
     endDate,
-    employees: mapSqlRows(employeesResult).map((row: any) => ({
-      id: Number(row.id || 0),
-      name: cleanText(row.name),
-      role: cleanText(row.role),
-      isActive: Boolean(row.is_active),
-      colorKey: normalizeManagerColor(row.color_key, Number(row.id || 0) - 1),
-      hiredAt: cleanText(row.hired_at),
-    })),
-    entries: mapSqlRows(entriesResult).map((row: any) => ({
+    employees: mapSqlRows(employeesResult)
+      .filter((row:any)=>canAssignToTimesheet(row.name,row.role))
+      .map((row: any) => ({
+        id: Number(row.id || 0),
+        name: cleanText(row.name),
+        role: cleanText(row.role),
+        isActive: Boolean(row.is_active),
+        colorKey: normalizeManagerColor(row.color_key, Number(row.id || 0) - 1),
+        hiredAt: cleanText(row.hired_at),
+      })),
+    entries: mapSqlRows(entriesResult).filter((row:any)=>canAssignToTimesheet(row.manager,row.manager_role)).map((row: any) => ({
       id: Number(row.id || 0),
       date: cleanText(row.work_date),
       managerId: Number(row.manager_id || 0),
@@ -799,18 +808,20 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
   const rawManagerIds = Array.isArray(input.managerIds) ? input.managerIds : [];
   const managerIds = Array.from(new Set(rawManagerIds.map(value => toInt(value, 0)).filter(id => id > 0)));
   const shouldClear = Boolean(input.clear);
+  const preserveExisting = input.preserveExisting === true;
   if (!dates.length) throw new Error('Выберите дни табеля.');
   if (!shouldClear && !managerIds.length) throw new Error('Выберите сотрудников.');
 
   const allowedResult = await db.prepare(
-    `SELECT id
-     FROM managers
-     WHERE is_active = 1
-       AND UPPER(COALESCE(name, '')) NOT LIKE '%СЫМБАТ%'
-       AND UPPER(COALESCE(role, '')) NOT LIKE '%АДМИН%'`
+    `SELECT id,name,COALESCE(role,'') AS role FROM managers WHERE is_active = 1`
   ).all<any>();
-  const allowedIds = new Set(mapSqlRows(allowedResult).map((row: any) => Number(row.id || 0)).filter(Boolean));
+  const allowedIds = new Set(mapSqlRows(allowedResult)
+    .filter((row:any)=>canAssignToTimesheet(row.name,row.role))
+    .map((row: any) => Number(row.id || 0)).filter(Boolean));
   const safeManagerIds = managerIds.filter(id => allowedIds.has(id));
+  if (shouldClear && managerIds.length && !safeManagerIds.length) {
+    throw new Error('Выбранные сотрудники больше недоступны. Обновите график перед снятием смен.');
+  }
   if (!shouldClear && !safeManagerIds.length) throw new Error('В табель можно назначать только обычных активных сотрудников.');
 
   const workUntil = cleanText(input.workUntil);
@@ -834,16 +845,18 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
       ).bind(datesJson).run();
     }
   } else {
+    // Bulk planning adds only missing employee/day pairs. Explicit single-shift edits
+    // keep the original update behavior; existing records are never overwritten by addition.
+    const conflictAction = preserveExisting
+      ? 'DO NOTHING'
+      : 'DO UPDATE SET work_until = excluded.work_until, comment = excluded.comment, updated_at = excluded.updated_at';
     await db.prepare(
       `INSERT INTO team_timesheet (work_date, manager_id, work_until, comment, created_at, updated_at)
        SELECT CAST(d.value AS TEXT), CAST(m.value AS INTEGER), ?, ?, ?, ?
        FROM json_each(?) d
        CROSS JOIN json_each(?) m
        WHERE 1
-       ON CONFLICT(work_date, manager_id) DO UPDATE SET
-         work_until = excluded.work_until,
-         comment = excluded.comment,
-         updated_at = excluded.updated_at`
+       ON CONFLICT(work_date, manager_id) ${conflictAction}`
     ).bind(workUntil || null, comment || null, now, now, datesJson, managerIdsJson).run();
   }
 
@@ -851,7 +864,7 @@ export async function saveTeamTimesheet(db: D1Database, input: TimesheetInput) {
     eventType: shouldClear ? 'timesheet_cleared' : 'timesheet_saved',
     entityType: 'team_timesheet',
     title: shouldClear ? 'Очищен табель' : 'Сохранён табель',
-    details: `Дней: ${dates.length}; сотрудников: ${safeManagerIds.length}${workUntil ? `; до ${workUntil}` : ''}`,
+    details: `Дней: ${dates.length}; сотрудников: ${safeManagerIds.length}; режим: ${preserveExisting ? 'добавление без замены' : 'редактирование'}${workUntil ? `; до ${workUntil}` : ''}`,
   });
 
   return { ok: true, dates: dates.length, managers: safeManagerIds.length, cleared: shouldClear };
