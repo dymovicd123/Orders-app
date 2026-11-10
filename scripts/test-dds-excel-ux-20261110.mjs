@@ -18,6 +18,15 @@ const report={
       comment:'=HYPERLINK("fake") <опасно> & тест',createdAt:'2026-11-10T12:00:00Z',reversesEntryId:null,reversed:0},
   ],
 }
+// The Excel hierarchy comes from the editable DDS directory, including newly added articles.
+report.directory=[
+  ...DDS_CATEGORIES.map((group,index)=>({
+    id:index+1,name:group.name,active:true,
+    articles:group.articles.map((name,j)=>({id:index*100+j+1,name,active:true})),
+  })),
+  {id:99,name:'Командировки',active:true,articles:[{id:990,name:'Такси',active:true}]},
+]
+report.categories.push({name:'Командировки',total:0,articles:[]})
 const bytes=buildDdsXlsx(report)
 assert.equal(bytes[0],0x50)
 assert.equal(bytes[1],0x4b)
@@ -36,6 +45,7 @@ assert.match(overview,/91(?:000)?/)
 assert.ok(overview.includes('<v>91000</v>'),'Closing balance must be a number, not formatted text')
 const articles=read('xl/worksheets/sheet2.xml')
 assert.ok(articles.includes('Доставка клиенту')&&articles.includes('Закуп товара')&&articles.includes('Коробки'))
+assert.ok(articles.includes('Командировки')&&articles.includes('Такси'),'New editable directory items must appear in Excel')
 assert.ok(articles.includes('<v>9000</v>'))
 const ops=read('xl/worksheets/sheet3.xml')
 assert.ok(ops.includes('autoFilter ref="A4:H6"'))
