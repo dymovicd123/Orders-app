@@ -1122,10 +1122,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             const draft=exchangeChainDraft
                             if(!draft?.plan)return
                             const returns=draft.plan.steps.filter((s)=>s.type==='return').length
-                            if(!window.confirm('Отменить '+draft.plan.selectedExchangeIds.length
+                            if(!(await askActionConfirmation('Отменить '+draft.plan.selectedExchangeIds.length
                               +' обмен(ов) по заказу '+draft.order.external_id+'?\n'
                               +'Шагов: '+draft.plan.steps.length+'. Зависимых возвратов: '+returns
-                              +'. Каждая операция отдельно проверит деньги и склад.'))return
+                              +'. Каждая операция отдельно проверит деньги и склад.')))return
                             setExchangeChainDraft(d=>d?{...d,submitting:true,error:'',progress:'Начинаю отмену…'}:d)
                             try{
                               await cancelOrderExchangeChain(draft.order,draft.plan,
@@ -1208,8 +1208,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               const draft=returnCancelDraft
                               const chosen=draft?.choices.find((x)=>x.id===draft.selectedId)
                               if(!chosen||chosen.parentExchangeId)return
-                              if(!window.confirm('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
-                                '? Сумма: '+formatMoney(chosen.amount)+' ₸. Склад и деньги будут проверены перед выполнением.'))return
+                              if(!(await askActionConfirmation('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
+                                '? Сумма: '+formatMoney(chosen.amount)+' ₸. Склад и деньги будут проверены перед выполнением.')))return
                               setReturnCancelDraft(d=>d?{...d,submitting:true,error:''}:d)
                               try{
                                 await cancelOrderReturnChoice(draft.order,chosen)

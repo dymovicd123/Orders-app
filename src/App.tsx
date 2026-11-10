@@ -75,6 +75,8 @@ import { createOrderShippingHandoverActions, handoverCheckpointDateLabel, handov
 import { createReturnExchangeCreationActions } from './features/orders/returnExchangeCreationActions'
 import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
 import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
+import { ActionConfirmationModal } from './components/dialogs/ActionConfirmationModal'
+import { ActionTextPromptModal } from './components/dialogs/ActionTextPromptModal'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
@@ -158,6 +160,43 @@ function App() {
   const [authChecking, setAuthChecking] = useState(true)
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
+  const [actionConfirmationText, setActionConfirmationText] = useState<string | null>(null)
+  const actionConfirmationDecisionRef = useRef<((approved: boolean) => void) | null>(null)
+  const [actionTextPrompt, setActionTextPrompt] = useState<{ title: string; initialValue: string; minLength: number } | null>(null)
+  const actionTextDecisionRef = useRef<((value: string | null) => void) | null>(null)
+  const askActionConfirmation = useCallback((text: string) => {
+    if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      actionConfirmationDecisionRef.current = resolve
+      setActionConfirmationText(text)
+    })
+  }, [])
+  const answerActionConfirmation = useCallback((approved: boolean) => {
+    const resolve = actionConfirmationDecisionRef.current
+    actionConfirmationDecisionRef.current = null
+    setActionConfirmationText(null)
+    resolve?.(approved)
+  }, [])
+  const askActionTextPrompt = useCallback((title: string, initialValue = '', minLength = 1) => {
+    if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(null)
+    return new Promise<string | null>((resolve) => {
+      actionTextDecisionRef.current = resolve
+      setActionTextPrompt({ title, initialValue, minLength })
+    })
+  }, [])
+  const answerActionTextPrompt = useCallback((value: string | null) => {
+    const resolve = actionTextDecisionRef.current
+    actionTextDecisionRef.current = null
+    setActionTextPrompt(null)
+    resolve?.(value)
+  }, [])
+  useEffect(() => () => {
+    actionConfirmationDecisionRef.current?.(false)
+    actionConfirmationDecisionRef.current = null
+    actionTextDecisionRef.current?.(null)
+    actionTextDecisionRef.current = null
+  }, [])
+
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [authHasUsers, setAuthHasUsers] = useState(true)
@@ -427,8 +466,8 @@ function App() {
   }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
   const disableAuthUser = useCallback(async (id: number) => {
-    return disableManagedAuthUser(id, { isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers })
-  }, [apiFetch, isAdmin, loadAuthUsers])
+    return disableManagedAuthUser(id, { isAdmin, apiFetch, setAuthUsersBusy, setError, setMessage, loadAuthUsers, askActionConfirmation })
+  }, [apiFetch, isAdmin, loadAuthUsers, askActionConfirmation])
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
@@ -1332,6 +1371,7 @@ function App() {
     applyPendingInventoryWriteoffs,
     reverseInventoryMovement,
   } = createWarehouseGovernanceActions({
+    askActionConfirmation,
     canManageWarehouse,
     inventoryAuditBusy,
     setInventoryAuditBusy,
@@ -1360,6 +1400,7 @@ function App() {
     resetCreateOrderDraft,
     createOrderFromDraft,
   } = createOrderCreationActions({
+    askActionConfirmation,
     createDraft,
     setCreateDraft,
     catalogData,
@@ -1467,6 +1508,7 @@ function App() {
     markOrderSentToClient,
     correctMistakenOrderShipping,
   } = createOrderShippingHandoverActions({
+    askActionConfirmation,
     orders,
     stockHandoverOrder,
     stockHandoverActionItemId,
@@ -1529,6 +1571,7 @@ function App() {
     correctExchangeFinancialEntry,
     cancelExchangeEntry,
   } = createReturnExchangeAftercareActions({
+    askActionConfirmation,
     apiFetch,
     askStockResolution,
     criticalReturnExchangeClient,
@@ -2015,6 +2058,8 @@ function App() {
     reverseCashRegisterMovement,
     resetCashRegisterCycle,
   } = createCashRegisterActions({
+    askActionConfirmation,
+    askActionTextPrompt,
     isAdmin,
     cashRegister,
     cashRegisterCycles,
@@ -2062,6 +2107,7 @@ function App() {
     setTeamEmployeeEmploymentStatus,
     removeTeamEmployee,
   } = createTeamEmployeeActions({
+    askActionConfirmation,
     isAdmin,
     teamDraft,
     teamEmployees,
@@ -2125,6 +2171,7 @@ function App() {
     saveManagerPlan,
     saveDepartmentPlan,
   } = createPlanActions({
+    askActionConfirmation,
     isAdmin,
     planFilters,
     planReport,
@@ -2271,7 +2318,7 @@ function App() {
   }
 
   async function deleteLeadRecord(id: number) {
-    if (!id || !confirm('Удалить запись лидов?')) return
+    if (!id || !(await askActionConfirmation('Удалить запись лидов?'))) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -2305,7 +2352,7 @@ function App() {
   }
 
   async function deleteCallCentreRecord(id: number) {
-    if (!id || !confirm('Удалить запись Call Centre?')) return
+    if (!id || !(await askActionConfirmation('Удалить запись Call Centre?'))) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -2977,7 +3024,7 @@ function removeDebtPayment(index: number) {
       setMessage('Сначала сделайте предпросмотр. Подходящих заказов пока нет.')
       return
     }
-    const confirmed = window.confirm(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
+    const confirmed = await askActionConfirmation(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
     if (!confirmed) return
 
     setArchiveBusy(true)
@@ -3016,7 +3063,7 @@ function removeDebtPayment(index: number) {
       return
     }
     if (!isArchivedOrderRecord(order)) return
-    const confirmed = window.confirm(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
+    const confirmed = await askActionConfirmation(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
     if (!confirmed) return
     setSavingOrder(true)
     setError(null)
@@ -3612,7 +3659,12 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
-      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
+      <ActionConfirmationModal message={actionConfirmationText} onDecision={answerActionConfirmation} />
+      {actionTextPrompt ? (
+        <ActionTextPromptModal title={actionTextPrompt.title}
+          initialValue={actionTextPrompt.initialValue} minLength={actionTextPrompt.minLength} onDecision={answerActionTextPrompt} />
+      ) : null}
+       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
         prompt={arrivalRecoveryPrompt}
@@ -3651,6 +3703,7 @@ function removeDebtPayment(index: number) {
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
+        askActionConfirmation={askActionConfirmation}
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
           const freshResponse = await apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })
@@ -3803,11 +3856,11 @@ function removeDebtPayment(index: number) {
 
 
         <DeferredSection active={activeSector === 'references'} label="Справочники">
-        <ReferencesSection ctx={{ apiFetch, loadReferencesData, loadReferenceKindCounts, filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
+        <ReferencesSection ctx={{ apiFetch, askActionConfirmation, loadReferencesData, loadReferenceKindCounts, filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+        <InventorySection ctx={{ askActionConfirmation, onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
           const draftKey=inventoryUiId('correction')
           setInventoryDraft(current=>{
             // Two fast clicks on +размер/+цвет must never add the same SKU twice:
@@ -3883,7 +3936,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ askActionConfirmation, askActionTextPrompt, activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
@@ -3903,7 +3956,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text), askStockResolution,
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation, askStockResolution,
         onShipmentChange: async () => { invalidateInventoryStockCaches(true); return (await loadDashboard(false)) != null },
         setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
@@ -3925,7 +3978,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
-        <TeamSection ctx={{ apiFetch, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
+        <TeamSection ctx={{ apiFetch, askActionConfirmation, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'leads'} label="Лиды">
@@ -3933,7 +3986,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'plan'} label="План">
-        <PlanSection ctx={{ apiFetch, currentManagerId: authUser?.managerId || 0, deleteDepartmentPlan, deleteManagerPlan, departmentPlanDraft, editDepartmentPlan, editManagerPlan, exportPlanReportWord, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadPlans, ManagerBadge, ManagerPicker, managerPlanDraft, planBusy, planFilters, planReport, printPlanReportPdf, references, saveDepartmentPlan, saveManagerPlan, sectorStyle, setDepartmentPlanDraft, setManagerPlanDraft, setPlanFilters }} />
+        <PlanSection ctx={{ apiFetch, askActionConfirmation, currentManagerId: authUser?.managerId || 0, deleteDepartmentPlan, deleteManagerPlan, departmentPlanDraft, editDepartmentPlan, editManagerPlan, exportPlanReportWord, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadPlans, ManagerBadge, ManagerPicker, managerPlanDraft, planBusy, planFilters, planReport, printPlanReportPdf, references, saveDepartmentPlan, saveManagerPlan, sectorStyle, setDepartmentPlanDraft, setManagerPlanDraft, setPlanFilters }} />
         </DeferredSection>
         <DeferredSection active={activeSector === 'finance'} label="Финансы">
         <FinanceSection ctx={{ apiFetch, active: activeSector === 'finance' && authReady, accessRole, financeMode, financeReportBusy, financeReportFilters, getPeriodRange, sectorStyle, setFinanceReportFilters, financeDashboardCtx: { cashMovementDraft, cashRegister, cashRegisterBusy, cashRegisterCycles, cashRegisterCyclesBusy, cashRegisterCyclesHasMore, cashRegisterCyclesOpen, cashSetupAmount, cashReconcileAmount, cashReconcileComment, financeMethodDraft, financeMethodsBusy, financeMode, financePaymentMethods, financeReport, financeReportBusy, moneyHistory, moneyHistoryBusy, moneyHistoryError, moneyHistoryHasMore, moneyHistoryQuery, moneyHistorySummary, moneyHistoryType, loadMoneyHistory, setMoneyHistoryQuery, setMoneyHistoryType, reloadFinanceReports, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadCashRegister, loadCashRegisterCycles, loadFinancePaymentMethods, ManagerBadge, managerColorFor, normalizeSuggestion, openOrderFromFinance, removeFinancePaymentMethod, saveCashRegisterMovement, saveFinancePaymentMethod, setCashMovementDraft, setCashRegisterCyclesOpen, setCashSetupAmount, setCashReconcileAmount, setCashReconcileComment, setupCashRegister, activateCashRegister, setCashAutoTracking, reconcileCashRegister, reverseCashRegisterMovement, resetCashRegisterCycle, setFinanceMethodDraft, setFinanceMode } }} />

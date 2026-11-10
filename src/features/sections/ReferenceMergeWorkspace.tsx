@@ -61,11 +61,12 @@ const dictionaries = [
 ] as const
 
 export function ReferenceMergeWorkspace({
-  apiFetch,isAdmin,onMerged,initialKind='paymentMethods',
+  apiFetch,isAdmin,onMerged,askActionConfirmation,initialKind='paymentMethods',
 }: {
   apiFetch:(input:string,init?:RequestInit)=>Promise<Response>;
   isAdmin:boolean;
   onMerged:()=>Promise<void>;
+  askActionConfirmation:(message:string)=>Promise<boolean>;
   initialKind?:string;
 }) {
   const [kind,setKind]=useState(() => dictionaries.some(x => x.kind === initialKind) ? initialKind : 'paymentMethods')
@@ -151,7 +152,7 @@ export function ReferenceMergeWorkspace({
   async function finalizeHistoricalPair(){
     if(!historicalFinalization?.canFinalize||!pairReview||pairBusy||saving)return
     if(pairReview.sourceVariantId!==1532||pairReview.targetVariantId!==1280)return
-    if(!window.confirm('Закрыть для индивидуальной отмены ТОЛЬКО движения #4876 и #5400? Исходные операции и сверка останутся в истории; остаток не изменится. После этого потребуется отдельно подтвердить объединение вариантов.'))return
+    if(!(await askActionConfirmation('Закрыть для индивидуальной отмены ТОЛЬКО движения #4876 и #5400? Исходные операции и сверка останутся в истории; остаток не изменится. После этого потребуется отдельно подтвердить объединение вариантов.')))return
     setPairBusy(true);setError('')
     try {
       const response=await apiFetch('/api/catalog/variants/manual-history-finalize',{
@@ -174,10 +175,10 @@ export function ReferenceMergeWorkspace({
     const stillShown=impact?.catalogImpact?.skuPairs.some(p=>
       p.sourceVariantId===sourceVariantId && p.targetVariantId===targetVariantId)
     if(!stillShown) {setError('Список изменился. Повторите проверку характеристик.');return}
-    if(!window.confirm(
+    if(!(await askActionConfirmation(
       'Объединить выбранные варианты товара? Склад и бутик сохранят свои количества, '
       +'действующие резервы будут согласованы с заказами. Исторические документы останутся без изменений.'
-    ))return
+    )))return
     setPairBusy(true);setError('')
     try {
       const response=await apiFetch('/api/catalog/variants/consolidate-unused',{
@@ -214,7 +215,7 @@ export function ReferenceMergeWorkspace({
   async function hideReferenceAlias() {
     if(!cleanup?.safeToHideSource || !impact?.catalogImpact?.canReviewReferenceCleanup || pairBusy || saving) return
     const oldId=impact.source.id, keptId=impact.target.id
-    if(!window.confirm('Убрать лишнее название из новых списков выбора? Исторические товары и заказы останутся без изменений.'))return
+    if(!(await askActionConfirmation('Убрать лишнее название из новых списков выбора? Исторические товары и заказы останутся без изменений.')))return
     setPairBusy(true);setError('')
     try {
       const response=await apiFetch('/api/reference-values/hide-unused-duplicate',{
@@ -247,7 +248,7 @@ export function ReferenceMergeWorkspace({
 
   async function apply(){
     if (!impact?.canApply || !impact.stateToken || saving) return
-    const confirmed=window.confirm(impact.reasonSafety
+    const confirmed=await askActionConfirmation(impact.reasonSafety
       ? 'Оставить «'+impact.target.value+'» вместо «'+impact.source.value+'» в списке причин? '
         +'Старые возвраты, списания и комментарии не изменятся. Это действие сохранится в журнале.'
       : 'Объединить «'+impact.source.value+'» с «'+impact.target.value+'»? '

@@ -85,6 +85,7 @@ type SectionContext = Record<string, any> & {
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
+    askActionConfirmation,
     onInlineArrivalVariant,
     onInlineCorrectionVariant,
     inventoryMovementError,
@@ -532,7 +533,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     const question = affected > 1
       ? `Не добавлять «${itemLabel}» в каталог для ${affected} одинаковых текущих позиций? Они останутся в своих заказах как введённый текст и не будут участвовать в складском учёте.`
       : `Не добавлять «${itemLabel}» в каталог? Позиция останется в заказе как введённый текст и не будет участвовать в складском учёте.`
-    if (!window.confirm(question)) return
+    if (!(await askActionConfirmation(question))) return
     const result = await excludeCatalogReviewItem(Number(catalogReviewActiveItem.orderItemId))
     if (result) {
       setCatalogReviewTaskIndex(0)
@@ -1163,7 +1164,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setStocktakeNotice('Для проверки нескольких товаров выберите хотя бы один товар.')
       return
     }
-    if (stocktakeStartMode === 'full' && stocktakeSourceStats[stocktakeSource] > 150 && !window.confirm(`Полная ревизия содержит ${stocktakeSourceStats[stocktakeSource]} позиций. Её можно закрыть и продолжить позже. Начать?`)) return
+    if (stocktakeStartMode === 'full' && stocktakeSourceStats[stocktakeSource] > 150 && !(await askActionConfirmation(`Полная ревизия содержит ${stocktakeSourceStats[stocktakeSource]} позиций. Её можно закрыть и продолжить позже. Начать?`))) return
     setStocktakeBusy(true)
     setStocktakeNotice('')
     try {
@@ -1283,7 +1284,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setStocktakeNotice('У этого товара уже заполнены все позиции.')
       return
     }
-    if (!window.confirm(`Вы физически проверили весь товар «${currentStocktakeGroup.productName}»? Для ${rows.length} непосчитанных позиций будет записан 0.`)) return
+    if (!(await askActionConfirmation(`Вы физически проверили весь товар «${currentStocktakeGroup.productName}»? Для ${rows.length} непосчитанных позиций будет записан 0.`))) return
     setStocktakeBusy(true)
     for (const row of rows) stocktakeTouchedIds.current.add(Number(row.id))
     setStocktakeFacts((current) => ({ ...current, ...Object.fromEntries(rows.map((row: any) => [String(row.id), '0'])) }))
@@ -1326,7 +1327,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function discardStocktake() {
     if (!stocktakeSession?.id || stocktakeBusy) return
-    if (!window.confirm('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.')) return
+    if (!(await askActionConfirmation('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.'))) return
     setStocktakeBusy(true)
     try {
       await cancelInventoryStocktakeSession(stocktakeSession.id)
@@ -2612,6 +2613,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        askActionConfirmation,
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
         inventoryMovementError,

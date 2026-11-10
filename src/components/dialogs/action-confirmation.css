@@ -1,0 +1,100 @@
+.action-confirmation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .55);
+}
+
+.action-confirmation-dialog {
+  width: min(100%, 560px);
+  max-height: min(88vh, 740px);
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border, #dce3ed);
+  background: var(--card-bg, #fff);
+  box-shadow: 0 18px 70px rgba(15, 23, 42, .22);
+  color: var(--text, #172033);
+  padding: clamp(18px, 3vw, 28px);
+}
+
+.action-confirmation-eyebrow {
+  margin: 0 0 7px;
+  color: var(--muted, #66748a);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.action-confirmation-dialog h2 {
+  font-size: clamp(18px, 2.2vw, 22px);
+  margin: 0 0 16px;
+}
+
+.action-confirmation-details {
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.action-confirmation-details p {
+  margin: 0 0 10px;
+}
+
+.action-confirmation-hint {
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #e3e8f0);
+  color: var(--muted, #66748a);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.action-confirmation-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.action-confirmation-buttons button {
+  min-height: 42px;
+}
+
+@media (max-width: 520px) {
+  .action-confirmation-buttons {
+    flex-direction: column-reverse;
+  }
+  .action-confirmation-buttons button {
+    width: 100%;
+  }
+}
+
+.action-confirmation-input-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.action-confirmation-text-input {
+  width: 100%;
+  min-height: 86px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--border, #d4dbe6);
+  border-radius: 10px;
+  background: var(--input-bg, #fff);
+  color: var(--text, #172033);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.action-confirmation-text-input:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}

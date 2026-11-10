@@ -1,7 +1,7 @@
 import type { InventoryRenderContext } from './types'
 import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 
-type PanelContext = Pick<InventoryRenderContext,
+type PanelContext = { askActionConfirmation: (message: string) => Promise<boolean> } & Pick<InventoryRenderContext,
   | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy' | 'inventoryMovementError'
   | 'movementSourceLoading' | 'movementSourceLoadError' | 'isAdmin'
   | 'arrivalWorkspace' | 'inventoryArrivalSummary' | 'inventoryOperationAllProductGroups'
@@ -27,6 +27,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
   return <div className="inventory-movement-panel" style={ctx.inventoryPanelStyle('movement')}>
     <InventoryUnifiedQuantityWorkspace
       key={mode}
+      askActionConfirmation={ctx.askActionConfirmation}
       mode={mode}
       source={source}
       targetSource={target}

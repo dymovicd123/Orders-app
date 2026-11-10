@@ -9,6 +9,7 @@ type SectionContext = Record<string, any>
 export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
   const {
     apiFetch,
+    askActionConfirmation,
     filteredReferenceItems,
     formatDateShort,
     FriendlyNumberInput,
@@ -250,9 +251,9 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                                 <button
                                   className="ghost danger compact"
                                   type="button"
-                                  onClick={(event) => {
+                                  onClick={async (event) => {
                                     event.stopPropagation()
-                                    if (window.confirm('Удалить «' + item.value + '» из списка выбора? Ранее оформленные заказы сохранятся. Если нужно заменить название в заказах текущего месяца, сначала используйте объединение.')) {
+                                    if (await askActionConfirmation('Удалить «' + item.value + '» из списка выбора? Ранее оформленные заказы сохранятся. Если нужно заменить название в заказах текущего месяца, сначала используйте объединение.')) {
                                       void removeReferenceEntry(item.id)
                                     }
                                   }}
@@ -348,6 +349,7 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                       <ReferenceIntegrityPanel
                         apiFetch={apiFetch}
                         isAdmin={isAdmin}
+                        askActionConfirmation={askActionConfirmation}
                         onHidden={async () => {
                           await Promise.all([
                             ctx.loadReferencesData(true),
@@ -377,7 +379,7 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                     <span className="reference-integrity-entry-open">{maintenanceView === 'merge' ? 'Свернуть' : 'Открыть объединение'}</span>
                   </summary>
                   {maintenanceView === 'merge' ? (
-                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} initialKind={referenceKind}
+                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} initialKind={referenceKind} askActionConfirmation={askActionConfirmation}
                       onMerged={async () => {
                         await Promise.all([
                           ctx.loadReferencesData(true),
