@@ -21,6 +21,7 @@ type RetiredLineCorrection = {
 }
 
 type Props = {
+  askActionConfirmation: (text: string) => Promise<boolean>
   order: OrderRecord | null
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   isAdmin: boolean
@@ -31,7 +32,7 @@ type Props = {
 }
 const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
-export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onEditOrder }: Props) {
+export function OrderCatalogResolutionModal({ askActionConfirmation, order, apiFetch, isAdmin, onClose, onCompleted, onEditOrder }: Props) {
   const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -291,7 +292,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const confirmRetiredPhysicalIssue = async () => {
     if (!order || !item || !item.variantId || !Number.isInteger(item.quantity) || item.quantity <= 0
       || resolving || busy || mutationPending.current) return
-    if (!window.confirm(
+    if (!await askActionConfirmation(
       `Подтвердите, что клиенту ФАКТИЧЕСКИ передали «${item.productName}» × ${item.quantity}, именно удалённое исполнение ${item.material}.\n\n` +
       'Старый резерв уже снят при удалении исполнения. Повторно склад не списывается. Факт выдачи будет записан в историю.'
     )) return
