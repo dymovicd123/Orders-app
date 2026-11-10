@@ -62,6 +62,12 @@ jobs:
         if: github.base_ref == 'main'
         run: node scripts/test-main-safe-dialogs-20261110.mjs
 
+      - name: Verify Main isolated DDS ledger, dynamic directory, Excel and rights
+        if: github.base_ref == 'main'
+        run: |
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
