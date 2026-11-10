@@ -44,7 +44,17 @@ export async function readTeamAttendance(db:D1Database,month:unknown){
   }))
 }
 export async function saveTeamAttendance(db:D1Database,input:TeamAttendanceInput,actor:AuthUser|null){
-  if(!actor||actor.role!=='admin')throw invalid('Отмечать явку может только администратор.',403)
+  if(!actor || actor.mustChangePassword)throw invalid('Для отметки явки нужен рабочий аккаунт.',403)
+  // Managers mark actual attendance; administrators retain correction access.
+  if(actor.role!=='admin'){
+    if(actor.role!=='manager'||!Number.isSafeInteger(actor.managerId)||Number(actor.managerId)<1)
+      throw invalid('Отмечать явку может только менеджер.',403)
+    const recorder=await db.prepare('SELECT id,role,is_active FROM managers WHERE id=?')
+      .bind(actor.managerId).first<{id:number;role:string;is_active:number}>()
+    if(!recorder||Number(recorder.is_active)!==1
+      ||['завсклад','упаковщик'].includes(String(recorder.role||'').trim().toLocaleLowerCase('ru-RU')))
+      throw invalid('Отметка явки недоступна для этой учётной записи.',403)
+  }
   const date=validDate(input.date)
   if(date>todayInAlmaty())throw invalid('Нельзя отмечать фактическую явку за будущий день.')
   const managerId=Number(input.managerId)
