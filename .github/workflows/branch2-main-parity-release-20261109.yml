@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT tested Branch2 timesheet UX-only release; no D1 writes and no Main or Client3.
+# ONE-SHOT reviewed Branch2 bulk-first timesheet release; no D1 writes, no Main or Client3.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish reviewed Branch2 daily navigation and full month attendance journal
+    name: Publish reviewed Branch2 bulk planner and editable daily shift roster
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): timesheet journal usability')
+      startsWith(github.event.head_commit.message, 'release(branch2): timesheet bulk planner usability')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,20 +62,22 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '21e0f8899aa659b6ba2abc00ff6c8de6e216d03a'
+          test "$(git rev-parse HEAD^)" = '86486d16d6656b6b92b6daae7529ebe6dadf50a8'
           actual="$(git diff --name-only HEAD^ HEAD)"
           expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml')"
           test "$actual" = "$expected"
-          # The reviewed UI commit 21e0f889 is immutable; only this release guard changes now.
+          # The reviewed PR #897 is immutable in parent 86486d16; only this release guard changes now.
           test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
           test "$(git hash-object worker/domains/team-attendance.ts)" = '7e0386d4fb32321f6bf1ad94852b737dde5a1b73'
-          test "$(git hash-object worker/domains/team.ts)" = '733f1b038aef15a7a0866c0c77f5683733c3d345'
-          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'fc2fb6ab6f70c3753eb80b81cb766c356681e7b2'
+          test "$(git hash-object worker/domains/team.ts)" = 'cbc2301e26df9c1c7714d24cb5799e50b7e35aaf'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '69d88823a482c7b88cdcd6724e0bec598a3e3319'
           test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = 'c1cce4f434f955ab0ab7c83398665fcc433fb26f'
           test "$(git hash-object src/features/team/TeamAttendanceReport.tsx)" = 'bd6c354670ddaed29e947604d4ef4ddcd3607bc3'
           test "$(git hash-object src/features/team/teamTimesheetReport.ts)" = 'c1aeed25ea9abc6a61a6b8b88c786a5d8ce3639a'
-          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '5c2ac722d494826fb7ea60e85874d6d91b9b712a'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = 'c13aad44380dd3b65c1952c0447d8e2f7f097dd8'
           test "$(git hash-object scripts/test-team-timesheet-report-v2-20261110.mjs)" = 'c7406fe1b89e26406bcee04ce58dc22aeac7c8e2'
+          test "$(git hash-object scripts/test-team-timesheet-bulk-safe-20261110.mjs)" = 'f6b90846b09db76674752c15abab543937c5f3b1'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '50c76b9a1ac68a051c9add7b6bffaa11043d4d1f'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
@@ -89,13 +91,15 @@ jobs:
           npm ci
           node scripts/test-team-attendance-v1-20261110.mjs
           node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
           schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers" --json)"
           printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3'
-          echo 'BRANCH2_TIMESHEET_REPORT_SCHEMA_READ_ONLY_PASS'
+          echo 'BRANCH2_TIMESHEET_BULK_SCHEMA_READ_ONLY_PASS'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
           set -euo pipefail
           npm ci
           node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
           node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
