@@ -76,6 +76,7 @@ import { createReturnExchangeCreationActions } from './features/orders/returnExc
 import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
 import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
 import { ActionConfirmationModal } from './components/dialogs/ActionConfirmationModal'
+import { ActionTextPromptModal } from './components/dialogs/ActionTextPromptModal'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
@@ -161,8 +162,10 @@ function App() {
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [actionConfirmationText, setActionConfirmationText] = useState<string | null>(null)
   const actionConfirmationDecisionRef = useRef<((approved: boolean) => void) | null>(null)
+  const [actionTextPrompt, setActionTextPrompt] = useState<{ title: string; initialValue: string } | null>(null)
+  const actionTextDecisionRef = useRef<((value: string | null) => void) | null>(null)
   const askActionConfirmation = useCallback((text: string) => {
-    if (actionConfirmationDecisionRef.current) return Promise.resolve(false)
+    if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(false)
     return new Promise<boolean>((resolve) => {
       actionConfirmationDecisionRef.current = resolve
       setActionConfirmationText(text)
@@ -174,9 +177,24 @@ function App() {
     setActionConfirmationText(null)
     resolve?.(approved)
   }, [])
+  const askActionTextPrompt = useCallback((title: string, initialValue = '') => {
+    if (actionConfirmationDecisionRef.current || actionTextDecisionRef.current) return Promise.resolve(null)
+    return new Promise<string | null>((resolve) => {
+      actionTextDecisionRef.current = resolve
+      setActionTextPrompt({ title, initialValue })
+    })
+  }, [])
+  const answerActionTextPrompt = useCallback((value: string | null) => {
+    const resolve = actionTextDecisionRef.current
+    actionTextDecisionRef.current = null
+    setActionTextPrompt(null)
+    resolve?.(value)
+  }, [])
   useEffect(() => () => {
     actionConfirmationDecisionRef.current?.(false)
     actionConfirmationDecisionRef.current = null
+    actionTextDecisionRef.current?.(null)
+    actionTextDecisionRef.current = null
   }, [])
 
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
@@ -3634,6 +3652,10 @@ function removeDebtPayment(index: number) {
       ) : null}
 
       <ActionConfirmationModal message={actionConfirmationText} onDecision={answerActionConfirmation} />
+      {actionTextPrompt ? (
+        <ActionTextPromptModal title={actionTextPrompt.title}
+          initialValue={actionTextPrompt.initialValue} onDecision={answerActionTextPrompt} />
+      ) : null}
        <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
