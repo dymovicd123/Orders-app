@@ -43,4 +43,10 @@ for (const file of [
 ]) assert(readFileSync(file, 'utf8').includes('askActionTextPrompt'),
   file + ' must require an explicit written reason')
 
+const promptModal = readFileSync('src/components/dialogs/ActionTextPromptModal.tsx', 'utf8')
+const workshop = readFileSync('src/features/workshop/WorkshopSettlementsPanel.tsx', 'utf8')
+assert(promptModal.includes('value.trim().length >= minLength'), 'Reason validation must happen before the modal closes')
+assert(workshop.includes("askActionTextPrompt('Причина отмены выплаты (сохранится в истории)', '', 5)"),
+  'Workshop payout cancellation reason must require at least 5 characters in the dialog')
+
 console.log('BRANCH2_SAFE_DIALOGS_PASS: all active TS/TSX files have no native window.confirm/prompt, cash/workshop reasons and operation confirmations are wired')
