@@ -56,14 +56,18 @@ await saveTeamTimesheet(db,{dates:['2026-11-10'],managerIds:[3],clear:true})
 rows=shifts()
 assert.equal(rows.length,4,'Removing one employee/day must not remove other shifts')
 assert.equal(rows.find(v=>v.work_date==='2026-11-10'&&v.manager_id===3),undefined)
+const beforeInvalidClear=shifts()
+await assert.rejects(()=>saveTeamTimesheet(db,{dates:['2026-11-10'],managerIds:[4],clear:true}),
+  /недоступны/, 'Invalid selected staff must not clear every shift for a date')
+assert.deepEqual(shifts(),beforeInvalidClear)
 const ui=readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
 const css=readFileSync('src/features/team/teamTimesheetWorkspace.css','utf8')
 assert.ok(ui.includes('preserveExisting:!clear'),'Bulk planner must use insert-only mode')
 assert.ok(ui.includes('tw-calendar-shift')&&ui.includes('shift.manager')&&ui.includes('shift.workUntil'))
 assert.ok(ui.includes('tw-plan-snapshot')&&ui.includes('tw-already-chip'),
   'Planner must reveal existing assignments before saving')
-assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)'),
-  'Single-day additions and exact shift editing must remain available')
+assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)')&&ui.includes('setShowCalendarDay(true)'),
+  'Single-day additions, instant roster dialog and exact shift editing must remain available')
 assert.ok(ui.includes('duplicateAssignments')&&ui.includes('newAssignments'))
 assert.ok(css.includes('.tw-calendar-detail')&&css.includes('.tw-plan-snapshot'))
 console.log('TEAM_TIMESHEET_BULK_SAFE_PASS: add-only, repeat idempotence, scoped edits/removal, visible existing shifts')
