@@ -26,6 +26,7 @@ export type PlanReport = { managerPlans: ManagerPlanRecord[]; departmentPlans: D
 
 type PlanActionsArgs = {
   isAdmin: boolean
+  askActionConfirmation: (message: string) => Promise<boolean>
   planFilters: PlanFilters
   planReport: PlanReport | null
   managerPlanDraft: ManagerPlanDraft
@@ -45,6 +46,7 @@ type PlanActionsArgs = {
 // are refreshed after a successful plan mutation, not before.
 export function createPlanActions({
   isAdmin,
+  askActionConfirmation,
   planFilters,
   planReport,
   managerPlanDraft,
@@ -83,7 +85,7 @@ export function createPlanActions({
   }
 
   async function deleteManagerPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план менеджера?')) return
+    if (!isAdmin || !id || !(await askActionConfirmation('Удалить план менеджера?'))) return
     setPlanBusy(true)
     setError(null)
     try {
@@ -100,7 +102,7 @@ export function createPlanActions({
   }
 
   async function deleteDepartmentPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план отдела?')) return
+    if (!isAdmin || !id || !(await askActionConfirmation('Удалить план отдела?'))) return
     setPlanBusy(true)
     setError(null)
     try {
