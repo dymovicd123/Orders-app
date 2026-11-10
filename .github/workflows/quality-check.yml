@@ -88,6 +88,12 @@ jobs:
       - name: Verify bulk shifts preserve existing assignments and precise edits
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+      - name: Verify warehouse financial stock snapshot is read-only and cost protected
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-warehouse-capital-readonly-20261110.mjs
+      - name: Verify complete warehouse report XLSX and admin-only valuation
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-warehouse-reports-excel-20261110.mjs
 
       - name: Run cumulative regression gate
         run: npm run release:check

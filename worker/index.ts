@@ -21,6 +21,7 @@ import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physica
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
+import { readWarehouseCapital } from './domains/warehouse-capital.ts'
 import { listProductKpis, removeProductKpi, saveProductKpi } from './domains/product-kpi.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
@@ -581,6 +582,13 @@ export default {
       if (url.pathname === '/api/reports/warehouse-demand' && request.method === 'GET') {
         const result = await listWarehouseDemand(env.DB, url);
         return json(result, result.ok ? undefined : { status: 400 });
+      }
+      // Inventory valuation exposes confidential costs and margins: administrator only.
+      // This endpoint never changes stock, prices, orders, or financial records.
+      if (url.pathname === '/api/reports/warehouse-capital' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Себестоимость и оценка запасов доступны только администратору.');
+        if (denied) return denied;
+        return json(await readWarehouseCapital(env.DB));
       }
 
       if (url.pathname === '/api/reports/city-orders' && request.method === 'GET') {
