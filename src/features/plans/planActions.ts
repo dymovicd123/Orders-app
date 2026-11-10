@@ -25,6 +25,7 @@ export type PlanFilters = { dateFrom: string; dateTo: string }
 export type PlanReport = { managerPlans: ManagerPlanRecord[]; departmentPlans: DepartmentPlanRecord[] }
 
 type PlanActionsArgs = {
+  askActionConfirmation: (text: string) => Promise<boolean>
   isAdmin: boolean
   planFilters: PlanFilters
   planReport: PlanReport | null
@@ -44,6 +45,7 @@ type PlanActionsArgs = {
 // Plans retain their original admin-only write boundary; financial reports
 // are refreshed after a successful plan mutation, not before.
 export function createPlanActions({
+  askActionConfirmation,
   isAdmin,
   planFilters,
   planReport,
@@ -83,7 +85,7 @@ export function createPlanActions({
   }
 
   async function deleteManagerPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план менеджера?')) return
+    if (!isAdmin || !id || !await askActionConfirmation('Удалить план менеджера?')) return
     setPlanBusy(true)
     setError(null)
     try {
@@ -100,7 +102,7 @@ export function createPlanActions({
   }
 
   async function deleteDepartmentPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план отдела?')) return
+    if (!isAdmin || !id || !await askActionConfirmation('Удалить план отдела?')) return
     setPlanBusy(true)
     setError(null)
     try {
