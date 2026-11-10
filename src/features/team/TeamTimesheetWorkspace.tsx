@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { TeamAttendanceMark, TeamTimesheetResponse, TeamTimesheetEntry } from '../../app/types'
+import { TeamAttendanceReport } from './TeamAttendanceReport'
 import './teamTimesheetWorkspace.css'
 
 type MarkState = 'present' | 'absent' | 'excused' | 'unmarked'
@@ -24,9 +25,6 @@ function daysOfMonth(month:string){
   return Array.from({length:end},(_,i)=>month+'-'+String(i+1).padStart(2,'0'))
 }
 const weekday=(date:string)=>new Date(date+'T12:00:00Z').getUTCDay()
-function adjacentDay(date:string,offset:number){
-  const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+offset);return d.toISOString().slice(0,10)
-}
 function monthName(month:string){
   return new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'))
 }
@@ -45,42 +43,6 @@ function rowsForDay(data:TeamTimesheetResponse|null,date:string):DayRow[]{
       role:prev?.role||p?.role||'',color:prev?.color||mark.managerColor||'#718096',schedule:prev?.schedule,mark})
   }
   return [...rows.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'))
-}
-function MonthSummary({data,todayDate}:{data:TeamTimesheetResponse;todayDate:string}){
-  const people=new Map<number,{id:number;name:string;color:string;planned:number;present:number;absent:number;excused:number;pending:number}>()
-  function ensure(id:number,name:string,color:string){
-    if(!people.has(id))people.set(id,{id,name,color,planned:0,present:0,absent:0,excused:0,pending:0})
-    return people.get(id)!
-  }
-  data.employees.forEach(p=>ensure(p.id,p.name,p.colorKey||'#64748b'))
-  const recorded=new Set((data.attendance||[]).map(x=>x.date+':'+x.managerId))
-  data.entries.forEach(e=>{
-    const p=ensure(e.managerId,e.manager,e.managerColor||'#64748b')
-    p.planned++;if(e.date<=todayDate&&!recorded.has(e.date+':'+e.managerId))p.pending++
-  })
-  ;(data.attendance||[]).forEach(mark=>{
-    ensure(mark.managerId,mark.manager,mark.managerColor||'#64748b')[mark.status]++
-  })
-  const members=[...people.values()].filter(p=>p.planned||p.present||p.absent||p.excused)
-    .sort((a,b)=>a.name.localeCompare(b.name,'ru'))
-  const totals=members.reduce((sum,p)=>({
-    planned:sum.planned+p.planned,present:sum.present+p.present,absent:sum.absent+p.absent,
-    excused:sum.excused+p.excused,pending:sum.pending+p.pending
-  }),{planned:0,present:0,absent:0,excused:0,pending:0})
-  return <section className="tw-panel">
-    <div className="tw-subhead"><div><h4>Итоги за месяц</h4><p>План отдельно от явки. Будущие смены не считаются пропусками.</p></div></div>
-    <div className="tw-totals">
-      {([['По графику',totals.planned],['Пришли',totals.present],['Не пришли',totals.absent],
-        ['Уважительная причина',totals.excused],['Без отметки',totals.pending]] as Array<[string,number]>)
-        .map(([label,n])=><div key={label}><span>{label}</span><strong>{n}</strong></div>)}
-    </div>
-    <div className="tw-table-scroll"><table className="tw-table"><thead><tr>
-      <th>Сотрудник</th><th>По графику</th><th>Пришёл</th><th>Не пришёл</th><th>Уважит.</th><th>Без отметки</th>
-    </tr></thead><tbody>{members.map(p=><tr key={p.id}><td><span className="tw-dot" style={{background:p.color}}/>{p.name}</td>
-      <td>{p.planned}</td><td>{p.present}</td><td>{p.absent}</td><td>{p.excused}</td><td>{p.pending}</td></tr>)}
-      {!members.length&&<tr><td colSpan={6}>В этом месяце пока нет назначений.</td></tr>}
-    </tbody></table></div>
-  </section>
 }
 function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:()=>void;children:ReactNode}){
   const area=useRef<HTMLDivElement>(null)
@@ -109,7 +71,7 @@ function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:
 export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timesheetData,timesheetBusy,
   setTimesheetMonth,loadTeamTimesheet,loadTeamSalaryReport}:Props){
   const current=today()
-  const [view,setView]=useState<'day'|'calendar'>('day')
+  const [view,setView]=useState<'day'|'report'|'calendar'>('day')
   const [date,setDate]=useState(current)
   const [editor,setEditor]=useState<DayRow|null>(null)
   const [markState,setMarkState]=useState<MarkState>('unmarked')
@@ -125,6 +87,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const busy=useRef(false)
+  const dateStripRef=useRef<HTMLDivElement>(null)
   const data=timesheetData?.month===timesheetMonth?timesheetData:null
   const dayData=data?.month===date.slice(0,7)?data:null
   const rows=rowsForDay(dayData,date)
@@ -144,9 +107,26 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
     return output
   },[data,current])
   const chooseDay=(next:string)=>{setDate(next);setView('day');if(next.slice(0,7)!==timesheetMonth)setTimesheetMonth(next.slice(0,7))}
+  const unmarkedDays=[...counts].filter(([d,c])=>d<=current&&c.pending>0)
+    .sort(([a],[b])=>a.localeCompare(b))
+  const unmarkedTotal=unmarkedDays.reduce((sum,[,c])=>sum+c.pending,0)
+  useEffect(()=>{
+    if(view!=='day')return
+    const active=dateStripRef.current?.querySelector<HTMLElement>('[aria-current="date"]')
+    active?.scrollIntoView({inline:'center',block:'nearest'})
+  },[date,view,timesheetMonth])
+  const activateDay=()=>{if(date.slice(0,7)!==timesheetMonth)setDate(
+    timesheetMonth===current.slice(0,7)?current:timesheetMonth+'-01')
+    setView('day')
+  }
+  const selectMonth=(next:string)=>{
+    if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(next))return
+    setTimesheetMonth(next)
+    if(view==='day')setDate(next===current.slice(0,7)?current:next+'-01')
+  }
   const shiftMonth=(delta:number)=>{
     const [y,m]=timesheetMonth.split('-').map(Number)
-    setTimesheetMonth(new Date(Date.UTC(y,m-1+delta,1)).toISOString().slice(0,7))
+    selectMonth(new Date(Date.UTC(y,m-1+delta,1)).toISOString().slice(0,7))
   }
   function openEditor(row:DayRow){
     setEditor(row);setMarkState(row.mark?.status||'unmarked');setMarkEnded(row.mark?.finishedAt||'')
@@ -188,29 +168,60 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
   }
   const toggleDate=(d:string)=>setPlanDates(a=>a.includes(d)?a.filter(x=>x!==d):[...a,d])
   const toggleEmployee=(id:number)=>setPlanPeople(a=>a.includes(id)?a.filter(x=>x!==id):[...a,id])
+  const duplicateAssignments=planDates.reduce((sum,d)=>sum+planPeople.filter(id=>
+    data?.entries.some(entry=>entry.date===d&&entry.managerId===id)).length,0)
   const canMark=isAdmin&&date<=current&&!saving
   const closeEdit=()=>{if(!saving)setEditor(null)}
   const closePlan=()=>{if(!saving){setPlanning(false);setConfirmClear(false)}}
   return <section className="tw-workspace">
-    <div className="tw-header"><div><h3>Табель сотрудников</h3><p>График и фактическая явка — отдельно. Без подсчёта часов.</p></div>
-      <div className="tw-tools">{isAdmin&&<button type="button" className="secondary compact" onClick={openPlanner}>+ Назначить смены</button>}
+    <div className="tw-header"><div><span className="tw-kicker">КОМАНДА</span><h3>Табель сотрудников</h3>
+      <p>Отмечайте явку за день, проверяйте журнал и планируйте смены.</p></div>
+      <div className="tw-header-actions">
+        {isAdmin&&<button type="button" className="tw-primary-assign" onClick={openPlanner}>+ Составить график</button>}
         <button type="button" className="secondary compact" disabled={timesheetBusy||saving}
-          onClick={()=>void loadTeamTimesheet(timesheetMonth)}>Обновить</button></div>
-    </div>
+          onClick={()=>void loadTeamTimesheet(timesheetMonth)}>Обновить</button>
+      </div></div>
     <div className="tw-tabs" role="tablist" aria-label="Режим табеля">
-      <button type="button" role="tab" aria-selected={view==='day'} className={view==='day'?'selected':''} onClick={()=>setView('day')}>День</button>
-      <button type="button" role="tab" aria-selected={view==='calendar'} className={view==='calendar'?'selected':''} onClick={()=>setView('calendar')}>Календарь и итоги</button>
+      <button type="button" role="tab" aria-selected={view==='day'} className={view==='day'?'selected':''}
+        onClick={activateDay}>Отметить явку</button>
+      <button type="button" role="tab" aria-selected={view==='report'} className={view==='report'?'selected':''}
+        onClick={()=>setView('report')}>Журнал по дням</button>
+      <button type="button" role="tab" aria-selected={view==='calendar'} className={view==='calendar'?'selected':''}
+        onClick={()=>setView('calendar')}>График</button>
     </div>
     {error&&<div className="tw-alert error" role="alert">{error}</div>}
     {notice&&<div className="tw-alert success" role="status">{notice}</div>}
     {view==='day'?<>
-      <div className="tw-section-head"><div><span className="tw-kicker">УЧЁТ ЗА ДЕНЬ</span>
-        <h4>{dayLabel(date)}</h4><p>{rows.filter(x=>x.schedule).length} назначено · {rows.filter(x=>x.mark).length} отмечено
-          {rows.some(x=>x.schedule&&!x.mark&&date<=current)?' · Есть без отметки':''}</p></div>
-        <div className="tw-tools"><button type="button" className="secondary compact" aria-label="Предыдущий день" onClick={()=>chooseDay(adjacentDay(date,-1))}>←</button>
-          <input type="date" aria-label="Дата табеля" value={date} onChange={e=>{if(e.target.value)chooseDay(e.target.value)}}/>
-          <button type="button" className="secondary compact" aria-label="Следующий день" onClick={()=>chooseDay(adjacentDay(date,1))}>→</button>
-          {date!==current&&<button type="button" className="secondary compact" onClick={()=>chooseDay(current)}>Сегодня</button>}</div>
+      <div className="tw-day-heading">
+        <div><span className="tw-kicker">ЕЖЕДНЕВНЫЙ УЧЁТ</span><h4>{dayLabel(date)}</h4>
+          <p>{rows.filter(x=>x.schedule).length} назначено · {rows.filter(x=>x.mark).length} отмечено</p></div>
+        <div className="tw-day-heading-actions">
+          {unmarkedTotal>0&&<button type="button" className="tw-needs-attention"
+            onClick={()=>chooseDay(unmarkedDays[0][0])}>Не проверено: {unmarkedTotal} · перейти к {dateLabel(unmarkedDays[0][0])}</button>}
+          {date!==current&&<button type="button" className="secondary" onClick={()=>chooseDay(current)}>Сегодня</button>}
+        </div>
+      </div>
+      <div className="tw-date-picker-row">
+        <div className="tw-month-controls">
+          <button type="button" className="tw-month-arrow" aria-label="Предыдущий месяц" onClick={()=>shiftMonth(-1)}>‹</button>
+          <label>Месяц <input type="month" value={timesheetMonth}
+            onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/></label>
+          <button type="button" className="tw-month-arrow" aria-label="Следующий месяц" onClick={()=>shiftMonth(1)}>›</button>
+        </div>
+        <label className="tw-date-direct">Перейти к дате <input type="date" value={date}
+          onChange={e=>{if(e.target.value)chooseDay(e.target.value)}}/></label>
+      </div>
+      <div ref={dateStripRef} className="tw-date-strip" aria-label="Быстрый переход по дням месяца">
+        {days.map(d=>{
+          const c=counts.get(d),active=d===date
+          return <button type="button" key={d} className={'tw-date-tile'+(active?' active':'')+
+            (d===current?' today':'')} aria-current={active?'date':undefined} onClick={()=>chooseDay(d)}>
+            <small>{new Intl.DateTimeFormat('ru-RU',{weekday:'short',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'))}</small>
+            <strong>{Number(d.slice(-2))}</strong>
+            <span className={(c?.pending||0)>0?'tw-date-needs':''}>{d>current?'План':c?.pending?'! '+c.pending:
+              c?.planned?'✓ '+(c.present+c.absent+c.excused):'—'}</span>
+          </button>
+        })}
       </div>
       {timesheetBusy&&!dayData?<div className="tw-empty">Загрузка табеля…</div>:!rows.length?<div className="tw-empty">
         <strong>На этот день никто не назначен</strong><p>Чтобы отмечать явку, сначала составьте график.</p>
@@ -219,7 +230,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         const future=date>current
         const status=!row.mark?(future?'По графику':'Нет отметки'):
           row.mark.status==='absent'?'Не пришёл':row.mark.status==='excused'?'Уважительная причина':
-          row.mark.finishedAt?'Закончил в '+row.mark.finishedAt:'Пришёл · на работе'
+          row.mark.finishedAt?'Ушёл в '+row.mark.finishedAt:(date===current?'Пришёл · на работе':'Пришёл · уход не указан')
         const tone=!row.mark?'pending':row.mark.status
         return <article className="tw-person" key={row.id}>
           <div className="tw-avatar" style={{backgroundColor:row.color}} aria-hidden="true">{row.name.charAt(0)}</div>
@@ -239,10 +250,10 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         </article>
       })}</div>}
       <p className="tw-note">Нет отметки — не значит, что сотрудник отсутствовал. Время ухода необязательно.</p>
-    </>:<>
-      <div className="tw-section-head"><div><span className="tw-kicker">ГРАФИК НА МЕСЯЦ</span><h4>{monthName(timesheetMonth)}</h4></div>
+    </>:view==='calendar'?<>
+      <div className="tw-section-head"><div><span className="tw-kicker">ПЛАН СМЕН</span><h4>{monthName(timesheetMonth)}</h4></div>
         <div className="tw-tools"><button type="button" className="secondary compact" onClick={()=>shiftMonth(-1)}>←</button>
-          <input aria-label="Месяц табеля" type="month" value={timesheetMonth} onChange={e=>{if(e.target.value)setTimesheetMonth(e.target.value)}}/>
+          <input aria-label="Месяц табеля" type="month" value={timesheetMonth} onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/>
           <button type="button" className="secondary compact" onClick={()=>shiftMonth(1)}>→</button>
           <button type="button" className="secondary compact" onClick={()=>setTimesheetMonth(current.slice(0,7))}>Этот месяц</button></div>
       </div>
@@ -262,7 +273,18 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
           </button>
         })}
       </div></div>
-      {data?<MonthSummary data={data} todayDate={current}/>:<div className="tw-empty">Загрузка итогов…</div>}
+      <p className="tw-note">Календарь показывает назначения и состояние отметок. Для подробного отчёта откройте «Журнал по дням».</p>
+    </>:<>
+      <div className="tw-section-head"><div><span className="tw-kicker">ПОДРОБНЫЙ ОТЧЁТ</span>
+        <h4>Посещаемость · {monthName(timesheetMonth)}</h4></div>
+        <div className="tw-tools">
+          <button type="button" className="secondary compact" aria-label="Предыдущий месяц" onClick={()=>shiftMonth(-1)}>←</button>
+          <input type="month" value={timesheetMonth} aria-label="Месяц журнала"
+            onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/>
+          <button type="button" className="secondary compact" aria-label="Следующий месяц" onClick={()=>shiftMonth(1)}>→</button>
+        </div>
+      </div>
+      <TeamAttendanceReport data={data} todayDate={current} onOpenDay={chooseDay}/>
     </>}
     {editor&&<Dialog title={'Отметка: '+editor.name} note={dateLabel(date)+' · явку можно исправить или добавить время ухода.'} onClose={closeEdit}>
       <form className="tw-form" onSubmit={onEditSubmit}>
@@ -279,25 +301,39 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
       </form>
     </Dialog>}
     {planning&&<Dialog title="Назначить смены" note="Выберите дни и сотрудников. Фактическая явка при изменении графика не стирается." onClose={closePlan}>
-      <div className="tw-plan"><div className="tw-plan-part"><strong>1. Даты · {monthName(timesheetMonth)}</strong>
+      <div className="tw-plan">
+        <div className="tw-plan-part tw-people-first"><strong>1. Кого назначить?</strong>
+          <p className="tw-plan-description">Нажмите на одного или нескольких сотрудников.</p>
+          <div className="tw-plan-people">{(data?.employees||[]).map(p=><button type="button" key={p.id}
+            aria-pressed={planPeople.includes(p.id)} className={planPeople.includes(p.id)?'active':''}
+            onClick={()=>toggleEmployee(p.id)}>
+            <span className="tw-dot" style={{background:p.colorKey||'#64748b'}}/>{p.name}
+            {planPeople.includes(p.id)&&<span className="tw-selected-check">✓</span>}
+          </button>)}</div>
+          <small>Выбрано {planPeople.length} сотрудников</small>
+        </div>
+        <div className="tw-plan-part"><strong>2. На какие дни? · {monthName(timesheetMonth)}</strong>
+          <p className="tw-plan-description">Выберите даты или удобный набор дней.</p>
         <div className="tw-presets">
           <button type="button" className="secondary compact" onClick={()=>setPlanDates(days.filter(d=>weekday(d)>0&&weekday(d)<6))}>Будни</button>
           <button type="button" className="secondary compact" onClick={()=>setPlanDates(days.filter(d=>weekday(d)===0||weekday(d)===6))}>Выходные</button>
-          <button type="button" className="secondary compact" onClick={()=>setPlanDates(days)}>Все дни</button>
-          <button type="button" className="secondary compact" onClick={()=>setPlanDates([])}>Сбросить</button>
+          <button type="button" className="secondary compact" onClick={()=>setPlanDates(days)}>Весь месяц</button>
+          <button type="button" className="secondary compact" onClick={()=>setPlanDates([])}>Очистить выбор</button>
         </div>
-        <div className="tw-plan-days">{days.map(d=><button key={d} type="button" aria-pressed={planDates.includes(d)}
-          className={planDates.includes(d)?'active':''} onClick={()=>toggleDate(d)}>{Number(d.slice(-2))}</button>)}</div>
-        <small>Выбрано {planDates.length} дней</small>
-      </div><div className="tw-plan-part"><strong>2. Сотрудники</strong>
-        <div className="tw-plan-people">{(data?.employees||[]).map(p=><button type="button" key={p.id} aria-pressed={planPeople.includes(p.id)}
-          className={planPeople.includes(p.id)?'active':''} onClick={()=>toggleEmployee(p.id)}>
-          <span className="tw-dot" style={{background:p.colorKey||'#64748b'}}/>{p.name}</button>)}</div>
-        <small>Выбрано {planPeople.length} сотрудников</small>
+        <div className="tw-plan-days">
+          {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(x=><span key={x} className="tw-plan-weekday">{x}</span>)}
+          {Array.from({length:days.length?(weekday(days[0])+6)%7:0},(_,i)=><span key={'empty-'+i} aria-hidden="true"/>)}
+          {days.map(d=><button key={d} type="button" title={dayLabel(d)} aria-pressed={planDates.includes(d)}
+            className={planDates.includes(d)?'active':''} onClick={()=>toggleDate(d)}>{Number(d.slice(-2))}</button>)}
+        </div>
+        <small>Выбрано {planDates.length} дней. Зелёные даты будут назначены выбранным сотрудникам.</small>
       </div><div className="tw-plan-part"><strong>3. Условия по графику</strong>
         <div className="tw-plan-fields"><label>Работают до<input type="time" value={planUntil} onChange={e=>setPlanUntil(e.target.value)}/></label>
           <label>Комментарий<input maxLength={300} value={planNote} placeholder="Необязательно" onChange={e=>setPlanNote(e.target.value)}/></label></div>
       </div>
+      {!confirmClear&&duplicateAssignments>0&&<p className="tw-plan-existing" role="note">
+        Уже назначено {duplicateAssignments} из выбранных смен. При сохранении время по графику и комментарий для них обновятся.
+      </p>}
       {confirmClear?<div className="tw-confirm"><strong>Убрать выбранные назначения?</strong>
         <p>Только выбранные сотрудники и даты. Сохранённые отметки явки останутся.</p>
         <div className="tw-actions"><button className="secondary" type="button" onClick={()=>setConfirmClear(false)}>Назад</button>
@@ -305,8 +341,11 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
       </div>:<div className="tw-actions split">
         <button className="ghost danger compact" type="button" disabled={saving||!planDates.length||!planPeople.length}
           onClick={()=>setConfirmClear(true)}>Снять выбранные</button>
-        <button className="primary" type="button" disabled={saving||!planDates.length||!planPeople.length}
-          onClick={()=>void saveSchedule(false)}>{saving?'Сохраняю…':'Назначить выбранное'}</button></div>}
+        <button className="primary tw-plan-submit" type="button"
+          disabled={saving||!planDates.length||!planPeople.length} onClick={()=>void saveSchedule(false)}>
+          {saving?'Сохраняю…':planPeople.length&&planDates.length?
+            'Назначить '+(planPeople.length*planDates.length)+' смен':'Выберите сотрудников и даты'}
+        </button></div>}
       </div>
     </Dialog>}
   </section>

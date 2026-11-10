@@ -65,8 +65,10 @@ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='at
 const section=readFileSync('src/features/sections/TeamSection.tsx','utf8')
 const ui=readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
 assert.ok(section.includes('<TeamTimesheetWorkspace'))
-assert.ok(ui.includes('Календарь и итоги')&&ui.includes('Пришёл')&&ui.includes('Не пришёл'))
+assert.ok(ui.includes('Журнал по дням')&&ui.includes('Отметить явку')&&ui.includes('Пришёл')&&ui.includes('Не пришёл'))
 assert.ok(ui.includes('Уважительная причина')&&ui.includes('Время ухода (необязательно)'))
-assert.ok(ui.includes('Без отметки')&&ui.includes('Назначить смены'))
+const monthlyJournal=readFileSync('src/features/team/TeamAttendanceReport.tsx','utf8')
+assert.ok(monthlyJournal.includes('Не отмечено')&&ui.includes('Назначить смены'),
+  'Unmarked days and the shift planner must remain accessible')
 assert.ok(!ui.includes('Количество часов')&&!ui.includes('Часов отработано'))
 console.log('TEAM_ATTENDANCE_V1_PASS: idempotent migration, admin permission, schedule independence, actual presence, optional leave time, absence reason, historic audit, monthly UI')

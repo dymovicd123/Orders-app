@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT Branch2 attendance UX release: additive test-only schema, no Main or Client3.
+# ONE-SHOT tested Branch2 timesheet UX-only release; no D1 writes and no Main or Client3.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish reviewed Branch2 daily attendance UX after test-only migration
+    name: Publish reviewed Branch2 daily navigation and full month attendance journal
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): attendance day calendar')
+      startsWith(github.event.head_commit.message, 'release(branch2): timesheet journal usability')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,9 +62,9 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '9bec3f6bf195ead1535c4f4e9b3989b666e8884a'
+          test "$(git rev-parse HEAD^)" = 'bc503e2d3c21504b30d1e4d4e6bce89dbd91f2a3'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-main-manager-three-workspaces-20261022.mjs' 'scripts/test-team-attendance-v1-20261110.mjs' 'scripts/test-team-timesheet-report-v2-20261110.mjs' 'src/features/team/TeamAttendanceReport.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetReport.ts' 'src/features/team/teamTimesheetWorkspace.css')"
           test "$actual" = "$expected"
           # The previous merged commit is immutable; only this release gate changes now.
           test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
@@ -75,31 +75,23 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
-      - name: Install only actual attendance tables in Branch2 D1
+      - name: Verify existing Branch2 attendance schema SELECT-only (no migrations)
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
           npm ci
           node scripts/test-team-attendance-v1-20261110.mjs
-          before="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM team_timesheet" --json | jq -er 'if type == "array" then .[0].results[0].n else .results[0].n end')"
-          test -n "$before"
-          preflight="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('team_attendance_marks','team_attendance_changes')" --json)"
-          printf '%s' "$preflight" | jq -e 'if type == "array" then .[0].results[0].n == 0 else .results[0].n == 0 end'
-          # Only the two NEW attendance tables, their indexes and audit triggers.
-          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0122_team_actual_attendance.sql
-          after="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM team_timesheet" --json | jq -er 'if type == "array" then .[0].results[0].n else .results[0].n end')"
-          test "$after" = "$before"
-          verified="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers, (SELECT COUNT(*) FROM team_attendance_marks) AS marks" --json)"
-          printf '%s' "$verified" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3 and .marks == 0'
-          echo 'BRANCH2_ATTENDANCE_SCHEMA_READY: old planned shifts unchanged, new attendance starts empty'
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers" --json)"
+          printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3'
+          echo 'BRANCH2_TIMESHEET_REPORT_SCHEMA_READ_ONLY_PASS'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
           node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
