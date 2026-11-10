@@ -21,7 +21,9 @@ for (const module of workspaceModules) {
 }
 
 const team = readFileSync('src/features/sections/TeamSection.tsx','utf8')
-assert(team.includes('<h3>Табель</h3>'), 'Timesheet heading must remain visible')
+const timesheetWorkspace = readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
+assert(team.includes('<TeamTimesheetWorkspace') && timesheetWorkspace.includes('<h3>Табель сотрудников</h3>'),
+  'Timesheet heading and workspace must remain visible after extraction')
 assert(!team.includes('Сымбат и администраторы не назначаются в табель'), 'Obsolete personalized timesheet notice returned')
 assert(!team.includes('Выбери дни в календаре, сотрудников и время работы'), 'Obsolete timesheet instructions returned')
 const app = readFileSync('src/App.tsx','utf8')
