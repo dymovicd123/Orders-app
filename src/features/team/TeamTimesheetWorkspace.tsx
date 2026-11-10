@@ -220,8 +220,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
         body:JSON.stringify({date,managerId:row.id,status,finishedAt:status==='present'?finishedAt:'',comment})})
       const payload=await response.json() as {ok?:boolean;message?:string}
       if(!response.ok||!payload.ok)throw new Error(payload.message||'Не удалось сохранить отметку.')
-      // Refresh in the background. The row has already changed, so there is no full-page wait.
-      void loadTeamTimesheet(date.slice(0,7)).catch(()=>{})
+      // Keep showing the local result while the server persists it.
     }catch(cause){
       setOptimisticMarks(previous=>{
         const next={...previous}
@@ -233,6 +232,8 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
     }finally{
       markingRef.current.delete(key)
       setPendingMarks(previous=>{const next={...previous};delete next[key];return next})
+      // Multiple rapid taps across staff share one background reconciliation.
+      if(markingRef.current.size===0)void loadTeamTimesheet(date.slice(0,7)).catch(()=>{})
     }
   }
   function onEditSubmit(e:FormEvent){e.preventDefault();if(editor)void record(editor,markState,markEnded,markNote.trim())}
