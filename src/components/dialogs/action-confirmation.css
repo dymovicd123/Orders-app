@@ -72,3 +72,29 @@
     width: 100%;
   }
 }
+
+.action-confirmation-input-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.action-confirmation-text-input {
+  width: 100%;
+  min-height: 86px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--border, #d4dbe6);
+  border-radius: 10px;
+  background: var(--input-bg, #fff);
+  color: var(--text, #172033);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.action-confirmation-text-input:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
