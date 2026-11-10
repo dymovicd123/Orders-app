@@ -31,7 +31,7 @@ function sheetXml(s:Sheet){
   const merges=s.merges?.length?'<mergeCells count="'+s.merges.length+'">'+s.merges.map(x=>'<mergeCell ref="'+x+'"/>').join('')+'</mergeCells>':''
   const filter=s.filter?'<autoFilter ref="'+s.filter+'"/>':''
   return H+'<worksheet xmlns="'+NS+'"><dimension ref="A1:'+letter(s.widths.length-1)+s.rows.length+'"/>'+view+
-    '<sheetFormatPr defaultRowHeight="19"/><cols>'+cols+'</cols><sheetData>'+rows+'</sheetData>'+merges+filter+
+    '<sheetFormatPr defaultRowHeight="19"/><cols>'+cols+'</cols><sheetData>'+rows+'</sheetData>'+filter+merges+
     '<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.25" footer="0.25"/></worksheet>'
 }
 
@@ -53,7 +53,7 @@ function stylesXml(){
     '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF4EF"/></patternFill></fill>',
   ]
   // default,title,muted,header,label,money,positive,negative,tableHeader,date,group,plainMoney,percentage
-  const xfs:[[number,number,number],[number,number,number],...Array<[number,number,number]>]=[
+  const xfs:Array<[number,number,number]>=[
     [0,0,0],[1,0,0],[6,0,0],[2,2,0],[3,3,0],[3,0,164],[4,4,164],
     [5,0,164],[3,3,0],[0,0,165],[3,3,0],[0,0,164],[0,0,10]
   ]
