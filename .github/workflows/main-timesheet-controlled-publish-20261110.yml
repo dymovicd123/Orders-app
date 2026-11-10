@@ -1,0 +1,189 @@
+name: One-shot Main attendance Worker release - preserve 257 existing shifts
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-controlled-publish-20261110.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-controlled-publish-20261110.yml'
+permissions:
+  contents: read
+concurrency:
+  group: main-reviewed-timesheet-worker-release
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify reviewed Main schedule and attendance functionality
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-main-attendance-schema-preserve-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-main-manager-three-workspaces-20261022.mjs
+          npm run build
+      - name: Package only the production Worker, no deploy and no D1 writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const raw=readFileSync('wrangler.jsonc','utf8')
+          const safe=raw.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/, '')
+          if(safe===raw||!safe.includes('"name": "orders-app"')||!safe.includes('"database_name": "orders_db_prod"')||
+             !safe.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')||safe.includes('orders_db_branch2'))
+            throw Error('Incorrect Main production target')
+          writeFileSync('.timesheet-main-release.jsonc',safe)
+          NODE
+          npx --no-install wrangler deploy --dry-run --outdir .timesheet-main-preview --config .timesheet-main-release.jsonc
+          echo MAIN_TIMESHEET_WORKER_PROD_PREVIEW_ONLY_PASS
+  release:
+    if: "github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release(main): timesheet controlled worker publish')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify exact Main release parent and immutable reviewed UI, D1 config and routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'cfa535b85b4a8d64072e493620eadc4a134bc433'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/main-timesheet-controlled-publish-20261110.yml'
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -q 'orders_db_branch2' wrangler.jsonc; then exit 19; fi
+          test "$(git hash-object src/App.tsx)" = 'd2bf005801849947410b891c365677eaafabf985'
+          test "$(git hash-object src/app/managerWorkspaceAccess.ts)" = '342a5784b7796e0d8ca3741c15d7f37e5e0347ef'
+          test "$(git hash-object src/app/types.ts)" = '418167d655afe6f86077ced9bb2d82c58ea8ada3'
+          test "$(git hash-object src/features/sections/TeamSection.tsx)" = '5db93a4d965cfacd89aa0b2cdb31d3e82ff0b43c'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '4fbcbf072914bdd0d099a361affa47dcb8968407'
+          test "$(git hash-object src/features/team/TeamAttendanceReport.tsx)" = 'd35562e500f7353624388c5c8f16a17328cea321'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '2fd74578be14964b7072c9d6ed7e84b013b688dd'
+          test "$(git hash-object src/features/team/teamTimesheetReport.ts)" = 'c1aeed25ea9abc6a61a6b8b88c786a5d8ce3639a'
+          test "$(git hash-object worker/index.ts)" = '82c0d5646996fb0f9b607e3d1c5d79a66e16717b'
+          test "$(git hash-object worker/domains/team.ts)" = 'cbc2301e26df9c1c7714d24cb5799e50b7e35aaf'
+          test "$(git hash-object worker/domains/team-attendance.ts)" = 'b11cc66a12dc3fab23a729a80f2667b45f81b24f'
+          test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '3cbd391fc8350541173417f2a0de7c840727f774'
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+          echo MAIN_TIMESHEET_EXACT_SOURCE_AND_D1_BINDING_PASS
+      - run: npm ci
+      - name: Verify regression, manager-only rights and production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-main-attendance-schema-preserve-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-main-manager-three-workspaces-20261022.mjs
+          npm run release:check
+          npm run build
+      - name: Read-only Main D1 preflight and fingerprint exact existing assigned shifts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS attendance_tables,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS audit_triggers,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_timesheet') AS shift_table" --json |
+            jq -e '.[0].results[0] | .attendance_tables==2 and .audit_triggers==3 and .shift_table==1'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json > /tmp/main-timesheet-before.json
+          jq -cS '.[0].results' /tmp/main-timesheet-before.json | sha256sum | cut -d' ' -f1 > /tmp/main-timesheet-before-sha
+          jq -er '.[0].results|length' /tmp/main-timesheet-before.json > /tmp/main-timesheet-before-count
+          echo "MAIN_TIMESHEET_BEFORE_DEPLOY: $(cat /tmp/main-timesheet-before-count) shifts (data not logged)"
+      - name: Verify D1 Time Travel recovery point and existing Worker deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" |
+            jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("Missing backup bookmark") end' > /tmp/main-timesheet-bookmark
+          test -s /tmp/main-timesheet-bookmark
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments" |
+            jq -er '.result.deployments | sort_by(.created_on) | last.id' > /tmp/main-timesheet-deployment-before
+          test -s /tmp/main-timesheet-deployment-before
+          echo 'Production D1 recovery point and previous Worker deployment verified.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Prepare explicit production-only Worker config and dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const raw=readFileSync('wrangler.jsonc','utf8')
+          const safe=raw.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/, '')
+          if(safe===raw||!safe.includes('"name": "orders-app"')||!safe.includes('"database_name": "orders_db_prod"')||
+             !safe.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')||safe.includes('orders_db_branch2'))
+            throw Error('Incorrect production target')
+          writeFileSync('.timesheet-main-release.jsonc',safe)
+          NODE
+          rm -f .wrangler/deploy/config.json
+          npx --no-install wrangler deploy --dry-run --outdir .timesheet-main-preview --config .timesheet-main-release.jsonc
+      - name: Publish reviewed Main Worker only - never mutate D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'cfa535b85b4a8d64072e493620eadc4a134bc433'
+          test -s /tmp/main-timesheet-bookmark
+          test -s /tmp/main-timesheet-before-sha
+          test -s /tmp/main-timesheet-deployment-before
+          rm -f .wrangler/deploy/config.json
+          npx --no-install wrangler deploy --config .timesheet-main-release.jsonc
+          echo "MAIN_TIMESHEET_WORKER_PUBLISHED: $GITHUB_SHA orders-app (no D1 writes)"
+      - name: Verify live Worker and byte-identical schedule after publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$(cat /tmp/main-timesheet-deployment-before)"
+          changed=no
+          for attempt in $(seq 1 10); do
+            deployed="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments" |
+              jq -er '.result.deployments | sort_by(.created_on) | last.id')"
+            if [[ "$deployed" != "$previous" ]]; then changed=yes; break; fi
+            sleep 4
+          done
+          test "$changed" = yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json > /tmp/main-timesheet-after.json
+          jq -cS '.[0].results' /tmp/main-timesheet-after.json | sha256sum | cut -d' ' -f1 > /tmp/main-timesheet-after-sha
+          diff -u /tmp/main-timesheet-before-sha /tmp/main-timesheet-after-sha
+          for attempt in $(seq 1 8); do
+            auth="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app.orders-clothes.workers.dev/api/auth/status)"
+            schedule="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app.orders-clothes.workers.dev/api/team/timesheet)"
+            mark="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' -X POST https://orders-app.orders-clothes.workers.dev/api/team/attendance)"
+            dds="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app.orders-clothes.workers.dev/api/dds)"
+            if [[ "$auth" == 200 && "$schedule" == 401 && "$mark" == 401 && "$dds" == 401 ]]; then
+              echo "MAIN_TIMESHEET_PUBLISHED_SCHEDULE_PRESERVED: $(cat /tmp/main-timesheet-before-count) shifts, auth=$auth schedule=$schedule mark=$mark dds=$dds, sha=$GITHUB_SHA"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "Main timesheet smoke failed auth=$auth schedule=$schedule mark=$mark dds=$dds" >&2
+          exit 1
