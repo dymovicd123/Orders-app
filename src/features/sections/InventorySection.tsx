@@ -2613,6 +2613,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        askActionConfirmation,
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
         inventoryMovementError,
