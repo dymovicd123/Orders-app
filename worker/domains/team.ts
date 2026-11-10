@@ -758,7 +758,7 @@ export async function listTeamTimesheet(db: D1Database, url: URL) {
        ORDER BY name ASC`
     ).all<any>(),
     db.prepare(
-      `SELECT tt.id, tt.work_date, tt.manager_id, m.name AS manager, COALESCE(m.color_key, '#475569') AS manager_color,
+      `SELECT tt.id, tt.work_date, tt.manager_id, m.name AS manager, COALESCE(m.role,'') AS manager_role, COALESCE(m.color_key, '#475569') AS manager_color,
               COALESCE(tt.work_until, '') AS work_until,
               COALESCE(tt.comment, '') AS comment,
               tt.created_at, tt.updated_at
@@ -786,7 +786,7 @@ export async function listTeamTimesheet(db: D1Database, url: URL) {
         colorKey: normalizeManagerColor(row.color_key, Number(row.id || 0) - 1),
         hiredAt: cleanText(row.hired_at),
       })),
-    entries: mapSqlRows(entriesResult).map((row: any) => ({
+    entries: mapSqlRows(entriesResult).filter((row:any)=>canAssignToTimesheet(row.manager,row.manager_role)).map((row: any) => ({
       id: Number(row.id || 0),
       date: cleanText(row.work_date),
       managerId: Number(row.manager_id || 0),
