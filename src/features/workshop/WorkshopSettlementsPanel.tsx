@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import '../../styles/stage04-workshop-settlements.css'
+import { ActionTextPromptModal, useActionTextPrompt } from '../../components/dialogs/ActionTextPromptModal'
 
 type RecentEvent = { id:number; event_type:string; business_date:string; source_business_date?:string|null; related_event_id?:number|null; product_name_snapshot:string|null; quantity:number|null; unit_cost:number|null; amount_delta:number|null; payment_method:string|null; comment:string|null }
 type LedgerEvent = RecentEvent & { isReversed:number; external_order_id:string|null; related_event_id:number|null }
@@ -40,12 +41,14 @@ function paymentIdempotency(body:string):string {
 }
 function clearPaymentId(){try{sessionStorage.removeItem(requestKey)}catch{ /* optional */ }}
 
-export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice,isAdmin}:{
+export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice,isAdmin,askActionConfirmation}:{
   openUnpricedRequest:number;onUnpricedCountChange:(count:number)=>void;
   openCatalogPrice:(productId:number|null,name:string)=>void;
   isAdmin:boolean;
+  askActionConfirmation:(text:string)=>Promise<boolean>;
 }) {
   const today=todayKz()
+  const {request: reasonRequest,askActionText,answerActionText}=useActionTextPrompt()
   const [view,setView]=useState<View>('home')
   const [summary,setSummary]=useState<Summary|null>(null)
   const [details,setDetails]=useState<Ledger|null>(null)
@@ -142,7 +145,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   const activate=async(e:FormEvent)=>{
     e.preventDefault()
     if(writeLocked.current||!mayActivate)return
-    if(!window.confirm('Запустить учёт цеха с начальным долгом '+money(openingAmount)+'? Готовые ранее изделия повторно не начисляются. Изменить эту сумму через форму после запуска нельзя.'))return
+    if(!(await askActionConfirmation('Запустить учёт цеха с начальным долгом '+money(openingAmount)+'? Готовые ранее изделия повторно не начисляются. Изменить эту сумму через форму после запуска нельзя.')))return
     writeLocked.current=true;setBusy(true);setError('');setNotice('')
     try {
       await api('/api/workshop/settlements/activate',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -169,10 +172,16 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   }
   const reversePayment=async(event:LedgerEvent)=>{
     if(!isAdmin||writeLocked.current||!activated)return
-    const reason=window.prompt('Причина отмены выплаты (сохранится в истории):')
+    const reason=await askActionText({
+      title:'Отмена выплаты цеху',
+      description:'Сумма выплаты: '+money(-Number(event.amount_delta||0))+'. После отмены задолженность перед цехом увеличится. Причина сохранится в истории.',
+      label:'Причина отмены (не менее 5 символов)',
+      minLength:5,
+      confirmLabel:'Продолжить отмену',
+    })
     if(reason===null)return
     if(reason.trim().length<5){setError('Укажите причину отмены не короче 5 символов.');return}
-    if(!window.confirm('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.'))return
+    if(!(await askActionConfirmation('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.')))return
     writeLocked.current=true;setBusy(true);setError('')
     try {
       await api('/api/workshop/settlements/payments/'+event.id+'/reverse',
@@ -183,8 +192,8 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   }
   const resolveCost=async(item:Unpriced)=>{
     if(!isAdmin||writeLocked.current||!activated||item.availableUnitCost===null)return
-    if(!window.confirm('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
-      ' за «'+item.productName+'» ('+item.quantity+' шт.)?'))return
+    if(!(await askActionConfirmation('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
+      ' за «'+item.productName+'» ('+item.quantity+' шт.)?')))return
     writeLocked.current=true;setBusy(true);setError('')
     try {
       await api('/api/workshop/settlements/unpriced/'+item.id+'/confirm-cost',{method:'POST'})
@@ -387,5 +396,6 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       {!detailLoading&&!unpriced?.items.length&&<p className="ws-settlements-footnote">Неразобранных позиций нет.</p>}
       {unpriced?.hasMore&&<p className="ws-settlements-footnote">Показаны последние 50 позиций. После разбора обновите список.</p>}
     </div>}
+    <ActionTextPromptModal request={reasonRequest} onDecision={answerActionText}/>
   </section>
 }
