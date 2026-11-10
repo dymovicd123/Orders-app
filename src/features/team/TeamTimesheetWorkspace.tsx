@@ -52,8 +52,7 @@ function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:
   useEffect(()=>{
     const previous=document.activeElement instanceof HTMLElement?document.activeElement:null
     const items=()=>Array.from(area.current?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')||[])
-    const firstField=area.current?.querySelector<HTMLElement>('input:not([disabled]),select:not([disabled]),textarea:not([disabled])')
-    ;(firstField||items().find(x=>!x.classList.contains('tw-close'))||items()[0])?.focus()
+    ;(items().find(x=>!x.classList.contains('tw-close'))||items()[0])?.focus({preventScroll:true})
     const keydown=(e:KeyboardEvent)=>{
       if(e.key==='Escape'){e.preventDefault();closeRef.current()}
       if(e.key==='Tab'){
@@ -416,10 +415,14 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
       </Dialog>}
     {editor&&<Dialog title={'Отметка: '+editor.name} note={dateLabel(date)+' · явку можно исправить или добавить время ухода.'} onClose={closeEdit}>
       <form className="tw-form" onSubmit={onEditSubmit}>
-        <label>Явка<select value={markState} onChange={e=>{setMarkState(e.target.value as MarkState);if(e.target.value!=='present')setMarkEnded('')}}>
-          <option value="unmarked">Нет отметки</option><option value="present">Пришёл</option>
-          <option value="absent">Не пришёл</option><option value="excused">Уважительная причина</option>
-        </select></label>
+        <div className="tw-mark-choice"><strong>Явка</strong>
+          <div className="tw-mark-options" role="group" aria-label="Состояние явки">
+            {([['present','Пришёл'],['absent','Не пришёл'],['excused','Уважительная причина']] as const).map(([value,label])=>
+              <button type="button" key={value} className={'tw-mark-option '+value+(markState===value?' chosen':'')}
+                aria-pressed={markState===value} onClick={()=>{setMarkState(value);if(value!=='present')setMarkEnded('')}}>{label}</button>)}
+          </div>
+          {editor.mark&&<button className="tw-mark-clear" type="button" aria-pressed={markState==='unmarked'} onClick={()=>{setMarkState('unmarked');setMarkEnded('')}}>Убрать отметку</button>}
+        </div>
         {markState==='present'&&<label>Время ухода (необязательно)
           <input type="time" value={markEnded} onChange={e=>setMarkEnded(e.target.value)}/></label>}
         <label>Комментарий (необязательно)<textarea rows={2} maxLength={350} value={markNote}
