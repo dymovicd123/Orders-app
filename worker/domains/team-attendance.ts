@@ -67,7 +67,13 @@ export async function saveTeamAttendance(db:D1Database,input:TeamAttendanceInput
     WHERE manager_id=? AND work_date=?`).bind(managerId,date).first<{id:number;status:string;finished_at:string|null;comment:string}>()
   if(!scheduled&&!existing)throw invalid('Сначала назначьте сотрудника на выбранный день.',409)
   if(status==='unmarked'){
-    if(existing)await db.prepare('DELETE FROM team_attendance_marks WHERE id=?').bind(existing.id).run()
+    if(existing){
+      // The DELETE audit trigger reads the actor stored in OLD: update it before removal.
+      // Updating only this metadata does not create a spurious attendance-change audit row.
+      await db.prepare('UPDATE team_attendance_marks SET updated_by_user_id=?,updated_at=? WHERE id=?')
+        .bind(actor.id,new Date().toISOString(),existing.id).run()
+      await db.prepare('DELETE FROM team_attendance_marks WHERE id=?').bind(existing.id).run()
+    }
     return {ok:true,cleared:true}
   }
   const now=new Date().toISOString()
