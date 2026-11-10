@@ -31,7 +31,7 @@ const network=ui.indexOf("const response=await apiFetch('/api/team/attendance'")
 assert.ok(update>=0&&network>update,'Show chosen attendance immediately')
 assert.ok(ui.includes('markingRef.current.has(key)')&&ui.includes('pendingMarks[date+\':\'+row.id]'),
   'Only concurrent edits to the same employee/day should be blocked')
-assert.ok(ui.includes('void loadTeamTimesheet(date.slice(0,7)).catch(()=>{})'),
+assert.ok(ui.includes('if(markingRef.current.size===0)void loadTeamTimesheet(date.slice(0,7)).catch(()=>{})'),
   'Attendance refresh must not hold up interaction')
 assert.ok(ui.includes('setMarkErrors(previous=>'), 'Failed saves must be made visible')
 
