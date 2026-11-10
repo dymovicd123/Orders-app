@@ -72,3 +72,33 @@
     width: 100%;
   }
 }
+
+
+.action-text-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  margin: 18px 0 7px;
+}
+.action-text-input {
+  width: 100%;
+  min-height: 95px;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--card-bg, #fff);
+  color: var(--text, #172033);
+  font: inherit;
+  line-height: 1.5;
+}
+.action-text-input:focus-visible {
+  outline: 2px solid var(--primary, #2563eb);
+  outline-offset: 2px;
+}
+.action-text-error {
+  color: var(--danger, #b91c1c);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
