@@ -192,7 +192,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
       await loadTeamTimesheet(timesheetMonth)
       void loadTeamSalaryReport()
       setPlanning(false);setConfirmClear(false)
-      setNotice(clear?'Выбранные назначения сняты. Отметки явки сохранены.':'Добавлено новых смен: '+newAssignments+'. Существующие не изменены.')
+      setNotice(clear?'Выбранные назначения сняты. Отметки явки сохранены.':'График обновлён. Существующие смены не изменены.')
     }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка сохранения графика.')}
     finally{busy.current=false;setSaving(false)}
   }
@@ -289,7 +289,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         <div className="tw-tools"><button type="button" className="secondary compact" onClick={()=>shiftMonth(-1)}>←</button>
           <input aria-label="Месяц табеля" type="month" value={timesheetMonth} onChange={e=>{if(e.target.value)selectMonth(e.target.value)}}/>
           <button type="button" className="secondary compact" onClick={()=>shiftMonth(1)}>→</button>
-          <button type="button" className="secondary compact" onClick={()=>setTimesheetMonth(current.slice(0,7))}>Этот месяц</button></div>
+          <button type="button" className="secondary compact" onClick={()=>selectMonth(current.slice(0,7))}>Этот месяц</button></div>
       </div>
       <p className="tw-note">Выберите день, чтобы посмотреть его состав и изменить отдельные смены. Массовое назначение — кнопка «+ Составить график» сверху.</p>
       <div className="tw-calendar-scroll"><div className="tw-calendar">
@@ -336,8 +336,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,timesheetMonth,timeshee
         <div className="tw-calendar-detail">
 
         <div className="tw-calendar-detail-head"><div>
-          <span className="tw-kicker">СМЕНЫ ВЫБРАННОГО ДНЯ</span>
-          <h4>{dayLabel(date)}</h4>
+          <span className="tw-kicker">СОСТАВ СМЕНЫ</span>
           <p>{dayPlanEntries.length?dayPlanEntries.length+' сотрудников по графику':'На этот день смен пока нет'}</p>
         </div><div className="tw-calendar-detail-actions">
           {isAdmin&&<button type="button" className="tw-primary-assign" onClick={()=>openPlannerForDate(date)}>+ Добавить сотрудников</button>}
