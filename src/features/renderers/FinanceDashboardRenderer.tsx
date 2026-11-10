@@ -1,5 +1,6 @@
 // @ts-nocheck -- extracted view renderer; controller remains typed in App.tsx.
 import { financeRecordedAt } from '../finance/FinanceDayView'
+import { DdsWorkspace } from '../finance/DdsWorkspace'
 
 type RendererContext = Record<string, any>
 
@@ -68,6 +69,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     { id: 'debts', label: 'Долги', hint: 'Текущие и закрытые' },
     { id: 'returns', label: 'Возвраты / обмены', hint: 'По дате операции' },
     { id: 'cash', label: 'Касса', hint: 'Наличные сейчас' },
+    { id: 'dds', label: 'ДДС', hint: 'Ежедневные расходы' },
     { id: 'methods', label: 'Способы оплаты', hint: 'Справочник оплат' },
   ]
 
@@ -82,6 +84,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     </div>
   )
 
+
+  if (financeMode === 'dds') return <div className="finance-tabs-shell finance-truth-shell">{financeTabsNode}<DdsWorkspace apiFetch={ctx.apiFetch} isAdmin={Boolean(isAdmin)} /></div>
 
   if (financeMode === 'cash') {
     const entryTypeLabel = (entryType: string) => ({
