@@ -12,6 +12,7 @@ type Draft = { variantId?: number | string; draftKey?:string; createMissingVaria
   material?:string;length?:string;color?:string;size?:string;
   quantity?: number; touched?: boolean }
 type Props = {
+  askActionConfirmation: (message: string) => Promise<boolean>
   mode: Mode; source: 'warehouse' | 'boutique'; targetSource: 'warehouse' | 'boutique'
   targetQuantity: (variantId: string | number) => number; onSwap: () => void
   groups: Group[]; draft: Draft[]
@@ -114,26 +115,26 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     }
   },[stage,busy,changed])
 
-  function toggleProduct(key: string) {
+  async function toggleProduct(key: string) {
     const remove = selected.includes(key)
     if(remove) {
       const g = groups.find(item => item.key === key)
       const filled = (g?.rows || []).filter(row => movementInput(mode,draftMap.get(String(row.variantId))) !== '')
-      if(filled.length && !window.confirm('Убрать товар и очистить ' + filled.length + ' введённых значений?')) return
+      if(filled.length && !(await p.askActionConfirmation('Убрать товар и очистить ' + filled.length + ' введённых значений?'))) return
       for(const row of filled) p.onQuantity(row,'')
     }
     setSelected(old => remove ? old.filter(k => k !== key) : [...old,key])
     if(!remove) setCurrent(key)
   }
-  function setSource(next: 'warehouse' | 'boutique') {
+  async function setSource(next: 'warehouse' | 'boutique') {
     if(next === source)return
     if(mode === 'arrival' && extraArrival.rows>0 &&
-      !window.confirm('Есть несохранённые новые варианты прихода. При смене точки они будут очищены. Продолжить?')) return
+      !(await p.askActionConfirmation('Есть несохранённые новые варианты прихода. При смене точки они будут очищены. Продолжить?'))) return
     p.onSource(next)
     setNotice('')
   }
-  function reset() {
-    if(changed && !window.confirm('Очистить все несохранённые количества?'))return
+  async function reset() {
+    if(changed && !(await p.askActionConfirmation('Очистить все несохранённые количества?')))return
     p.onClear();setStage('select');setSelected([]);setCurrent('');setProductSearch('');setStartSearch('');setNewVariant(false);setNotice('')
   }
   function addInlineVariant(sample:Row) {
@@ -201,9 +202,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           ['manual_set','Корректировка','Установить фактический остаток'],['transfer','Перемещение','Между точками']] as const)
           .filter(([key]) => key !== 'arrival' || isAdmin).map(([key,label,hint]) =>
             <button type="button" key={key} className={'stocktake-start-mode '+(mode === key?'is-active':'')}
-              disabled={busy} onClick={() => {
+              disabled={busy} onClick={async () => {
                 if(key === mode)return
-                if(changed && !window.confirm('Сменить операцию? Неотправленные данные этого режима будут очищены.'))return
+                if(changed && !(await p.askActionConfirmation('Сменить операцию? Неотправленные данные этого режима будут очищены.')))return
                 p.onMode(key)
               }}><strong>{label}</strong><span>{hint}</span></button>)}
       </div>
@@ -215,12 +216,18 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label={mode==='transfer'?'Откуда перемещаем':'Место операции'}>
         {(['warehouse','boutique'] as const).map(key => <button type="button" role="tab" key={key}
           aria-selected={source === key} className={source === key?'is-active':''} disabled={busy}
-          onClick={() => mode==='transfer' ? (key!==source&&(!changed||window.confirm('Сменить направление? Введённые количества перемещения будут очищены.'))&&p.onSwap()) : setSource(key)}>{sourceName(key)}</button>)}
+          onClick={async () => {
+             if (key === source) return
+             if (mode === 'transfer') {
+               if (changed && !(await p.askActionConfirmation('Сменить направление? Введённые количества перемещения будут очищены.'))) return
+               p.onSwap()
+             } else await setSource(key)
+           }}>{sourceName(key)}</button>)}
       </div>
       {mode==='transfer' && <div className="w7-transfer-target">
         <span aria-hidden="true">→</span>
         <strong>{sourceName(targetSource)}</strong>
-        <button type="button" className="secondary compact" disabled={busy} onClick={()=>{if(changed&&!window.confirm('Сменить направление? Введённые количества перемещения будут очищены.'))return;p.onSwap()}}>⇄ Поменять направление</button>
+        <button type="button" className="secondary compact" disabled={busy} onClick={async()=>{if(changed&&!(await p.askActionConfirmation('Сменить направление? Введённые количества перемещения будут очищены.')))return;p.onSwap()}}>⇄ Поменять направление</button>
       </div>}
     </div>
     {mode==='transfer'&&blockedTransferSource&&<div className="w8-transfer-stocktake-lock" role="alert">
@@ -251,8 +258,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           {!!chosen.length && <div className="stocktake-selective-queue">
             <div className="stocktake-selective-queue-head"><div><strong>Вы будете изменять</strong>
               <span>{chosen.length} товаров</span></div>
-              <button className="ghost compact" type="button" onClick={() => {
-                if(changed && !window.confirm('Очистить выбранные товары и числа?'))return
+              <button className="ghost compact" type="button" onClick={async () => {
+                if(changed && !(await p.askActionConfirmation('Очистить выбранные товары и числа?')))return
                 for(const g of chosen) for(const row of g.rows) if(movementInput(mode,draftMap.get(String(row.variantId)))!=='')p.onQuantity(row,'')
                 setSelected([]);setCurrent('')
               }}>Очистить</button>
