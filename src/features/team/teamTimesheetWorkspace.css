@@ -174,3 +174,6 @@
  .tw-dialog{padding:18px}
  .tw-plan-people button{flex:1 1 auto}
 }
+
+.tw-plan-existing{font-size:12px;line-height:1.5;background:#fff5e7;color:#896122;border:1px solid #ead7b8;border-radius:9px;padding:10px 12px;margin:0}
+.tw-dialog .tw-actions.split{position:sticky;bottom:-18px;z-index:2;background:var(--card,#fff);padding-bottom:2px}
