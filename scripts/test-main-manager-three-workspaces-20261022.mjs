@@ -27,7 +27,7 @@ assert(team.includes('<TeamTimesheetWorkspace') && timesheetWorkspace.includes('
 assert(team.includes('if (!isAdmin) return (') && team.includes('isAdmin={false}') &&
   team.includes('canMarkAttendance={authUser?.role'),
   'Managers must see only the attendance workspace, never employee or salary administration')
-assert(app.includes("module.id === 'team' && !isAdmin ? 'Посещаемость'"),
+assert(readFileSync('src/App.tsx','utf8').includes("module.id === 'team' && !isAdmin ? 'Посещаемость'"),
   'Manager sidebar must label restricted Team sector as attendance')
 assert(!team.includes('Сымбат и администраторы не назначаются в табель'), 'Obsolete personalized timesheet notice returned')
 assert(!team.includes('Выбери дни в календаре, сотрудников и время работы'), 'Obsolete timesheet instructions returned')
