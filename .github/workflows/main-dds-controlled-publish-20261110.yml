@@ -1,0 +1,134 @@
+name: One-shot exact Main DDS publish (no schema or D1 writes)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-dds-controlled-publish-20261110.yml'
+permissions:
+  contents: read
+
+concurrency:
+  group: one-shot-main-dds-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: "${{ github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release(main): dds manual publish') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin immutable release parent, files and exact production Worker/D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD^)" = '6d1097a00da9209c5e82390724f154fe8e083b06'
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/cloudflare-deploy-monitor.yml' '.github/workflows/main-dds-controlled-publish-20261110.yml')"
+          test "$actual" = "$expected"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test "$(git hash-object worker/domains/dds.ts)" = '577ab497c5e4d17c6b80e542c198749d708d588a'
+          test "$(git hash-object src/features/finance/DdsWorkspace.tsx)" = '2bcd6e63c74ae77509baa1e9e221d17e8a3dce7a'
+          test "$(git hash-object migrations/0120_shared_dds_ledger.sql)" = 'c7e521fb6d8fe003d157263bc8886bd6e2f0a98b'
+          test "$(git hash-object migrations/0121_dds_directory.sql)" = '974d21a1b89bc6e7079a30cec0023d2fc5cba59d'
+          echo 'MAIN_DDS_MANUAL_SOURCE_AND_TARGET_PIN_PASS: exact production Worker only'
+      - run: npm ci
+      - name: Rerun DDS SQLite, Excel, business regression, and TypeScript production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+          npm run release:check
+          npm run build
+      - name: Prove production DDS schema exists; SELECT only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('dds_entries','dds_categories','dds_articles')) AS tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('dds_prevent_overdraft','dds_expense_active_article_guard')) AS triggers,
+              (SELECT COUNT(*) FROM dds_categories) AS categories,
+              (SELECT COUNT(*) FROM dds_articles) AS articles
+          " --json | jq -ec '.[0].results[0] | .tables==3 and .triggers==2 and .categories>=12 and .articles>=50'
+          echo 'MAIN_DDS_PRODUCTION_D1_READY_READ_ONLY'
+      - name: Create explicit production-only deploy config and dry run, no database writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          const original=readFileSync('wrangler.jsonc','utf8')
+          const safe=original.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/, '')
+          if(safe===original)throw new Error('Unable to disable implicit rebuild redirect safely')
+          if(!safe.includes('"name": "orders-app"')||!safe.includes('"database_name": "orders_db_prod"')||!safe.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'))
+            throw new Error('Production binding mismatch')
+          if(safe.includes('orders_db_branch2'))throw new Error('Branch2 DB leaked into Main')
+          writeFileSync('.dds-prod-release.jsonc',safe)
+          NODE
+          rm -f .wrangler/deploy/config.json
+          npx --no-install wrangler deploy --dry-run --outdir .dds-production-package-preview --config .dds-prod-release.jsonc
+          echo 'MAIN_DDS_PRODUCTION_WORKER_DRY_RUN_PASS'
+      - name: Capture current live Worker deployment before controlled publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments" \
+            | jq -er '.result.deployments | sort_by(.created_on) | last.id' > /tmp/main-dds-before-deployment
+          test -s /tmp/main-dds-before-deployment
+      - name: Deploy exactly Main Worker (no D1 migrations)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '6d1097a00da9209c5e82390724f154fe8e083b06'
+          test -s /tmp/main-dds-before-deployment
+          test -f .dds-prod-release.jsonc
+          rm -f .wrangler/deploy/config.json
+          npx --no-install wrangler deploy --config .dds-prod-release.jsonc
+          echo "MAIN_DDS_MANUAL_PUBLISHED: exact Git SHA $GITHUB_SHA to orders-app"
+      - name: Verify live deployment and anonymous route access guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$(cat /tmp/main-dds-before-deployment)"
+          changed=""
+          for attempt in $(seq 1 10); do
+            live="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments")"
+            deployed="$(jq -er '.result.deployments | sort_by(.created_on) | last.id' <<<"$live")"
+            if [[ "$deployed" != "$previous" ]]; then
+              echo "$live" | jq -ec '.result.deployments | sort_by(.created_on) | last | {id,versions}'
+              changed=yes
+              break
+            fi
+            sleep 4
+          done
+          test "$changed" = yes
+          for attempt in $(seq 1 8); do
+            status="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app.orders-clothes.workers.dev/api/auth/status)"
+            dds="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app.orders-clothes.workers.dev/api/dds)"
+            funding="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' -X POST https://orders-app.orders-clothes.workers.dev/api/dds/funds)"
+            if [[ "$status" == 200 && "$dds" == 401 && "$funding" == 401 ]]; then
+              echo "MAIN_DDS_PRODUCTION_PUBLISHED_AND_SMOKE_PASS: auth=$status anonymous_dds=$dds anonymous_funding=$funding"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "MAIN_DDS_SMOKE_FAILED auth=$status dds=$dds funding=$funding" >&2
+          exit 1
