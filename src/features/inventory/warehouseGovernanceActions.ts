@@ -3,6 +3,7 @@ import type { InventoryAuditResponse, InventoryControlSettings, InventoryMovemen
 import { readJsonResponse } from '../../app/utils'
 
 type WarehouseGovernanceArgs = {
+  askActionConfirmation: (text: string) => Promise<boolean>
   canManageWarehouse: boolean
   inventoryAuditBusy: boolean
   setInventoryAuditBusy: Dispatch<SetStateAction<boolean>>
@@ -21,6 +22,7 @@ type WarehouseGovernanceArgs = {
 
 // Preserve exact permission gates, confirmation text and post-write refresh semantics.
 export function createWarehouseGovernanceActions({
+  askActionConfirmation,
   canManageWarehouse,
   inventoryAuditBusy,
   setInventoryAuditBusy,
@@ -53,7 +55,7 @@ export function createWarehouseGovernanceActions({
     if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return
     if (resolved) {
       const question = 'Подтверждайте расхождение только после фактической сверки этой позиции. Система НЕ изменит остаток автоматически — она запомнит, что исторический разрыв проверен сотрудником. Продолжить?'
-      if (!window.confirm(question)) return
+      if (!await askActionConfirmation(question)) return
     }
     setInventoryAuditBusy(true)
     setError(null)
@@ -92,7 +94,7 @@ export function createWarehouseGovernanceActions({
     const question = nextEnabled
       ? 'Включить автосписание? Новые заказы со склада и бутика снова будут сразу менять остатки.'
       : 'Выключить автосписание? Новые заказы сохранятся, но остатки не изменятся, пока администратор не запустит отложенное списание.'
-    if (!window.confirm(question)) return
+    if (!await askActionConfirmation(question)) return
     setInventoryControlBusy(true)
     setError(null)
     try {
@@ -118,7 +120,7 @@ export function createWarehouseGovernanceActions({
       setMessage('Отложенных списаний нет.')
       return
     }
-    if (!window.confirm(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
+    if (!await askActionConfirmation(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
     setInventoryControlBusy(true)
     setError(null)
     try {
@@ -141,7 +143,7 @@ export function createWarehouseGovernanceActions({
   async function reverseInventoryMovement(movement: InventoryMovementRecord) {
     if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return
     const label = `${movement.productName} · ${movement.quantityDelta >= 0 ? '+' : ''}${movement.quantityDelta}`
-    if (!window.confirm(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
+    if (!await askActionConfirmation(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
     setReversingInventoryMovementId(movement.id)
     setError(null)
     try {
