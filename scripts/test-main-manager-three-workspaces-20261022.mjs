@@ -7,12 +7,12 @@ import { workspaceModules } from '../src/app/constants.ts'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from '../src/app/managerWorkspaceAccess.ts'
 
 const managerIds = workspaceModules.filter(item => canSeeWorkspaceMenuItem('manager', item.id)).map(item => item.id)
-assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory', 'finance', 'leads', 'plan', 'reports'], 'Managers must see the current approved operational workspaces')
+assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory', 'finance', 'team', 'leads', 'plan', 'reports'], 'Managers must see the current approved operational workspaces')
 assert.equal(workspaceModules.filter(item => canSeeWorkspaceMenuItem('admin', item.id)).length, workspaceModules.length, 'Admin navigation must remain complete')
-for (const sector of ['orders', 'workshop', 'inventory', 'reports', 'finance', 'leads', 'plan']) {
+for (const sector of ['orders', 'workshop', 'inventory', 'reports', 'finance', 'team', 'leads', 'plan']) {
   assert(canOpenWorkspaceSector('manager', sector), 'Manager lost an operational workspace: '+sector)
 }
-for (const sector of ['overview', 'clients', 'references', 'team', 'kaspi']) {
+for (const sector of ['overview', 'clients', 'references', 'kaspi']) {
   assert(!canOpenWorkspaceSector('manager', sector), 'Forbidden workspace reachable: '+sector)
   assert(canOpenWorkspaceSector('admin', sector), 'Administrator lost workspace: '+sector)
 }
@@ -24,6 +24,11 @@ const team = readFileSync('src/features/sections/TeamSection.tsx','utf8')
 const timesheetWorkspace = readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
 assert(team.includes('<TeamTimesheetWorkspace') && timesheetWorkspace.includes('<h3>Табель сотрудников</h3>'),
   'Timesheet heading and workspace must remain visible after extraction')
+assert(team.includes('if (!isAdmin) return (') && team.includes('isAdmin={false}') &&
+  team.includes('canMarkAttendance={authUser?.role'),
+  'Managers must see only the attendance workspace, never employee or salary administration')
+assert(app.includes("module.id === 'team' && !isAdmin ? 'Посещаемость'"),
+  'Manager sidebar must label restricted Team sector as attendance')
 assert(!team.includes('Сымбат и администраторы не назначаются в табель'), 'Obsolete personalized timesheet notice returned')
 assert(!team.includes('Выбери дни в календаре, сотрудников и время работы'), 'Obsolete timesheet instructions returned')
 const app = readFileSync('src/App.tsx','utf8')
