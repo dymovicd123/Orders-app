@@ -19,6 +19,7 @@ function today(){
 }
 const dayLabel=(date:string)=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',weekday:'long',timeZone:'UTC'}).format(new Date(date+'T12:00:00Z'))
 const dateLabel=(date:string)=>date.split('-').reverse().join('.')
+const currentDepartureTime=()=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())
 function daysOfMonth(month:string){
   const [y,m]=month.split('-').map(Number)
   const end=new Date(Date.UTC(y,m,0)).getUTCDate()
@@ -332,8 +333,13 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
             <button type="button" className="tw-quick arrived" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'present')}>Пришёл</button>
             <button type="button" className="tw-quick absent" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'absent')}>Не пришёл</button>
             <button type="button" className="tw-quick excused" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>void record(row,'excused')}>Уваж. причина</button>
-          </>:canMark?<button type="button" className="secondary compact" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>openEditor(row)}>
-            {row.mark?.status==='present'&&!row.mark.finishedAt?'Указать уход / изменить':'Изменить отметку'}</button>:null}
+          </>:canMark?<div className="tw-mark-completed-actions">
+            {row.mark?.status==='present'&&!row.mark.finishedAt&&date===current&&
+              <button type="button" className="tw-quick departed" disabled={!!pendingMarks[date+':'+row.id]}
+                onClick={()=>void record(row,'present',currentDepartureTime(),row.mark?.comment||'')}>Ушёл</button>}
+            <button type="button" className="secondary compact" disabled={!!pendingMarks[date+':'+row.id]} onClick={()=>openEditor(row)}>
+              Изменить</button>
+          </div>:null}
             {pendingMarks[date+':'+row.id]&&<small className="tw-mark-saving">Сохраняется…</small>}
             {markErrors[date+':'+row.id]&&<small className="tw-mark-failed" role="alert">{markErrors[date+':'+row.id]}</small>}
           </div>
