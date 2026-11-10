@@ -6,7 +6,8 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 const catalog = read('worker/domains/catalog.ts')
 const reservations = read('worker/domains/order-reservations.ts')
 const lifecycle = read('worker/domains/lifecycle.ts')
-const inventory = read('worker/domains/inventory-movement.ts')
+// Arrival-only SKU identity checks moved verbatim into the materialization module in Main refactor #878.
+const inventory = read('worker/domains/inventory-arrival-materialization.ts')
 
 check(catalog.includes('options: { activeOnly?: boolean } = {}'), 'canonical snapshot has no active-only operational mode')
 check(catalog.includes("v.is_active = 1 AND p.is_active = 1"), 'active-only canonical snapshot does not require live SKU + product')
