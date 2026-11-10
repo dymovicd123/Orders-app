@@ -76,6 +76,9 @@ jobs:
       - name: Verify Branch2 planned vs actual team attendance and audit
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-attendance-v1-20261110.mjs
+      - name: Verify manager attendance one-tap actions and stable editor focus
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-team-attendance-manager-ux-20261110.mjs
       - name: Verify daily navigation and monthly date-by-employee timesheet journal
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-timesheet-report-v2-20261110.mjs
