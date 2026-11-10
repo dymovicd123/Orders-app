@@ -1,0 +1,117 @@
+name: Main timesheet stage 1 - additive attendance schema, preserve schedule
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-schema-20261110.yml'
+      - 'migrations/0122_team_actual_attendance.sql'
+      - 'scripts/test-main-attendance-schema-preserve-20261110.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-schema-20261110.yml'
+      - 'migrations/0122_team_actual_attendance.sql'
+      - 'scripts/test-main-attendance-schema-preserve-20261110.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: main-timesheet-schema-one-shot
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Test additive SQLite migration twice, leave current assignments unchanged
+        run: node scripts/test-main-attendance-schema-preserve-20261110.mjs
+      - name: Verify production binding and compile current unchanged Main frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          npm run build
+  install:
+    if: "github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'schema(main): attendance additive preserve shifts')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify exact one-shot schema change and production D1 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'a4bf448ebecf6b301ea9a0b95011b60af36086bf'
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/main-timesheet-schema-20261110.yml' 'migrations/0122_team_actual_attendance.sql' 'scripts/test-main-attendance-schema-preserve-20261110.mjs')"
+          test "$actual" = "$expected"
+          test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc; then exit 15; fi
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          if grep -Eiq '^[[:space:]]*(DELETE|UPDATE|REPLACE|DROP|ALTER|TRUNCATE)[[:space:]]' migrations/0122_team_actual_attendance.sql; then exit 16; fi
+          echo MAIN_TIMESHEET_SCHEMA_SCOPE_SAFE
+      - run: npm ci
+      - run: node scripts/test-main-attendance-schema-preserve-20261110.mjs
+      - name: Check that actual attendance schema is absent, and hash live Main schedule before writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS attendance_tables,
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS attendance_triggers,
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_timesheet') AS existing_shift_table" --json > /tmp/timesheet-prod-schema-before.json
+          jq -e '.[0].results[0] | .attendance_tables==0 and .attendance_triggers==0 and .existing_shift_table==1' /tmp/timesheet-prod-schema-before.json
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json > /tmp/timesheet-prod-rows-before.json
+          jq -cS '.[0].results' /tmp/timesheet-prod-rows-before.json | sha256sum | cut -d' ' -f1 > /tmp/timesheet-prod-sha-before
+          jq -er '.[0].results|length' /tmp/timesheet-prod-rows-before.json > /tmp/timesheet-prod-count-before
+          echo "MAIN_TIMESHEET_BASELINE_CAPTURED: $(cat /tmp/timesheet-prod-count-before) assigned shifts (no personal details logged)"
+      - name: Capture Cloudflare D1 point-in-time recovery bookmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" |
+            jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("Missing recovery bookmark") end' > /tmp/main-timesheet-recovery-bookmark
+          test -s /tmp/main-timesheet-recovery-bookmark
+          echo 'Production D1 Time Travel bookmark verified before schema addition; no restore performed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Add ONLY isolated attendance tables and audit triggers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /tmp/main-timesheet-recovery-bookmark
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0122_team_actual_attendance.sql
+      - name: Confirm new empty attendance and exact preservation of live shifts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS attendance_tables,
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS attendance_triggers,
+          (SELECT COUNT(*) FROM team_attendance_marks) AS mark_count,
+          (SELECT COUNT(*) FROM team_attendance_changes) AS audit_count" --json |
+            jq -e '.[0].results[0] | .attendance_tables==2 and .attendance_triggers==3 and .mark_count==0 and .audit_count==0'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json > /tmp/timesheet-prod-rows-after.json
+          jq -cS '.[0].results' /tmp/timesheet-prod-rows-after.json | sha256sum | cut -d' ' -f1 > /tmp/timesheet-prod-sha-after
+          diff -u /tmp/timesheet-prod-sha-before /tmp/timesheet-prod-sha-after
+          echo "MAIN_TIMESHEET_SCHEMA_CREATED_SCHEDULE_UNCHANGED: $(cat /tmp/timesheet-prod-count-before) existing assigned shifts retained"
