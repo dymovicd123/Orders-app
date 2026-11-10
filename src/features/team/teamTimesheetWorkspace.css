@@ -299,7 +299,7 @@
 .tw-plan-footer-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tw-plan-footer-left button{min-height:40px}
 .tw-report-mobile-days,.tw-calendar-mobile{display:none}
-@media(max-width:720px){
+@media(max-width:900px){
   .tw-report-table-scroll{display:none}
   .tw-report-mobile-days{display:grid;gap:10px}
   .tw-report-mobile-day{border:1px solid var(--tw-line,#dfe7ec);border-radius:11px;overflow:hidden}
