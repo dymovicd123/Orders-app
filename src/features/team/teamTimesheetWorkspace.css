@@ -371,3 +371,9 @@
   .tw-day-heading-actions button{width:100%}
   .tw-date-direct input{max-width:180px;min-width:0}
 }
+
+.tw-mobile-schedule-status{display:flex;flex-wrap:wrap;gap:8px}
+.tw-mobile-schedule-status small{font-size:11px}
+.tw-mobile-schedule-status .green{color:#287851}
+.tw-mobile-schedule-status .red{color:#b15e52}
+.tw-mobile-schedule-status .amber{color:#a07737}
