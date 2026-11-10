@@ -1,0 +1,114 @@
+name: One-shot reviewed Branch2 warehouse reporting release
+# Standalone reports: the existing Statistics page remains immutable.
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-warehouse-reports-release-20261110.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-warehouse-reports-release-20261110.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-warehouse-report-release-20261110
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify isolated test Worker and no Production D1 target
+        run: node scripts/branch2-manual-release.mjs --check
+      - name: Check read-only finance and complete Excel report
+        run: |
+          npm ci
+          node scripts/test-warehouse-capital-readonly-20261110.mjs
+          node scripts/test-warehouse-reports-excel-20261110.mjs
+      - name: Real Wrangler package preview, no publishing
+        run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): warehouse reports and valuation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Lock branch, review parent, code and unchanged original Statistics page
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '0877ce93bbe2fa8b0aabbfe53a7e317990b91c9d'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-warehouse-reports-release-20261110.yml'
+          test "$(git hash-object src/features/inventory/views/InventoryDemandStatistics.tsx)" = '364f78c1e98d2fbf6f8bdd69429809bbffb1ba20'
+          test "$(git hash-object src/features/inventory/views/inventory-demand-statistics.css)" = 'af4f4c044737e017798fd62b5d2abf5c7e6eda84'
+          test "$(git hash-object worker/domains/warehouse-demand.ts)" = 'e0a35dd872f8d1a7bf5a6aa9c6fe310784993967'
+          test "$(git hash-object src/features/inventory/views/WarehouseReportsWorkspace.tsx)" = '46bb5c8797bc65daa72f0b0281e64aade7bbe6a3'
+          test "$(git hash-object src/features/inventory/views/warehouse-report-workspace.css)" = '13af7801e3db798b8df5c89341eef751ad510def'
+          test "$(git hash-object src/features/inventory/views/warehouseReportExcel.ts)" = 'ce19cb2c0bfebcdec2e3431fd9067375841bfd4a'
+          test "$(git hash-object worker/domains/warehouse-capital.ts)" = '1bf091334396d6230cac1c6eccd121783e7da9d2'
+          test "$(git hash-object shared/warehouse-capital-types.ts)" = '08c8ea5f1743b9eebf76666276f2abef4e2004eb'
+          test "$(git hash-object src/features/sections/InventorySection.tsx)" = '08c04f921094d21c40053a0c3552c28e8ef40f4e'
+          test "$(git hash-object src/app/types.ts)" = '1ce8fb8ec368caa60bdf4adc63db2a4ed5f45bf3'
+          test "$(git hash-object worker/index.ts)" = 'd806f28af72c73a6d05c6f123c4cb03507c04204'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '07d9bab79b51bbf1ba65a1805cb307fc9640c82c'
+          test "$(git hash-object scripts/test-warehouse-capital-readonly-20261110.mjs)" = 'f62b86728e32246e4e34286d104c64a06f2d2a9b'
+          test "$(git hash-object scripts/test-warehouse-reports-excel-20261110.mjs)" = '710d2a79c8b10af848143e3dcb8d8c44b89fc7f8'
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+          echo 'BRANCH2_WAREHOUSE_REPORTS_SOURCE_AND_ORIGINAL_STATISTICS_UNCHANGED_PASS'
+      - name: Verify actual Branch2 stock schema SELECT-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/test-warehouse-capital-readonly-20261110.mjs
+          node scripts/test-warehouse-reports-excel-20261110.mjs
+          schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','catalog_variants','catalog_products')) AS base_tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS price_table" --json)"
+          printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .base_tables == 3 and (.price_table == 0 or .price_table == 1)'
+          echo 'BRANCH2_WAREHOUSE_REPORTS_SCHEMA_SELECT_ONLY_PASS'
+      - name: Recheck business gate, build and publish ONLY Branch2 Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
+      - name: Verify anonymous clients cannot retrieve warehouse financial costs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 6); do
+            auth="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status)"
+            finance="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app-branch2.orders-clothes.workers.dev/api/reports/warehouse-capital)"
+            if [[ "$auth" == 200 && "$finance" == 401 ]]; then
+              echo "BRANCH2_WAREHOUSE_REPORTS_PUBLISHED_CONFIDENTIAL_DATA_GUARDED: $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Unexpected anonymous status: auth=$auth finance=$finance" >&2
+          exit 1
