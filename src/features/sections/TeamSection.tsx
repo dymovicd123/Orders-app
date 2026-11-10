@@ -1,11 +1,13 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useEffect, useRef, useState } from 'react'
+import { TeamTimesheetWorkspace } from '../team/TeamTimesheetWorkspace'
 type SectionContext = Record<string, any>
 
 export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const {
     apiFetch,
     askActionConfirmation,
+    authUser,
     authUsers,
     authUsersBusy,
     exportTeamPlanReportWord,
@@ -809,89 +811,20 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
               ) : null}
     
               {teamMode === 'timesheet' ? (
-                <>
-                  <div className="orders-filter-panel reports-workspace-panel timesheet-control-panel-v2">
-                    <div className="reports-filter-header">
-                      <div>
-                        <h3>Табель</h3>
-                      </div>
-                      <div className="reports-period-buttons timesheet-month-switcher">
-                        <button className="secondary compact" type="button" onClick={() => shiftTimesheetMonth(-1)}>←</button>
-                        <input type="month" value={timesheetMonth} onChange={(event) => { setTimesheetMonth(event.target.value); setTimesheetSelectedDays([]) }} />
-                        <button className="secondary compact" type="button" onClick={() => shiftTimesheetMonth(1)}>→</button>
-                        <button className="secondary compact" type="button" onClick={setTimesheetCurrentMonth}>Этот месяц</button>
-                        <button className="secondary compact" type="button" disabled={timesheetBusy} onClick={() => void loadTeamTimesheet()}>Обновить</button>
-                      </div>
-                    </div>
-    
-                    <div className="timesheet-selection-summary-v2">
-                      <strong>Выбрано:</strong> {timesheetSelectedDays.length} дн. · {timesheetSelectedManagers.length ? `${timesheetSelectedManagers.length} сотрудн.` : 'без выбора сотрудников'} · до {timesheetWorkUntil || 'без времени'}
-                    </div>
-    
-                    <div className="timesheet-action-grid-v2">
-                      <section className="timesheet-panel-v2">
-                        <div className="timesheet-section-label">Быстрый выбор дней</div>
-                        <div className="button-row compact-wrap">
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetDaysPreset('all')}>Все дни</button>
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetDaysPreset('weekdays')}>Будни</button>
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetDaysPreset('weekends')}>Выходные</button>
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetDaysPreset('even')}>Чётные</button>
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetDaysPreset('odd')}>Нечётные</button>
-                          <button className="ghost compact" type="button" onClick={() => setTimesheetDaysPreset('clear')}>Снять выбор</button>
-                        </div>
-                      </section>
-    
-                      <section className="timesheet-panel-v2">
-                        <div className="timesheet-section-label">Кого назначить</div>
-                        <div className="button-row compact-wrap">
-                          <button className="secondary compact" type="button" onClick={() => setTimesheetSelectedManagers(timesheetData?.employees.map((employee) => employee.id) || [])}>Выбрать всех</button>
-                          <button className="ghost compact" type="button" onClick={() => setTimesheetSelectedManagers([])}>Снять всех</button>
-                        </div>
-                        <div className="reference-chips timesheet-employee-chips-v2">
-                          {(timesheetData?.employees || []).map((employee) => (
-                            <button key={`timesheet-employee-${employee.id}`} className={`chip-button timesheet-manager-chip ${timesheetSelectedManagers.includes(employee.id) ? 'is-active' : ''}`} type="button" onClick={() => toggleTimesheetManager(employee.id)}>
-                              <span className="manager-color-dot" style={{ backgroundColor: resolveManagerDisplayColor(employee.colorKey, employee.id) }} />
-                              <span>{employee.name} · {employee.role || 'Менеджер'}</span>
-                            </button>
-                          ))}
-                          {!(timesheetData?.employees || []).length ? <span className="empty-state">Обычных активных сотрудников нет. Администраторы скрыты из табеля.</span> : null}
-                        </div>
-                      </section>
-    
-                      <section className="timesheet-panel-v2 timesheet-time-panel-v2">
-                        <div className="timesheet-section-label">Назначение</div>
-                        <label>Работают до<input type="time" value={timesheetWorkUntil} onChange={(event) => setTimesheetWorkUntil(event.target.value)} /></label>
-                        <label>Комментарий<input value={timesheetComment} onChange={(event) => setTimesheetComment(event.target.value)} placeholder="Например: усиленная смена" /></label>
-                        <div className="button-row compact-wrap">
-                          <button className="primary compact" type="button" disabled={timesheetBusy || !isAdmin} onClick={() => void saveTeamTimesheet(false)}>Назначить выбранное</button>
-                          <button className="ghost danger compact" type="button" disabled={timesheetBusy || !isAdmin || !timesheetSelectedDays.length} onClick={() => void saveTeamTimesheet(true)}>Очистить выбранные дни</button>
-                        </div>
-                      </section>
-                    </div>
-                  </div>
-    
-                  <div className="timesheet-calendar-v2">
-                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((label) => <div key={`weekday-${label}`} className="timesheet-weekday-v2">{label}</div>)}
-                    {getTimesheetCalendarSlots().map((date, index) => {
-                      if (!date) return <div key={`timesheet-empty-${index}`} className="timesheet-day-v2 is-empty" />
-                      const entries = getTimesheetEntriesForDate(date)
-                      const selected = timesheetSelectedDays.includes(date)
-                      const weekend = ['Сб', 'Вс'].includes(getTimesheetWeekdayLabel(date))
-                      return (
-                        <button key={`timesheet-day-${date}`} className={`timesheet-day-v2 ${selected ? 'selected' : ''} ${weekend ? 'weekend' : ''} ${entries.length ? 'has-work' : ''}`} type="button" onClick={() => toggleTimesheetDay(date)}>
-                          <span className="timesheet-day-head-v2"><strong>{Number(date.slice(-2))}</strong><em>{getTimesheetWeekdayLabel(date)}</em></span>
-                          {entries.length ? (
-                            <span className="timesheet-day-assignments-v2">
-                              {entries.map((entry) => <span key={`assignment-${entry.id}`} className="timesheet-assignment-pill-v2"><span className="manager-color-dot" style={{ backgroundColor: resolveManagerDisplayColor(entry.managerColor, entry.managerId) }} />{entry.manager}{entry.workUntil ? ` до ${entry.workUntil}` : ''}</span>)}
-                            </span>
-                          ) : <span className="timesheet-empty-note-v2">Свободно</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
+                <TeamTimesheetWorkspace
+                  apiFetch={apiFetch}
+                  isAdmin={isAdmin}
+                  canMarkAttendance={isAdmin || (authUser?.role === 'manager' && Number(authUser.managerId) > 0
+                    && !['Завсклад','Упаковщик'].includes(authUser.employeeRole || ''))}
+                  timesheetMonth={timesheetMonth}
+                  timesheetData={timesheetData}
+                  timesheetBusy={timesheetBusy}
+                  setTimesheetMonth={setTimesheetMonth}
+                  loadTeamTimesheet={loadTeamTimesheet}
+                  loadTeamSalaryReport={loadTeamSalaryReport}
+                />
               ) : null}
-    
+
               {teamMode === 'plan' ? (
                 <>
                   <div className="report-filter-row">
