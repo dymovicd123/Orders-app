@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   create-dds-schema:
-    if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'schema(main): dds isolated tables')
+    if: "${{ github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'schema(main): dds isolated tables') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
