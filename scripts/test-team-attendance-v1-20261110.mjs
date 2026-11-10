@@ -7,7 +7,7 @@ const sql=new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 sql.exec("CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,role TEXT,is_active INTEGER,color_key TEXT)")
 sql.exec("CREATE TABLE team_timesheet (id INTEGER PRIMARY KEY,work_date TEXT,manager_id INTEGER,work_until TEXT,comment TEXT,UNIQUE(work_date,manager_id))")
-sql.exec("INSERT INTO managers VALUES (1,'Асия','Менеджер',1,'#228844'),(2,'Дана','Менеджер',1,'#BB5522'),(3,'Сымбат','Администратор',1,'#334455')")
+sql.exec("INSERT INTO managers VALUES (1,'Асия','Менеджер',1,'#228844'),(2,'Дана','Менеджер',1,'#BB5522'),(3,'Сымбат','Администратор',1,'#334455'),(4,'Склад','Завсклад',1,'#555555'),(5,'Уволен','Менеджер',0,'#112233')")
 const migration=readFileSync('migrations/0122_team_actual_attendance.sql','utf8')
 sql.exec(migration);sql.exec(migration)
 const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date())
@@ -24,23 +24,29 @@ const db={prepare(statement){return {bind(...args){return {
   async run(){const x=sql.prepare(statement).run(...args);return {meta:{changes:Number(x.changes),last_row_id:Number(x.lastInsertRowid)}}},
 }}}}}
 const admin={id:10,role:'admin'}
-const manager={id:11,role:'manager'}
+const manager={id:11,role:'manager',managerId:1,employeeRole:'Менеджер'}
 const mark=(managerId,status,finishedAt='',comment='',workDate=date,actor=admin)=>
   saveTeamAttendance(db,{date:workDate,managerId,status,finishedAt,comment},actor)
 const month=date.slice(0,7)
 assert.deepEqual(await readTeamAttendance(db,month),[])
 assert.equal(sql.prepare("SELECT COUNT(*) AS count FROM team_timesheet").get().count,3)
-await assert.rejects(()=>mark(1,'present','','',date,manager),/администратор/)
+await assert.rejects(()=>mark(1,'present','','',date,{id:12,role:'manager',managerId:0}),/менеджер/)
+await assert.rejects(()=>mark(1,'present','','',date,{id:12,role:'manager',managerId:3}),/недоступна/)
+await assert.rejects(()=>mark(1,'present','','',date,{id:12,role:'manager',managerId:4}),/недоступна/)
+await assert.rejects(()=>mark(1,'present','','',date,{id:12,role:'manager',managerId:5}),/недоступна/)
+await assert.rejects(()=>mark(1,'present','','',date,null),/рабочий аккаунт/)
 await assert.rejects(()=>mark(3,'present'),/не найден|не участвует/)
 await assert.rejects(()=>mark(1,'present','', '',future),/будущий/)
 await assert.rejects(()=>mark(1,'unknown'),/состояние/)
 await assert.rejects(()=>mark(1,'absent','18:00'),/только/)
 await assert.rejects(()=>mark(1,'present','25:70'),/Время/)
 await assert.rejects(()=>mark(99,'present'),/не найден/)
-await mark(1,'present')
+await mark(1,'present','','',date,manager)
 let records=await readTeamAttendance(db,month)
 assert.equal(records.length,1)
 assert.equal(records[0].status,'present')
+assert.equal(sql.prepare("SELECT updated_by_user_id AS id FROM team_attendance_marks WHERE manager_id=1").get().id,11,
+  'First attendance mark must be authored by manager')
 assert.equal(records[0].finishedAt,'')
 await mark(1,'present','17:45','Отпустили раньше')
 records=await readTeamAttendance(db,month)
@@ -71,4 +77,4 @@ const monthlyJournal=readFileSync('src/features/team/TeamAttendanceReport.tsx','
 assert.ok(monthlyJournal.includes('Не отмечено')&&ui.includes('Назначить смены'),
   'Unmarked days and the shift planner must remain accessible')
 assert.ok(!ui.includes('Количество часов')&&!ui.includes('Часов отработано'))
-console.log('TEAM_ATTENDANCE_V1_PASS: idempotent migration, admin permission, schedule independence, actual presence, optional leave time, absence reason, historic audit, monthly UI')
+console.log('TEAM_ATTENDANCE_V1_PASS: manager recording, privileged-role guards, admin corrections, idempotent migration, plan/fact independence, departure, audit')

@@ -796,8 +796,7 @@ export default {
         return json({ ...schedule, attendance: await readTeamAttendance(env.DB, schedule.month) })
       }
       if (url.pathname === '/api/team/attendance' && request.method === 'POST') {
-        const denied = requireAdminUser(authUser, 'Только администратор может отмечать явку.')
-        if (denied) return denied
+        if (!authUser) return json({ok:false,message:'Войдите в систему, чтобы отметить явку.'},{status:401})
         const input = await readJson<{date?:unknown;managerId?:unknown;status?:unknown;finishedAt?:unknown;comment?:unknown}>(request)
         return json(await saveTeamAttendance(env.DB, input, authUser), {status:201})
       }
