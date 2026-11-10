@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT reviewed DDS release: only new isolated Branch2 DDS schema; never Main or Production D1.
+# ONE-SHOT reviewed DDS UX/XLSX release. No schema or D1 mutation; never Main.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish reviewed Branch2 DDS code after isolated D1 schema preparation
+    name: Publish exact reviewed Branch2 DDS UX and Excel (no D1 change)
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): simple dds')
+      startsWith(github.event.head_commit.message, 'release(branch2): dds report ux xlsx')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,31 +62,17 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '6b254f44e2825f8f0ea1a4e31919b19675d2ac86'
+          test "$(git rev-parse HEAD^)" = '0f4c64134f7ac4dcb5345ff3f01514d55417a777'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'migrations/0120_shared_dds_ledger.sql' 'scripts/test-finance-day-transparency.mjs' 'scripts/test-simple-dds-ledger-20261110.mjs' 'shared/dds-categories.ts' 'src/App.tsx' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/renderers/FinanceDashboardRenderer.tsx' 'src/features/sections/FinanceSection.tsx' 'worker/domains/dds.ts' 'worker/index.ts')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'package-lock.json' 'package.json' 'scripts/test-dds-excel-ux-20261110.mjs' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/finance/ddsExcel.ts' 'src/features/finance/ddsTypes.ts')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
-      - name: Prepare ONLY the new isolated DDS schema in Branch2 mirror D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/branch2-manual-release.mjs --check
-          test "$GITHUB_REF" = 'refs/heads/branch2'
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
-          npm ci
-          node scripts/test-simple-dds-ledger-20261110.mjs
-          # This migration creates only dds_entries, its own indexes and a balance guard.
-          # No alterations to any existing order, cash, finance, user or inventory tables.
-          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0120_shared_dds_ledger.sql
-          checked="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('dds_entries','dds_prevent_overdraft')" --json)"
-          printf '%s' "$checked" | jq -e 'if type == "array" then .[0].results[0].n == 2 else .results[0].n == 2 end'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
           set -euo pipefail
+          npm ci
+          node scripts/test-dds-excel-ux-20261110.mjs
           node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
