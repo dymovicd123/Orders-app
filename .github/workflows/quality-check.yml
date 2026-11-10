@@ -73,6 +73,10 @@ jobs:
         if: github.base_ref == 'branch2'
         run: node scripts/test-dds-excel-ux-20261110.mjs
 
+      - name: Verify Branch2 planned vs actual team attendance and audit
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-team-attendance-v1-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

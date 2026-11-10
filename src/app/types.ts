@@ -341,6 +341,18 @@ export type TeamTimesheetEntry = {
 
 
 
+export type TeamAttendanceMark = {
+  id: number
+  date: string
+  managerId: number
+  manager: string
+  managerColor?: string
+  status: 'present' | 'absent' | 'excused'
+  finishedAt: string
+  comment: string
+  updatedAt: string
+}
+
 export type TeamTimesheetResponse = {
   ok: boolean
   month: string
@@ -348,6 +360,7 @@ export type TeamTimesheetResponse = {
   endDate: string
   employees: TeamTimesheetEmployee[]
   entries: TeamTimesheetEntry[]
+  attendance: TeamAttendanceMark[]
 }
 
 
