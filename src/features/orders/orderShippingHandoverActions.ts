@@ -67,6 +67,7 @@ export function handoverSourceLabel(source: InventorySourceKey | string) {
 }
 
 type ShippingHandoverActionsArgs = {
+  askActionConfirmation: (text: string) => Promise<boolean>
   orders: OrderRecord[]
   stockHandoverOrder: OrderRecord | null
   stockHandoverActionItemId: number | null
@@ -96,6 +97,7 @@ type ShippingHandoverActionsArgs = {
 // Original Worker remains the authority for physical stock and reservations.
 // Possession confirmation never fabricates an absolute stock count.
 export function createOrderShippingHandoverActions({
+  askActionConfirmation,
   orders,
   stockHandoverOrder,
   stockHandoverActionItemId,
@@ -181,7 +183,7 @@ export function createOrderShippingHandoverActions({
     } else {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} «${item.productName}» ещё находился в точке?\n\nЕсли да, резерв останется и товар спишется только при фактической выдаче.`
     }
-    if (!window.confirm(confirmText)) return
+    if (!await askActionConfirmation(confirmText)) return
 
     setStockHandoverActionItemId(item.orderItemId)
     setError(null)
@@ -363,7 +365,7 @@ export function createOrderShippingHandoverActions({
   async function correctMistakenOrderShipping(order: OrderRecord) {
     const projection = await getOrderOperationalProjection(order)
     if (savingOrder || !projection.canCorrectShipping) return
-    const confirmed = window.confirm(
+    const confirmed = await askActionConfirmation(
       `Снять отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтвердите только если текущий товар клиенту не передавался. Заказ вернётся в состояние «Не отправлен». Если был обмен, он сохранится.`
     )
     if (!confirmed) return
