@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT reviewed Branch2 bulk-first timesheet release; no D1 writes, no Main or Client3.
+# ONE-SHOT reviewed Branch2 manager attendance UX release; no D1 writes, no Main or Client3.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish reviewed Branch2 bulk planner and editable daily shift roster
+    name: Publish reviewed Branch2 manager attendance and stable editor focus
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): timesheet bulk planner usability')
+      startsWith(github.event.head_commit.message, 'release(branch2): manager attendance usability')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,22 +62,26 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '86486d16d6656b6b92b6daae7529ebe6dadf50a8'
+          test "$(git rev-parse HEAD^)" = 'e54b7ae040dc225b91b6a80c819f1b4a6d9d9fec'
           actual="$(git diff --name-only HEAD^ HEAD)"
           expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml')"
           test "$actual" = "$expected"
-          # The reviewed PR #897 is immutable in parent 86486d16; only this release guard changes now.
+          # The reviewed PR #899 is immutable in parent e54b7ae; only this release guard changes now.
           test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
-          test "$(git hash-object worker/domains/team-attendance.ts)" = '7e0386d4fb32321f6bf1ad94852b737dde5a1b73'
+          test "$(git hash-object worker/domains/team-attendance.ts)" = 'b11cc66a12dc3fab23a729a80f2667b45f81b24f'
+          test "$(git hash-object worker/index.ts)" = 'fe56e19ac7b222a7617e46e9683237a2902dd64e'
+          test "$(git hash-object src/App.tsx)" = '8ab6951451508b8c73efbe67fa0e106c728e8d9f'
+          test "$(git hash-object src/features/sections/TeamSection.tsx)" = 'e41435983d4421e904d6a8313940322106708986'
+          test "$(git hash-object scripts/test-team-attendance-manager-ux-20261110.mjs)" = 'f0dc68dd9388ee4cb870d95445153d873c1a8209'
           test "$(git hash-object worker/domains/team.ts)" = 'cbc2301e26df9c1c7714d24cb5799e50b7e35aaf'
-          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '69d88823a482c7b88cdcd6724e0bec598a3e3319'
-          test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = 'c1cce4f434f955ab0ab7c83398665fcc433fb26f'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '90788567ef630e13ddd85c1d39b6cd40cda87334'
+          test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = 'cd362ed19ed409b8fd40efb90e02c4cbe286e9be'
           test "$(git hash-object src/features/team/TeamAttendanceReport.tsx)" = 'bd6c354670ddaed29e947604d4ef4ddcd3607bc3'
           test "$(git hash-object src/features/team/teamTimesheetReport.ts)" = 'c1aeed25ea9abc6a61a6b8b88c786a5d8ce3639a'
-          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = 'c13aad44380dd3b65c1952c0447d8e2f7f097dd8'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '4320c1f838828fc44ccabe952338db13284b58ca'
           test "$(git hash-object scripts/test-team-timesheet-report-v2-20261110.mjs)" = 'c7406fe1b89e26406bcee04ce58dc22aeac7c8e2'
           test "$(git hash-object scripts/test-team-timesheet-bulk-safe-20261110.mjs)" = 'f6b90846b09db76674752c15abab543937c5f3b1'
-          test "$(git hash-object .github/workflows/quality-check.yml)" = '50c76b9a1ac68a051c9add7b6bffaa11043d4d1f'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '1bd21683fe6615918556109b33b9aa193725626b'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
@@ -90,11 +94,12 @@ jobs:
           node scripts/branch2-manual-release.mjs --check
           npm ci
           node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
           node scripts/test-team-timesheet-report-v2-20261110.mjs
           node scripts/test-team-timesheet-bulk-safe-20261110.mjs
           schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers" --json)"
           printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3'
-          echo 'BRANCH2_TIMESHEET_BULK_SCHEMA_READ_ONLY_PASS'
+          echo 'BRANCH2_MANAGER_ATTENDANCE_SCHEMA_READ_ONLY_PASS'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
@@ -102,4 +107,5 @@ jobs:
           npm ci
           node scripts/test-team-timesheet-report-v2-20261110.mjs
           node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
           node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
