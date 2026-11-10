@@ -65,6 +65,10 @@ jobs:
         if: github.base_ref == 'branch2'
         run: node scripts/test-branch2-safe-dialogs-20261110.mjs
 
+      - name: Verify isolated DDS funds and expense journal (Branch2)
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-simple-dds-ledger-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

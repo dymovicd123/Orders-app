@@ -133,7 +133,7 @@ assert.deepEqual(page1.payments,page2.payments)
 
 const section = fs.readFileSync('src/features/sections/FinanceSection.tsx','utf8')
 assert.ok(!section.includes('FinanceDayPanel'), 'a single day must not replace the normal finance workspace')
-assert.ok(section.includes("const periodApplies = !['cash', 'methods'].includes(financeMode)"), 'cash and payment-method settings must not inherit the report period')
+assert.ok(section.includes("const periodApplies = !['cash', 'methods', 'dds'].includes(financeMode)"), 'cash, payment-method settings and standalone DDS must not inherit the order-finance report period')
 assert.ok(section.includes('Все операции ниже относятся именно к выбранным датам'), 'period semantics must be explicit to the user')
 const router = fs.readFileSync('worker/domains/cash.ts','utf8')
 assert.ok(router.includes("if (url.searchParams.get('view') === 'day') return readFinanceDay(db, url)"))

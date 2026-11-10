@@ -13,7 +13,7 @@ export function FinanceSection({ ctx }: { ctx: SectionContext }) {
     setFinanceReportFilters,
   } = ctx
   const singleDay = Boolean(financeReportFilters.dateFrom && financeReportFilters.dateFrom === financeReportFilters.dateTo)
-  const periodApplies = !['cash', 'methods'].includes(financeMode)
+  const periodApplies = !['cash', 'methods', 'dds'].includes(financeMode)
 
   return (
     <article className="card wide sector-finance" id="finance" style={sectorStyle('finance')}>
@@ -56,9 +56,11 @@ export function FinanceSection({ ctx }: { ctx: SectionContext }) {
         </div>
       ) : (
         <div className="muted-note finance-current-scope-note">
-          {financeMode === 'cash'
-            ? 'Касса показывает текущее состояние наличных. Выбранный на других вкладках период здесь не применяется.'
-            : 'Справочник способов оплаты не зависит от выбранного периода.'}
+          {financeMode === 'dds'
+            ? 'ДДС — отдельный журнал. Выберите месяц внутри вкладки; касса и оплаты заказов не затрагиваются.'
+            : financeMode === 'cash'
+              ? 'Касса показывает текущее состояние наличных. Выбранный на других вкладках период здесь не применяется.'
+              : 'Справочник способов оплаты не зависит от выбранного периода.'}
         </div>
       )}
 

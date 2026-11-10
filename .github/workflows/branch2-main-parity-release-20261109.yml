@@ -1,5 +1,5 @@
 name: Branch2 guarded reviewed test-worker release
-# ONE-SHOT verified change batch; never publish Main or modify D1.
+# ONE-SHOT reviewed DDS release: only new isolated Branch2 DDS schema; never Main or Production D1.
 on:
   pull_request:
     branches: [branch2]
@@ -33,11 +33,11 @@ jobs:
         run: node scripts/branch2-manual-release.mjs --ci-preview
 
   release:
-    name: Publish exact reviewed Branch2 code, no D1 change
+    name: Publish reviewed Branch2 DDS code after isolated D1 schema preparation
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): stage3 accessible dialogs')
+      startsWith(github.event.head_commit.message, 'release(branch2): simple dds')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,13 +62,29 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '6295a16bec5533e20d7dab86a3c5206ceed38fa5'
+          test "$(git rev-parse HEAD^)" = '6b254f44e2825f8f0ea1a4e31919b19675d2ac86'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-auth-production-team-access.mjs' 'scripts/test-branch2-safe-dialogs-20261110.mjs' 'scripts/test-finance-day-transparency.mjs' 'scripts/test-main-product-kpi-20261027.mjs' 'scripts/test-operational-autonomy-a4-handover-correction.mjs' 'src/App.tsx' 'src/components/dialogs/ActionTextPromptModal.tsx' 'src/components/dialogs/action-confirmation.css' 'src/features/auth/managedAccountActions.ts' 'src/features/finance/cashRegisterActions.ts' 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx' 'src/features/inventory/views/renderInventoryMovementPanel.tsx' 'src/features/inventory/warehouseGovernanceActions.ts' 'src/features/orders/OrderCatalogResolutionModal.tsx' 'src/features/orders/orderCreationActions.ts' 'src/features/orders/orderShippingHandoverActions.ts' 'src/features/orders/returnExchangeAftercareActions.ts' 'src/features/plans/planActions.ts' 'src/features/sections/InventorySection.tsx' 'src/features/sections/WorkshopSection.tsx' 'src/features/team/teamEmployeeActions.ts' 'src/features/workshop/WorkshopSettlementsPanel.tsx')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'migrations/0120_shared_dds_ledger.sql' 'scripts/test-finance-day-transparency.mjs' 'scripts/test-simple-dds-ledger-20261110.mjs' 'shared/dds-categories.ts' 'src/App.tsx' 'src/features/finance/DdsWorkspace.tsx' 'src/features/finance/dds.css' 'src/features/renderers/FinanceDashboardRenderer.tsx' 'src/features/sections/FinanceSection.tsx' 'worker/domains/dds.ts' 'worker/index.ts')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
+      - name: Prepare ONLY the new isolated DDS schema in Branch2 mirror D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/branch2-manual-release.mjs --check
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          npm ci
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          # This migration creates only dds_entries, its own indexes and a balance guard.
+          # No alterations to any existing order, cash, finance, user or inventory tables.
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --file migrations/0120_shared_dds_ledger.sql
+          checked="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('dds_entries','dds_prevent_overdraft')" --json)"
+          printf '%s' "$checked" | jq -e 'if type == "array" then .[0].results[0].n == 2 else .results[0].n == 2 end'
       - name: Recheck business regression, Worker build, remote D1 SELECT-only, deploy ONLY Branch2 and smoke
         shell: bash
         run: |
