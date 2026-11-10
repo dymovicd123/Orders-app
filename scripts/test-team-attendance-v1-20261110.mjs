@@ -65,7 +65,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='at
 const section=readFileSync('src/features/sections/TeamSection.tsx','utf8')
 const ui=readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
 assert.ok(section.includes('<TeamTimesheetWorkspace'))
-assert.ok(ui.includes('Календарь и итоги')&&ui.includes('Пришёл')&&ui.includes('Не пришёл'))
+assert.ok(ui.includes('Журнал по дням')&&ui.includes('Отметить явку')&&ui.includes('Пришёл')&&ui.includes('Не пришёл'))
 assert.ok(ui.includes('Уважительная причина')&&ui.includes('Время ухода (необязательно)'))
 assert.ok(ui.includes('Без отметки')&&ui.includes('Назначить смены'))
 assert.ok(!ui.includes('Количество часов')&&!ui.includes('Часов отработано'))
