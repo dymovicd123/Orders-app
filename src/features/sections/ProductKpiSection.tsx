@@ -114,9 +114,10 @@ function KpiProgressOverview({records,isAdmin,saving,formatMoney,onEdit,onRemove
   </section>
 }
 
-export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney}:{
+export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney,askActionConfirmation}:{
   apiFetch:(url:string,options?:RequestInit)=>Promise<Response>;
-  isAdmin:boolean;currentManagerId:number;formatMoney:(value:number)=>string
+  isAdmin:boolean;currentManagerId:number;formatMoney:(value:number)=>string;
+  askActionConfirmation:(message:string)=>Promise<boolean>
 }){
   const [month,setMonth]=useState(thisMonth)
   const [records,setRecords]=useState<Campaign[]>([])
@@ -285,7 +286,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     finally{setSaving(false)}
   }
   async function remove(row:Campaign){
-    if(!window.confirm('Удалить KPI «'+row.title+'» за '+row.month+'?'))return
+    if(!(await askActionConfirmation('Удалить KPI «'+row.title+'» за '+row.month+'?')))return
     setError('');setSaving(true)
     try{
       const r=await apiFetch('/api/product-kpis/'+row.id,{method:'DELETE'})

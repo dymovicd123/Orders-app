@@ -55,6 +55,12 @@ jobs:
         if: github.base_ref == 'branch2' || github.ref_name == 'branch2'
         run: node scripts/test-branch2-environment.mjs
 
+      - name: Verify SQLite atomic reservation race and idempotent order retry
+        if: github.base_ref == 'branch2'
+        run: |
+          node scripts/test-atomic-reservation-admission-20261030.mjs
+          node scripts/test-p0-critical-order-reservation-retry-20261030.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

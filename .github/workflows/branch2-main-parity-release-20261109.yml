@@ -1,5 +1,5 @@
-name: Branch2 parity source synchronization — single authorized test Worker release
-# This is a ONE-SHOT Branch2-only bridge after PR #879. No Main release, D1 writes or migrations.
+name: Branch2 guarded reviewed test-worker release
+# ONE-SHOT verified change batch; never publish Main or modify D1.
 on:
   pull_request:
     branches: [branch2]
@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: branch2-parity-one-shot-20261109
+  group: branch2-reviewed-release-20261110
   cancel-in-progress: false
 jobs:
   preview:
@@ -37,7 +37,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): source parity')
+      startsWith(github.event.head_commit.message, 'release(branch2): reserves and safe dialogs')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -62,9 +62,9 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '4835683bc161c7aa678d48fe7f089621446f56c2'
+          test "$(git rev-parse HEAD^)" = '627df8e03e1c7802ca1055b6091ff95db7bfc9a9'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected='.github/workflows/branch2-main-parity-release-20261109.yml'
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-main-product-kpi-20261027.mjs' 'src/App.tsx' 'src/components/dialogs/ActionConfirmationModal.tsx' 'src/components/dialogs/action-confirmation.css' 'src/features/sections/InventorySection.tsx' 'src/features/sections/OrdersTableSection.tsx' 'src/features/sections/PlanSection.tsx' 'src/features/sections/ProductKpiSection.tsx' 'src/features/sections/ReferenceIntegrityPanel.tsx' 'src/features/sections/ReferenceMergeWorkspace.tsx' 'src/features/sections/ReferencesSection.tsx' 'src/features/sections/TeamSection.tsx')"
           test "$actual" = "$expected"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"

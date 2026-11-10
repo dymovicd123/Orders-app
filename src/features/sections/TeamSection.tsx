@@ -5,6 +5,7 @@ type SectionContext = Record<string, any>
 export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const {
     apiFetch,
+    askActionConfirmation,
     authUsers,
     authUsersBusy,
     exportTeamPlanReportWord,
@@ -198,7 +199,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
 
   async function disableSystemAdminAccess(account) {
     if (!isAdmin || !account?.id) return
-    if (!window.confirm(`Отключить системного администратора @${account.login}? Активные сессии будут закрыты.`)) return
+    if (!(await askActionConfirmation(`Отключить системного администратора @${account.login}? Активные сессии будут закрыты.`))) return
     setError(null)
     try {
       const response = await apiFetch(`/api/auth/users/${account.id}`, { method: 'DELETE' })
@@ -281,7 +282,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     if (!isAdmin || !employee?.id) return
     const account = teamAuthUserFor(employee.id)
     if (!account) return
-    if (!window.confirm(`Отключить вход @${account.login} для ${employee.name}? Активные сессии будут закрыты.`)) return
+    if (!(await askActionConfirmation(`Отключить вход @${account.login} для ${employee.name}? Активные сессии будут закрыты.`))) return
     setError(null)
     try {
       const response = await apiFetch(`/api/auth/users/${account.id}`, { method: 'DELETE' })

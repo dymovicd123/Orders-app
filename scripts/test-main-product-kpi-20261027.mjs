@@ -25,7 +25,7 @@ has(worker,"const denied = requireAdminUser(authUser, 'Денежные план
 const lead=read('src/features/sections/LeadsSection.tsx')
 has(lead,'{isAdmin ? <button')
 has(app,'<LeadsSection ctx={{ isAdmin,')
-has(app,'<PlanSection ctx={{ apiFetch, currentManagerId:')
+assert.match(app, /<PlanSection ctx=\{\{ apiFetch,(?: askActionConfirmation,)? currentManagerId:/, 'Plan workspace still receives current manager context')
 assert.ok(!read('src/app/managerWorkspaceAccess.ts').includes("'salary'"), 'Salary must not be available to managers')
 has(plan,"page === 'kpi' || !isAdmin")
 has(plan,'ProductKpiSection')
