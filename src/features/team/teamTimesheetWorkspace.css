@@ -269,3 +269,105 @@
  text-decoration:underline;font-size:12px;padding:4px 0}
 .tw-mark-clear[aria-pressed="true"]{font-weight:750}
 @media(max-width:550px){.tw-mark-options{grid-template-columns:1fr 1fr}.tw-mark-option:last-child{grid-column:1/-1}}
+
+
+/* Shorter planner, always-reachable close, and one-column mobile attendance. */
+.tw-dialog{width:min(770px,100%);max-height:calc(100dvh - 24px);padding:20px;overscroll-behavior:contain}
+.tw-dialog-head{position:sticky;top:-20px;z-index:4;background:var(--card,#fff);
+  padding:10px 0 12px;margin-top:-10px;margin-bottom:11px;border-bottom:1px solid var(--tw-line,#dfe7ec)}
+.tw-dialog-head h3{font-size:19px}
+.tw-dialog-head p{line-height:1.35}
+.tw-close{width:auto;height:42px;min-width:100px;display:inline-flex;align-items:center;justify-content:center;
+  gap:7px;padding:8px 12px;font-size:13px;font-weight:700;border:1px solid var(--tw-line,#dfe7ec);
+  background:var(--surface,#f3f6f8);white-space:nowrap}
+.tw-close>span:first-child{font-size:20px;font-weight:400;line-height:1}
+.tw-close:hover{background:var(--card,#fff);border-color:#92a9ba}
+.tw-close:focus-visible,.tw-plan-snapshot summary:focus-visible{outline:2px solid #5786cc;outline-offset:2px}
+.tw-plan{gap:12px}.tw-plan-part{gap:6px}
+.tw-plan-people{max-height:142px}
+.tw-plan-people button{padding:9px 11px;min-height:39px}
+.tw-plan-days{gap:5px}
+.tw-plan-days button{min-height:40px;padding:3px 2px;gap:2px}
+.tw-plan-snapshot{display:block;padding:10px 12px}
+.tw-plan-snapshot summary{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  list-style:none;cursor:pointer;font-size:12px;font-weight:750}
+.tw-plan-snapshot summary::-webkit-details-marker{display:none}
+.tw-plan-snapshot summary span{font-size:11px;color:#4277a1;font-weight:650}
+.tw-plan-snapshot[open] summary{margin-bottom:10px}
+.tw-plan-snapshot-days{max-height:200px}
+.tw-plan-footer{gap:10px}
+.tw-plan-footer-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tw-plan-footer-left button{min-height:40px}
+.tw-report-mobile-days,.tw-calendar-mobile{display:none}
+@media(max-width:720px){
+  .tw-report-table-scroll{display:none}
+  .tw-report-mobile-days{display:grid;gap:10px}
+  .tw-report-mobile-day{border:1px solid var(--tw-line,#dfe7ec);border-radius:11px;overflow:hidden}
+  .tw-report-mobile-day-head{width:100%;display:flex;align-items:center;flex-wrap:wrap;gap:7px;
+    background:var(--surface,#f3f6f8);color:inherit;border:0;cursor:pointer;text-align:left;
+    padding:12px;font:inherit}
+  .tw-report-mobile-day-head>strong{font-size:14px;text-transform:capitalize;margin-right:auto}
+  .tw-report-mobile-day-head>span{font-size:11px;color:var(--tw-muted)}
+  .tw-report-mobile-open{font-weight:750;color:#3877af!important}
+  .tw-report-mobile-people{display:grid;gap:0}
+  .tw-report-mobile-person{display:grid;grid-template-columns:minmax(105px,1fr) minmax(130px,1.3fr);
+    gap:9px;align-items:center;padding:9px 12px;border-top:1px solid var(--tw-line,#e1e9ed)}
+  .tw-report-mobile-person-name{min-width:0;font-size:12px;font-weight:750;overflow-wrap:anywhere}
+  .tw-report-mobile-person-name .tw-dot{width:8px;height:8px}
+  .tw-report-mobile-person .tw-report-cell{min-height:0;padding:8px}
+  .tw-report-mobile-empty{font-size:13px;color:var(--tw-muted);margin:0;padding:14px}
+  .tw-calendar-scroll{display:none}
+  .tw-calendar-mobile{display:grid;gap:10px}
+  .tw-calendar-mobile-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .tw-calendar-mobile-actions>strong{font-size:13px}
+  .tw-mobile-schedule-day{display:grid;gap:9px;min-width:0;width:100%;text-align:left;padding:12px;
+    border:1px solid var(--tw-line,#dce5e9);border-radius:11px;background:var(--card,#fff);color:inherit;
+    cursor:pointer}
+  .tw-mobile-schedule-day.today{border-color:#95bda6;background:#f3faf5}
+  .tw-mobile-schedule-date{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .tw-mobile-schedule-date>strong{text-transform:capitalize;font-size:13px}
+  .tw-mobile-schedule-date>small{font-size:11px;color:var(--tw-muted)}
+  .tw-mobile-schedule-people{display:grid;gap:5px}
+  .tw-mobile-schedule-person{display:flex;align-items:center;gap:7px;font-size:12px;min-width:0}
+  .tw-mobile-schedule-person>i{height:8px;width:8px;flex:none;border-radius:50%}
+  .tw-mobile-schedule-person>span{min-width:0;overflow-wrap:anywhere;flex:1}
+  .tw-mobile-schedule-person>b{font-size:12px;white-space:nowrap;font-weight:750}
+  .tw-mobile-schedule-pending{font-size:11px;color:#a8792f}
+  .tw-calendar-empty-mobile{display:grid;gap:9px;padding:15px;border:1px dashed var(--tw-line,#dce5e9);
+    border-radius:10px;font-size:13px;color:var(--tw-muted)}
+  .tw-calendar-empty-mobile button{justify-self:start}
+  .tw-calendar-detail{border:0;padding:0}
+  .tw-dialog .tw-actions.split{bottom:-18px}
+  .tw-report-controls{align-items:stretch}
+  .tw-report-controls>label:first-child{width:100%}
+  .tw-report-controls select{width:100%;min-width:0}
+  .tw-report{min-width:0}
+}
+@media(max-width:550px){
+  .tw-overlay{padding:8px}
+  .tw-dialog{padding:14px;max-height:calc(100dvh - 16px);border-radius:13px}
+  .tw-dialog-head{top:-14px;margin-top:-6px;padding:8px 0 10px}
+  .tw-dialog-head h3{font-size:17px}
+  .tw-dialog-head p{font-size:11px}
+  .tw-close{min-width:90px;height:40px;padding:7px 10px}
+  .tw-plan-days{gap:4px}
+  .tw-plan-days button{min-height:38px}
+  .tw-plan-days button>small{font-size:8px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .tw-plan-people{max-height:132px}
+  .tw-plan-footer{align-items:stretch;flex-wrap:wrap}
+  .tw-plan-footer-left{width:100%;justify-content:space-between}
+  .tw-plan-footer-left button{font-size:12px}
+  .tw-plan-submit{width:100%;min-height:42px}
+  .tw-dialog .tw-actions.split{bottom:-14px}
+  .tw-report-metrics{gap:6px}
+  .tw-report-metrics>div{padding:10px}
+  .tw-report-metrics>div>strong{font-size:20px}
+  .tw-tabs button{font-size:12px;min-width:0;padding:9px 4px}
+  .tw-report-mobile-person{grid-template-columns:minmax(80px,1fr) minmax(120px,1.2fr);padding:8px;gap:6px}
+}
+@media(max-width:370px){
+  .tw-report-mobile-person{grid-template-columns:1fr;gap:3px}
+  .tw-report-mobile-person .tw-report-cell{margin-left:7px}
+  .tw-day-heading-actions button{width:100%}
+  .tw-date-direct input{max-width:180px;min-width:0}
+}
