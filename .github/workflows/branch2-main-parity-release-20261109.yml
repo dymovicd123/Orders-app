@@ -64,7 +64,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD^)" = 'bc503e2d3c21504b30d1e4d4e6bce89dbd91f2a3'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-team-timesheet-report-v2-20261110.mjs' 'src/features/team/TeamAttendanceReport.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetReport.ts' 'src/features/team/teamTimesheetWorkspace.css')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'scripts/test-team-attendance-v1-20261110.mjs' 'scripts/test-team-timesheet-report-v2-20261110.mjs' 'src/features/team/TeamAttendanceReport.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetReport.ts' 'src/features/team/teamTimesheetWorkspace.css')"
           test "$actual" = "$expected"
           # The previous merged commit is immutable; only this release gate changes now.
           test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
