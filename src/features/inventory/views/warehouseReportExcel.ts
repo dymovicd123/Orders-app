@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate'
-import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../worker/domains/warehouse-capital.ts'
+import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 
 // Generates a real multi-sheet XLSX with numeric values, freezing and filters.
 // Uses the same warehouse-demand response as the unchanged Statistics page.
