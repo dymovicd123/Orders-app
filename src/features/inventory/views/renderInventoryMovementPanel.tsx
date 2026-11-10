@@ -3,7 +3,7 @@ import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWor
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy' | 'inventoryMovementError'
-  | 'movementSourceLoading' | 'movementSourceLoadError' | 'isAdmin'
+  | 'movementSourceLoading' | 'movementSourceLoadError' | 'isAdmin' | 'askActionConfirmation'
   | 'arrivalWorkspace' | 'inventoryArrivalSummary' | 'inventoryOperationAllProductGroups'
   | 'selectInventoryOperationMode' | 'changeInventoryOperationSource'
   | 'swapInventoryTransferDirection' | 'getStockQuantityForVariant'
@@ -26,6 +26,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
   const target = ctx.inventoryDraft.targetSource as 'warehouse' | 'boutique'
   return <div className="inventory-movement-panel" style={ctx.inventoryPanelStyle('movement')}>
     <InventoryUnifiedQuantityWorkspace
+      askActionConfirmation={ctx.askActionConfirmation}
       key={mode}
       mode={mode}
       source={source}
