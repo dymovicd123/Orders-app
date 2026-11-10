@@ -1,4 +1,4 @@
-import { DDS_CATEGORIES, validDdsArticle } from '../../shared/dds-categories.ts'
+import { activeDdsArticle, readDdsDirectory } from './dds-directory.ts'
 import type { AuthUser } from '../core/types.ts'
 
 export type DdsKind = 'funding' | 'expense' | 'reversal_funding' | 'reversal_expense'
@@ -79,6 +79,7 @@ async function insertEntry(db: D1Database, input: Omit<DdsRow,'id' | 'created_by
     }
     const reason = String(error)
     if (reason.includes('DDS_INSUFFICIENT_FUNDS')) throw invalid('Недостаточно денег в ДДС. Попросите администратора пополнить остаток.', 409)
+    if (reason.includes('DDS_INVALID_ARTICLE')) throw invalid('Статья больше недоступна. Обновите справочник ДДС.', 409)
     if (input.reverses_entry_id && /unique|constraint/i.test(reason))
       throw invalid('Эта запись уже отменена. Обновите журнал.', 409)
     throw error
@@ -101,7 +102,7 @@ export async function addDdsExpense(db: D1Database, input: DdsInput, actor: Auth
   const date = validDate(input.businessDate)
   const id = requestId(input.requestId)
   const category = text(input.category), article = text(input.article)
-  if (!validDdsArticle(category, article)) throw invalid('Выберите статью из утверждённого справочника расходов.')
+  if (!(await activeDdsArticle(db, category, article))) throw invalid('Выберите действующую статью из справочника ДДС.')
   const comment = text(input.comment).slice(0, 500)
   if ((category.startsWith('Зарплата') || article === 'Прочее') && !comment)
     throw invalid('Укажите в комментарии сотрудника или назначение расхода.')
@@ -164,17 +165,20 @@ export async function readDdsMonth(db: D1Database, monthInput: unknown, actor: A
     FROM dds_entries e LEFT JOIN dds_entries origin ON origin.id=e.reverses_entry_id
     WHERE e.business_date >= ? AND e.business_date < ?
     ORDER BY e.business_date DESC,e.id DESC LIMIT 2000`).bind(from,until).all()
+  const directory = await readDdsDirectory(db,actor)
+  const allNames = [...directory.map(item=>item.name), ...(grouped.results||[]).map(item=>item.category).filter(name=>!directory.some(dir=>dir.name===name))]
   const opening = Number(totals?.opening_balance||0), added = Number(totals?.month_added||0), spent=Number(totals?.month_spent||0)
   return {
     ok: true, month, currentBalance: Number(totals?.current_balance||0),
     openingBalance: opening, monthAdded: added, monthSpent: spent,
     closingBalance: opening+added-spent,
-    categories: DDS_CATEGORIES.map(group => ({
-      name: group.name,
-      total: (grouped.results||[]).filter(row => row.category===group.name).reduce((s,row)=>s+Number(row.amount||0),0),
-      articles: (grouped.results||[]).filter(row => row.category===group.name)
+    categories: allNames.map(name => ({
+      name,
+      total: (grouped.results||[]).filter(row => row.category===name).reduce((s,row)=>s+Number(row.amount||0),0),
+      articles: (grouped.results||[]).filter(row => row.category===name)
         .map(row => ({name:row.article,amount:Number(row.amount||0)})),
     })),
+    directory,
     entries: lines.results || [],
   }
 }
