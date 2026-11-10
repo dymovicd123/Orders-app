@@ -154,7 +154,7 @@ export async function readDdsMonth(db: D1Database, monthInput: unknown, actor: A
       SUM(CASE WHEN e.kind='expense' THEN e.amount ELSE -e.amount END) AS amount
     FROM dds_entries e LEFT JOIN dds_entries origin ON origin.id=e.reverses_entry_id
     WHERE e.business_date >= ? AND e.business_date < ? AND e.kind IN ('expense','reversal_expense')
-    GROUP BY 1,2 HAVING amount != 0 ORDER BY amount DESC,category,article`)
+    GROUP BY 1,2 HAVING SUM(CASE WHEN e.kind='expense' THEN e.amount ELSE -e.amount END) != 0 ORDER BY SUM(CASE WHEN e.kind='expense' THEN e.amount ELSE -e.amount END) DESC,1,2`)
     .bind(from,until).all<{category:string;article:string;amount:number}>()
   const lines = await db.prepare(`SELECT e.id,e.kind,e.amount,e.business_date AS businessDate,
     CASE WHEN e.kind LIKE 'reversal_%' THEN origin.category ELSE e.category END AS category,
