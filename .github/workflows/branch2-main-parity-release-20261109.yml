@@ -97,7 +97,6 @@ jobs:
           node scripts/test-team-attendance-manager-ux-20261110.mjs
           node scripts/test-team-timesheet-report-v2-20261110.mjs
           node scripts/test-team-timesheet-bulk-safe-20261110.mjs
-          node scripts/test-team-attendance-manager-ux-20261110.mjs
           schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('team_attendance_marks','team_attendance_changes')) AS tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'team_attendance_audit_%') AS triggers" --json)"
           printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .tables == 2 and .triggers == 3'
           echo 'BRANCH2_MANAGER_ATTENDANCE_SCHEMA_READ_ONLY_PASS'
