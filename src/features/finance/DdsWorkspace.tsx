@@ -31,7 +31,7 @@ const monthLabel = (m: string) => {
 function csvCell(value: string | number) {
   let text = String(value ?? '')
   // Prevent spreadsheet formula execution in user-authored comments.
-  if (/^[\s]*[=+@-]/.test(text)) text = "'" + text
+  if (typeof value === 'string' && /^[\s]*[=+@-]/.test(text)) text = "'" + text
   return '"' + text.replaceAll('"','""') + '"'
 }
 const sign = (kind: DdsEntry['kind']) => ['funding','reversal_expense'].includes(kind) ? 1 : -1
@@ -209,7 +209,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
       <div><h4>Отчёт за месяц</h4><span>Пополнения, расходы, остаток и статьи</span></div>
       <div className="dds-report-actions">
         <input type="month" aria-label="Месяц отчёта" value={month} max={todayInAlmaty().slice(0,7)}
-          onChange={event=>setMonth(event.target.value)}/>
+          onChange={event=>{ if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setMonth(event.target.value) }}/>
         <button className="secondary compact" type="button" disabled={!data||loading} onClick={exportMonth}>Скачать для Excel (CSV)</button>
       </div>
     </div>
