@@ -27,8 +27,8 @@ function positiveId(id:number){
 export async function readDdsDirectory(db:D1Database,actor:AuthUser|null):Promise<DdsDirectoryCategory[]>{
   requireAccess(actor)
   const [categories,articles]=await Promise.all([
-    db.prepare('SELECT id,name,is_active FROM dds_categories ORDER BY sort_order,id').all<Row>(),
-    db.prepare('SELECT id,category_id,name,is_active FROM dds_articles ORDER BY sort_order,id').all<Row>()
+    db.prepare('SELECT id,name,is_active FROM dds_categories ORDER BY sort_order,id').bind().all<Row>(),
+    db.prepare('SELECT id,category_id,name,is_active FROM dds_articles ORDER BY sort_order,id').bind().all<Row>()
   ])
   const grouped=new Map<number,DdsDirectoryCategory>()
   for(const row of categories.results||[])
