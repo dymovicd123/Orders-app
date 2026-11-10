@@ -5,6 +5,7 @@ import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } fro
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
 import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
+import { addDdsExpense, addDdsFunds, readDdsMonth, reverseDdsEntry } from './domains/dds.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
@@ -587,6 +588,24 @@ export default {
 
       if (url.pathname === '/api/reports/finance' && request.method === 'GET') {
         return json(await listFinanceReports(env.DB, url));
+      }
+
+      // Simple standalone DDS. This never reads or mutates the existing office cash register.
+      if (url.pathname === '/api/dds' && request.method === 'GET') {
+        return json(await readDdsMonth(env.DB, url.searchParams.get('month'), authUser))
+      }
+      if (url.pathname === '/api/dds/funds' && request.method === 'POST') {
+        const input = await readJson(request)
+        return json(await addDdsFunds(env.DB, input, authUser), { status: 201 })
+      }
+      if (url.pathname === '/api/dds/expenses' && request.method === 'POST') {
+        const input = await readJson(request)
+        return json(await addDdsExpense(env.DB, input, authUser), { status: 201 })
+      }
+      const ddsReverseMatch = url.pathname.match(/^\/api\/dds\/entries\/(\d+)\/reverse$/)
+      if (ddsReverseMatch && request.method === 'POST') {
+        const input = await readJson(request)
+        return json(await reverseDdsEntry(env.DB, Number(ddsReverseMatch[1]), input, authUser))
       }
 
       if (url.pathname === '/api/finance/money-history' && request.method === 'GET') {
