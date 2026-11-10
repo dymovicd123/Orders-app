@@ -25,9 +25,6 @@ function daysOfMonth(month:string){
   return Array.from({length:end},(_,i)=>month+'-'+String(i+1).padStart(2,'0'))
 }
 const weekday=(date:string)=>new Date(date+'T12:00:00Z').getUTCDay()
-function adjacentDay(date:string,offset:number){
-  const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+offset);return d.toISOString().slice(0,10)
-}
 function monthName(month:string){
   return new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'))
 }
