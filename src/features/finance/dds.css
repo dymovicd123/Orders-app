@@ -1,0 +1,33 @@
+.dds-workspace{padding:14px 0 26px;display:grid;gap:22px}
+.dds-heading,.dds-report-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.dds-heading h3{font-size:21px;margin:0 0 5px}.dds-heading p,.dds-report-head span,.dds-funding p,.dds-muted,.dds-loading{color:var(--muted,#64748b);margin:0;font-size:13px}
+.dds-balance{padding:21px;border-radius:17px;background:var(--surface,#f2f7f6);border:1px solid #b9dbce;display:flex;flex-direction:column;gap:7px;max-width:440px}
+.dds-balance span,.dds-balance small{font-size:13px;color:var(--muted,#526779)}.dds-balance strong{font-size:31px;line-height:1.2}
+.dds-forms{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr);gap:16px}
+.dds-form,.dds-panel{border:1px solid var(--border,#dce2e8);border-radius:14px;padding:18px;background:var(--card,#fff);min-width:0}
+.dds-form h4,.dds-panel h4,.dds-report-head h4{margin:0 0 13px;font-size:17px}
+.dds-form p{margin:-4px 0 15px}.dds-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.dds-fields label,.dds-dialog label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
+.dds-fields input,.dds-fields select,.dds-report-actions input,.dds-dialog input{width:100%;max-width:100%;min-height:39px;border:1px solid var(--border,#bfc8d4);border-radius:9px;background:var(--card,#fff);color:inherit;padding:8px 10px;font:inherit;box-sizing:border-box}
+.dds-wide{grid-column:1/-1}.dds-form-end{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px}
+.dds-form-end small{color:var(--muted,#64748b)}.dds-notice{padding:12px;border-radius:9px;font-size:13px}
+.dds-notice.is-error{border:1px solid #efb1b1;color:#a12525}.dds-notice.is-success{border:1px solid #9bd2ae;color:#167347}
+.dds-report-head{padding-top:7px}.dds-report-head h4{margin-bottom:3px}
+.dds-report-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.dds-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.dds-stat{background:var(--surface,#f6f8fa);border:1px solid var(--border,#e0e5ec);border-radius:12px;padding:16px;display:grid;gap:8px}
+.dds-stat span{color:var(--muted,#64748b);font-size:12px}.dds-stat strong{font-size:19px}
+.dds-report-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:15px}.dds-category{padding:11px 0;border-bottom:1px solid var(--border,#e5e7eb)}
+.dds-category summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px;font-size:14px}.dds-category summary b{white-space:nowrap}
+.dds-bar{height:6px;background:var(--surface,#e6eeee);border-radius:20px;overflow:hidden;margin:9px 0 5px}.dds-bar div{height:100%;background:#568b83}
+.dds-category-lines{padding:7px 3px}.dds-category-lines>div{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:5px 0}
+.dds-category-lines strong{white-space:nowrap}.dds-hint{color:#a36419;font-size:12px;margin-top:12px}
+.dds-history-list{display:grid;gap:0;max-height:620px;overflow:auto}.dds-history-row{display:flex;justify-content:space-between;gap:15px;padding:12px 0;border-bottom:1px solid var(--border,#e5e7eb)}
+.dds-entry-main,.dds-entry-sum{display:grid;gap:4px;min-width:0}.dds-entry-main span,.dds-entry-main small{font-size:12px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.dds-entry-main strong{font-size:13px}.dds-entry-sum{justify-items:end;align-content:start}.dds-entry-sum strong{white-space:nowrap}
+.dds-credit{color:#167347}.dds-debit{color:#a43e3e}
+.dds-dialog-overlay{position:fixed;z-index:4000;inset:0;background:rgba(16,24,40,.58);display:flex;align-items:center;justify-content:center;padding:16px}
+.dds-dialog{width:min(420px,100%);background:var(--card,#fff);border-radius:15px;padding:22px;display:grid;gap:15px;box-shadow:0 20px 70px #0003}
+.dds-dialog h4,.dds-dialog p{margin:0}.dds-dialog p{font-size:13px;color:var(--muted,#64748b)}
+.dds-dialog-buttons{display:flex;justify-content:flex-end;gap:10px}
+@media(max-width:900px){.dds-forms,.dds-report-grid{grid-template-columns:1fr}.dds-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:550px){.dds-fields{grid-template-columns:1fr}.dds-summary{grid-template-columns:1fr 1fr}.dds-stat{padding:12px}.dds-stat strong{font-size:16px}.dds-balance strong{font-size:27px}}
