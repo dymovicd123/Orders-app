@@ -75,6 +75,7 @@ import { createOrderShippingHandoverActions, handoverCheckpointDateLabel, handov
 import { createReturnExchangeCreationActions } from './features/orders/returnExchangeCreationActions'
 import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
 import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
+import { ActionConfirmationModal } from './components/dialogs/ActionConfirmationModal'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
@@ -158,6 +159,26 @@ function App() {
   const [authChecking, setAuthChecking] = useState(true)
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
+  const [actionConfirmationText, setActionConfirmationText] = useState<string | null>(null)
+  const actionConfirmationDecisionRef = useRef<((approved: boolean) => void) | null>(null)
+  const askActionConfirmation = useCallback((text: string) => {
+    if (actionConfirmationDecisionRef.current) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      actionConfirmationDecisionRef.current = resolve
+      setActionConfirmationText(text)
+    })
+  }, [])
+  const answerActionConfirmation = useCallback((approved: boolean) => {
+    const resolve = actionConfirmationDecisionRef.current
+    actionConfirmationDecisionRef.current = null
+    setActionConfirmationText(null)
+    resolve?.(approved)
+  }, [])
+  useEffect(() => () => {
+    actionConfirmationDecisionRef.current?.(false)
+    actionConfirmationDecisionRef.current = null
+  }, [])
+
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [authHasUsers, setAuthHasUsers] = useState(true)
@@ -2271,7 +2292,7 @@ function App() {
   }
 
   async function deleteLeadRecord(id: number) {
-    if (!id || !confirm('Удалить запись лидов?')) return
+    if (!id || !(await askActionConfirmation('Удалить запись лидов?'))) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -2305,7 +2326,7 @@ function App() {
   }
 
   async function deleteCallCentreRecord(id: number) {
-    if (!id || !confirm('Удалить запись Call Centre?')) return
+    if (!id || !(await askActionConfirmation('Удалить запись Call Centre?'))) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -2977,7 +2998,7 @@ function removeDebtPayment(index: number) {
       setMessage('Сначала сделайте предпросмотр. Подходящих заказов пока нет.')
       return
     }
-    const confirmed = window.confirm(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
+    const confirmed = await askActionConfirmation(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
     if (!confirmed) return
 
     setArchiveBusy(true)
@@ -3016,7 +3037,7 @@ function removeDebtPayment(index: number) {
       return
     }
     if (!isArchivedOrderRecord(order)) return
-    const confirmed = window.confirm(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
+    const confirmed = await askActionConfirmation(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
     if (!confirmed) return
     setSavingOrder(true)
     setError(null)
@@ -3612,7 +3633,8 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
-      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
+      <ActionConfirmationModal message={actionConfirmationText} onDecision={answerActionConfirmation} />
+       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
         prompt={arrivalRecoveryPrompt}
@@ -3807,7 +3829,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+        <InventorySection ctx={{ askActionConfirmation, onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
           const draftKey=inventoryUiId('correction')
           setInventoryDraft(current=>{
             // Two fast clicks on +размер/+цвет must never add the same SKU twice:
@@ -3903,7 +3925,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text), askStockResolution,
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation, askStockResolution,
         onShipmentChange: async () => { invalidateInventoryStockCaches(true); return (await loadDashboard(false)) != null },
         setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
