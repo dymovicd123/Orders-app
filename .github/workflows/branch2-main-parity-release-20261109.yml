@@ -62,10 +62,16 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'e7a8179e87b818c98eef2cc85e33a7fac93438e4'
+          test "$(git rev-parse HEAD^)" = '9bec3f6bf195ead1535c4f4e9b3989b666e8884a'
           actual="$(git diff --name-only HEAD^ HEAD)"
-          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml' '.github/workflows/quality-check.yml' 'migrations/0122_team_actual_attendance.sql' 'scripts/test-team-attendance-v1-20261110.mjs' 'src/app/types.ts' 'src/features/sections/TeamSection.tsx' 'src/features/team/TeamTimesheetWorkspace.tsx' 'src/features/team/teamTimesheetWorkspace.css' 'worker/domains/team-attendance.ts' 'worker/domains/team.ts' 'worker/index.ts')"
+          expected="$(printf '%s\n' '.github/workflows/branch2-main-parity-release-20261109.yml')"
           test "$actual" = "$expected"
+          # The previous merged commit is immutable; only this release gate changes now.
+          test "$(git hash-object migrations/0122_team_actual_attendance.sql)" = '124cb2f0aa21a4e77f03a16dfbbd1e1d2150d7d4'
+          test "$(git hash-object worker/domains/team-attendance.ts)" = '7e0386d4fb32321f6bf1ad94852b737dde5a1b73'
+          test "$(git hash-object worker/domains/team.ts)" = '733f1b038aef15a7a0866c0c77f5683733c3d345'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'f0a6653ecdbe4118c1b62e297c4a9eb95a6ac9b0'
+          test "$(git hash-object scripts/test-team-attendance-v1-20261110.mjs)" = '0c4367d299c8d7f01925d59ce81bffdff877a704'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
