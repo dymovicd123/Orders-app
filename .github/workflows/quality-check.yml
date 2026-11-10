@@ -69,6 +69,10 @@ jobs:
         if: github.base_ref == 'branch2'
         run: node scripts/test-simple-dds-ledger-20261110.mjs
 
+      - name: Verify DДС Excel workbook and focused daily expense UI
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-dds-excel-ux-20261110.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
