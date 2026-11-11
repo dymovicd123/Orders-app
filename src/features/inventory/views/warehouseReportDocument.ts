@@ -169,13 +169,60 @@ const demandExecution=(r:WarehouseDemandRow)=>[
   labelCharacteristic(r.gender),labelCategory(r.category),
 ].join(' · ')
 function variantPrice(r:WarehouseDemandRow){
-  if(!r.pricedQuantity)return 'Нет цены'
-  const avg=moneyRu(r.knownRevenue/r.pricedQuantity)
-  const range=r.minPrice===null||r.maxPrice===null?'диапазон неизвестен':
-    r.minPrice===r.maxPrice?moneyRu(r.minPrice):
+  if(!r.pricedQuantity)return {main:'Нет цены',detail:'Цена неизвестна'}
+  const range=r.minPrice===null||r.maxPrice===null?'Диапазон неизвестен':
+    r.minPrice===r.maxPrice?'Цена '+moneyRu(r.minPrice):
       moneyRu(r.minPrice)+'–'+moneyRu(r.maxPrice)
-  return avg+' средняя\n'+range+' · с ценой '+integerRu(r.pricedQuantity)+' шт.'+
-    (r.priceDiscrepancyQuantity>0?' · расхождений '+integerRu(r.priceDiscrepancyQuantity):'')
+  return {
+    main:moneyRu(r.knownRevenue/r.pricedQuantity),
+    detail:range+' · с ценой '+integerRu(r.pricedQuantity)+' шт.'+
+      (r.priceDiscrepancyQuantity>0?' · расхождений '+
+        integerRu(r.priceDiscrepancyQuantity):''),
+  }
+}
+function twoLineCell(main:string,detail:string,fill:string,width:number){
+  return inkCell([
+    paragraph(main,{bold:true,size:18,after:50}),
+    paragraph(detail,{size:15,color:palette.muted,after:0}),
+  ],fill,{width})
+}
+function demandVariantTable(rows:WarehouseDemandRow[]):Table{
+  const headers=['Цвет / размер','Источник','Количество','Средняя цена']
+  const header=new TableRow({tableHeader:true,cantSplit:true,children:
+    headers.map((h,i)=>cell(h,palette.ink,true,palette.white,[27,16,23,34][i]))})
+  const items=rows.map((r,i)=>{
+    const fill=i%2?palette.white:palette.pale
+    const price=variantPrice(r)
+    return new TableRow({cantSplit:true,children:[
+      twoLineCell(labelCharacteristic(r.color)+' · '+labelCharacteristic(r.size),
+        labelCharacteristic(r.gender),fill,27),
+      cell(labelSource(r.source),fill,false,palette.ink,16),
+      twoLineCell(integerRu(r.net)+' шт. без возвратов',
+        'Заказано '+integerRu(r.sold)+' · возвратов '+integerRu(r.returned),fill,23),
+      twoLineCell(price.main,price.detail,fill,34),
+    ]})
+  })
+  return new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[header,...items]})
+}
+function capitalVariantTable(rows:WarehouseCapitalRow[]):Table{
+  const heads=['Цвет / размер','Место','Остатки','Себестоимость','Цена продажи']
+  const widths=[25,12,21,21,21]
+  const header=new TableRow({tableHeader:true,cantSplit:true,children:
+    heads.map((h,i)=>cell(h,palette.ink,true,palette.white,widths[i]))})
+  const items=rows.map((r,i)=>{
+    const fill=i%2?palette.white:palette.pale
+    return new TableRow({cantSplit:true,children:[
+      twoLineCell(labelCharacteristic(r.color)+' · '+labelCharacteristic(r.size),'',fill,25),
+      cell(labelSource(r.source),fill,false,palette.ink,12),
+      twoLineCell(integerRu(r.quantity)+' шт.',
+        'Свободно '+integerRu(r.free)+' · резерв '+integerRu(r.reserved),fill,21),
+      twoLineCell(r.costPrice===null?'Неизвестна':moneyRu(r.costPrice)+'/шт.',
+        r.costPrice===null?'Цена не заполнена':'Всего '+moneyRu(r.costValue||0),fill,21),
+      twoLineCell(r.salePrice===null?'Неизвестна':moneyRu(r.salePrice)+'/шт.',
+        r.salePrice===null?'Цена не заполнена':'Всего '+moneyRu(r.retailValue||0),fill,21),
+    ]})
+  })
+  return new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[header,...items]})
 }
 export async function buildDemandStatisticsDocx(args:{
   demand:WarehouseDemandResponse;choice:WarehouseReportChoice;generatedAt?:string
@@ -225,15 +272,11 @@ export async function buildDemandStatisticsDocx(args:{
   for(const model of demandRank(rows,'product')){
     const variants=byModel.get(model.name)||[]
     lines.push(modelHeading(model.name))
-    lines.push(metricGrid([
-      {label:'Заказано',value:integerRu(model.sold)+' шт.',details:'',fill:palette.pale},
-      {label:'Без возвратов',value:integerRu(model.net)+' шт.',
-        details:percentRu(model.net,all.net)+' от общего спроса',fill:palette.paleGreen},
-      {label:'Средняя цена',value:model.priced?moneyRu(model.revenue/model.priced):'Нет данных',
-        details:'По '+integerRu(model.priced)+' шт. с известной ценой',fill:palette.paleBlue},
-      {label:'Стоимость позиций',value:model.priced?moneyRu(model.revenue):'Нет данных',
-        details:'Возвращено '+integerRu(model.returned)+' шт.',fill:palette.pale},
-    ]))
+    lines.push(paragraph(
+      integerRu(model.net)+' шт. · '+percentRu(model.net,all.net)+' спроса'+
+      ' · возвратов '+integerRu(model.returned)+
+      ' · средняя цена '+(model.priced?moneyRu(model.revenue/model.priced):'неизвестна'),
+      {size:18,color:palette.muted,after:105}))
     const executions=groupBy(variants,demandExecution)
     for(const [execution,items] of executions){
       const sum=totalDemand(items)
@@ -241,15 +284,8 @@ export async function buildDemandStatisticsDocx(args:{
       lines.push(paragraph(integerRu(sum.net)+' шт. без возвратов · '+
         (sum.priced?'средняя цена '+moneyRu(sum.revenue/sum.priced):
           'цена неизвестна'),{color:palette.muted,size:17,after:85}))
-      lines.push(table(['Цвет · размер','Источник','Заказ / возврат / итог',
-        'Цена за штуку'],[...items].sort((a,b)=>b.net-a.net||
-          a.color.localeCompare(b.color,'ru')||a.size.localeCompare(b.size,'ru'))
-        .map(r=>[
-          labelCharacteristic(r.color)+' · '+labelCharacteristic(r.size),
-          labelSource(r.source),
-          integerRu(r.sold)+' / '+integerRu(r.returned)+' / '+integerRu(r.net),
-          variantPrice(r),
-        ]),[28,16,22,34]))
+      lines.push(demandVariantTable([...items].sort((a,b)=>b.net-a.net||
+        a.color.localeCompare(b.color,'ru')||a.size.localeCompare(b.size,'ru'))))
     }
   }
   if(!byModel.size)lines.push(paragraph('Данных за выбранный период нет.'))
@@ -367,16 +403,8 @@ export async function buildWarehouseCapitalDocx(args:{
         (sum.costQty?moneyRu(sum.cost):'неизвестна')+
         ' · продажная стоимость '+(sum.saleQty?moneyRu(sum.sale):'неизвестна'),
         {color:palette.muted,size:17,after:85}))
-      lines.push(table(['Цвет · размер','Место','Всего / своб. / резерв',
-        'Себестоимость','Цена продажи'],[...items].sort((a,b)=>
-        a.color.localeCompare(b.color,'ru')||a.size.localeCompare(b.size,'ru'))
-      .map(r=>[
-        labelCharacteristic(r.color)+' · '+labelCharacteristic(r.size),
-        labelSource(r.source),
-        integerRu(r.quantity)+' / '+integerRu(r.free)+' / '+integerRu(r.reserved),
-        r.costPrice===null?'Неизвестна':moneyRu(r.costPrice)+'/шт.\nВсего '+moneyRu(r.costValue||0),
-        r.salePrice===null?'Неизвестна':moneyRu(r.salePrice)+'/шт.\nВсего '+moneyRu(r.retailValue||0),
-      ]),[25,12,22,20,21]))
+      lines.push(capitalVariantTable([...items].sort((a,b)=>
+        a.color.localeCompare(b.color,'ru')||a.size.localeCompare(b.size,'ru'))))
     }
   }
   if(!models.length)lines.push(paragraph('Положительных остатков по выбранной категории нет.'))
