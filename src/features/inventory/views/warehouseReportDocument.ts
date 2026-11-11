@@ -38,9 +38,9 @@ function cell(text:string,fill?:string,bold=false):TableCell{
       spacing:{after:0}})],
   })
 }
-function table(headers:string[],rows:CellValue[][],limit=250):Table{
+function table(headers:string[],rows:CellValue[][],limit?:number):Table{
   if(headers.length>7)throw Error('Печатный отчёт должен содержать не более семи столбцов')
-  const selected=rows.slice(0,limit)
+  const selected=limit===undefined?rows:rows.slice(0,limit)
   const body=[
     new TableRow({children:headers.map(k=>cell(k,C.ink,true)),tableHeader:true}),
     ...selected.map((row,i)=>new TableRow({children:row.map(v=>cell(txt(v),i%2?C.white:C.light))})),
@@ -94,16 +94,35 @@ function demandRank(rows:WarehouseDemandRow[],key:keyof WarehouseDemandRow){
   return [...m].map(([name,values])=>({name,...totals(values)}))
     .sort((a,b)=>b.net-a.net||b.sold-a.sold||a.name.localeCompare(b.name,'ru'))
 }
-function ranked(name:string,values:ReturnType<typeof demandRank>,total:number,limit:number){
-  const max=Math.max(1,...values.map(v=>v.net))
-  const rows=values.slice(0,limit).map((v,i)=>[
-    String(i+1),v.name,integerRu(v.net),percentRu(v.net,total),
-    '■'.repeat(Math.max(1,Math.round(Math.max(0,v.net)/max*11))),
+function ranked(name:string,values:ReturnType<typeof demandRank>,total:number){
+  const rankedRows=values.map((v,i)=>[
+    String(i+1),v.name,
+    integerRu(v.sold)+' / '+integerRu(v.returned)+' / '+integerRu(v.net),
+    percentRu(v.net,total),
+    v.priced?moneyRu(v.revenue):'Неизвестна',
+    v.priced?moneyRu(v.revenue/v.priced)+' · '+integerRu(v.priced)+' шт.':'Нет цены',
   ])
-  return [h(name),table(['№','Наименование','Без возвратов','Доля','Спрос'],rows,limit),
-    values.length>limit?note('Показаны первые '+limit+' из '+values.length+
-      '. Полный список, суммы и цены содержатся в Excel.'):
-      note('Рейтинг построен по количеству после возвратов.') ]
+  return [h(name),table(['№','Наименование','Заказано / возврат / итог','Доля',
+    'Стоимость позиций','Средняя цена / охват'],rankedRows)]
+}
+function variantsByModel(rows:WarehouseDemandRow[]){
+  const result=new Map<string,WarehouseDemandRow[]>()
+  for(const row of rows){
+    const bucket=result.get(row.product)||[]
+    bucket.push(row)
+    result.set(row.product,bucket)
+  }
+  return result
+}
+function variantPrice(row:WarehouseDemandRow){
+  if(!row.pricedQuantity)return 'Нет цены'
+  const average=moneyRu(row.knownRevenue/row.pricedQuantity)
+  const range=row.minPrice===null||row.maxPrice===null?'Диапазон неизвестен':
+    row.minPrice===row.maxPrice?'Цена '+moneyRu(row.minPrice):
+      'От '+moneyRu(row.minPrice)+' до '+moneyRu(row.maxPrice)
+  const difference=row.priceDiscrepancyQuantity>0?
+    '; расхождений: '+integerRu(row.priceDiscrepancyQuantity):''
+  return average+' средняя; '+range+'; с ценой '+integerRu(row.pricedQuantity)+' шт.'+difference
 }
 /** Full overview and legible breakdown for humans; complete data rows remain in XLSX. */
 export async function buildDemandStatisticsDocx(args:{
@@ -135,30 +154,37 @@ export async function buildDemandStatisticsDocx(args:{
       ['Средняя цена товара с известной ценой',v.priced?moneyRu(v.revenue/v.priced):'Нет данных'],
       ['Цена известна для',integerRu(v.priced)+' из '+integerRu(v.net)+' шт. ('+percentRu(v.priced,v.net)+')'],
     ]),
-    note('Суммы отражают сохранённые цены позиций, не полученные платежи и не прибыль. Состав прошлых заказов может измениться после обменов.'),
   ]
   for(const [name,key] of [
     ['Модели','product'],['Цвета','color'],['Размеры','size'],
     ['Материалы','material'],['Длина','length'],['Пол','gender'],
-  ] as const)children.push(...ranked(name,demandRank(rows,key),v.net,name==='Модели'?20:12))
-  children.push(h('Подробно по моделям'))
+  ] as const)children.push(...ranked(name,demandRank(rows,key),v.net))
+  children.push(h('Все модели и точные варианты'))
   const modelRows=demandRank(rows,'product')
-  for(const model of modelRows.slice(0,35)){
-    const items=rows.filter(r=>r.product===model.name)
-    children.push(minor(model.name+'  ·  '+integerRu(model.net)+' шт. ('+percentRu(model.net,v.net)+')'))
-    children.push(table(['Исполнение','Цвет / размер','Источник','Без возвратов','Средняя цена'],items
-      .sort((a,b)=>b.net-a.net).slice(0,12).map(r=>[
-        [labelCharacteristic(r.material),labelCharacteristic(r.length)].join(' · '),
-        labelCharacteristic(r.color)+' / '+labelCharacteristic(r.size),
-        labelSource(r.source),integerRu(r.net),
-        r.pricedQuantity?moneyRu(r.knownRevenue/r.pricedQuantity):'Неизвестна',
-      ]),12))
-    if(items.length>12)children.push(note('Показаны 12 ведущих вариантов из '+items.length+
-      '. Остальные варианты доступны в Excel.'))
+  const byModel=variantsByModel(rows)
+  for(const model of modelRows){
+    const items=[...(byModel.get(model.name)||[])].sort((a,b)=>
+      b.net-a.net||a.material.localeCompare(b.material,'ru')||
+      a.color.localeCompare(b.color,'ru')||a.size.localeCompare(b.size,'ru'))
+    children.push(minor(model.name+' · '+integerRu(model.net)+' шт.'))
+    children.push(para('Заказано '+integerRu(model.sold)+' · возвраты '+integerRu(model.returned)+
+      ' · по известным ценам '+moneyRu(model.revenue)+
+      ' · средняя цена '+(model.priced?moneyRu(model.revenue/model.priced):'неизвестна')+
+      ' · с ценой '+integerRu(model.priced)+' шт.',{size:18,color:C.muted,after:100}))
+    children.push(table([
+      'Исполнение / пол / категория','Цвет · размер','Источник',
+      'Заказ / возврат / итог','Стоимость позиции','Средняя цена и диапазон',
+    ],items.map(row=>[
+      [labelCharacteristic(row.material),labelCharacteristic(row.length),
+        labelCharacteristic(row.gender),labelCategory(row.category)].join(' · '),
+      labelCharacteristic(row.color)+' · '+labelCharacteristic(row.size),
+      labelSource(row.source),
+      integerRu(row.sold)+' / '+integerRu(row.returned)+' / '+integerRu(row.net),
+      row.pricedQuantity?moneyRu(row.knownRevenue)+' · '+integerRu(row.pricedQuantity)+' с ценой':'Неизвестна',
+      variantPrice(row),
+    ])))
   }
-  children.push(h('О чём важно помнить'))
-  children.push(para('Отчёт показывает спрос по текущему составу заказов, а не неизменяемую историю выдач. Цены учитываются только там, где они известны.'))
-  children.push(para('Excel содержит полные рейтинги и все сочетания характеристик для дальнейшего анализа, включая редко покупаемые варианты.'))
+  if(!modelRows.length)children.push(para('За выбранный период данных нет.'))
   return Packer.toBlob(doc(children,'Статистика спроса'))
 }
 function capitalSum(rows:WarehouseCapitalRow[]){
