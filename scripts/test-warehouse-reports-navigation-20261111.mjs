@@ -29,7 +29,7 @@ assert.ok(section.includes("<InventoryDemandStatistics active={inventoryModuleVi
 assert.ok(section.includes("<WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} />"))
 assert.ok(app.includes("(nextPanel === 'reports' && !isAdmin)"),'Finance panel must reject non-admin navigation')
 assert.ok(app.includes("(inventoryPanel === 'reports' && !isAdmin)"),'Switching role must close finance screen')
-assert.ok(app.includes('isFinanceAdmin: isAdmin, isAdmin: canManageWarehouse'),
+assert.ok(app.includes('isAdmin: canManageWarehouse, isFinanceAdmin: isAdmin'),
   'Finance access must use actual admin role')
 assert.ok(operational.includes('inventoryAdminPanels.includes(panel) : inventoryManagerPanels.includes(panel)'))
 const route=handler.indexOf("url.pathname === '/api/reports/warehouse-capital'")
