@@ -206,3 +206,107 @@
  .warehouse-capital-distribution{padding:13px}
  .warehouse-capital-source small{flex-wrap:wrap}
 }
+
+/* Finance v3: one total per metric, clear subsets and compact variant inspection. */
+.warehouse-capital-overview{display:grid;gap:14px;padding:0;border:0;background:transparent}
+.warehouse-capital-simple-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.warehouse-capital-main-card{border-radius:13px;border:1px solid #dae7ed;padding:20px 18px;
+ background:var(--card,#fff);display:grid;gap:14px;min-width:0}
+.warehouse-capital-main-card.is-cost{background:#f1f8f4;border-color:#cce6d5}
+.warehouse-capital-main-card.is-sale{background:#f1f6fc;border-color:#d6e3f1}
+.warehouse-capital-main-card>span{font-size:13px;font-weight:700;color:#567386}
+.warehouse-capital-main-card>strong{font-size:clamp(22px,2.1vw,32px);line-height:1.1;
+ font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.warehouse-capital-main-card.is-cost>strong{color:#166a4b}
+.warehouse-capital-main-card.is-sale>strong{color:#295f83}
+.warehouse-capital-main-split{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #dbe7e9;padding-top:12px}
+.warehouse-capital-main-split>span{display:flex;justify-content:space-between;gap:5px;
+ font-size:12px;color:#61788a;flex:1;min-width:125px}
+.warehouse-capital-main-split b{white-space:nowrap;color:inherit;font-weight:800}
+.warehouse-capital-coverage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;
+ border:1px solid #dce6ec;border-radius:12px;background:var(--card,#fff);padding:15px 17px}
+.warehouse-capital-coverage-item{display:grid;gap:9px;min-width:0}
+.warehouse-capital-coverage-item>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.warehouse-capital-coverage-item>div:first-child span{font-size:12px;color:#657d8c}
+.warehouse-capital-coverage-item>div:first-child strong{font-size:12px;font-variant-numeric:tabular-nums}
+.warehouse-capital-location{border:1px solid #dce6ec;border-radius:12px;background:var(--card,#fff);
+ padding:16px;display:grid;gap:13px}
+.warehouse-capital-location h3{font-size:15px;margin:0}
+.warehouse-capital-location-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.warehouse-capital-location-grid>div{border:1px solid #e4eaf0;border-radius:9px;padding:11px 13px;
+ display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}
+.warehouse-capital-location-grid b{font-size:13px}
+.warehouse-capital-location-grid strong{font-size:13px;font-variant-numeric:tabular-nums}
+.warehouse-capital-location-grid .warehouse-capital-meter-track{grid-column:span 2}
+.warehouse-capital-model-content{background:var(--surface,#f7f9fa)}
+.warehouse-capital-models-head p:empty{display:none}
+.warehouse-capital-browser{display:grid;grid-template-columns:minmax(0,1fr) minmax(245px,300px);
+ gap:12px;padding:12px;align-items:start;background:var(--card,#fff)}
+.warehouse-capital-browser-colors{display:grid;align-content:start;gap:9px;min-width:0}
+.warehouse-capital-color-search{border:1px solid #d2e2e8;border-radius:9px;
+ padding:10px 12px;font-size:13px;max-width:100%;width:100%;color:inherit;
+ background:var(--card,#fff)}
+.warehouse-capital-color-group{border:1px solid #e1e9ee;border-radius:10px;padding:12px 13px;
+ display:grid;gap:11px;background:var(--card,#fff)}
+.warehouse-capital-color-header{display:flex;align-items:center;justify-content:space-between;
+ gap:12px}
+.warehouse-capital-color-header strong{font-size:13px}
+.warehouse-capital-color-header span{font-size:12px;color:#5b7487;white-space:nowrap}
+.warehouse-capital-size-pills{display:flex;flex-wrap:wrap;gap:7px}
+.warehouse-capital-size-pills button{min-width:67px;display:grid;gap:2px;text-align:center;
+ border:1px solid #d8e4eb;border-radius:9px;padding:9px 11px;background:var(--surface,#f7fafb);
+ color:inherit;cursor:pointer;min-height:53px}
+.warehouse-capital-size-pills button:hover{border-color:#7db8a4}
+.warehouse-capital-size-pills button.is-picked{border:2px solid #25866b;background:#e8f5ee;
+ padding:8px 10px}
+.warehouse-capital-size-pills button b{font-size:13px;font-variant-numeric:tabular-nums}
+.warehouse-capital-size-pills button span{font-size:11px;color:#5e7587}
+.warehouse-capital-size-pills button small{font-size:10px;color:#72869a}
+.warehouse-capital-size-pills button small.warehouse-capital-has-reserve{color:#98662d}
+.warehouse-capital-all-colors{justify-self:start;background:transparent;border:1px solid #cee2dc;
+ color:#23674f;padding:10px 14px;border-radius:9px;min-height:42px;font-weight:750;cursor:pointer}
+.warehouse-capital-no-colors{font-size:12px;color:#627c8c;margin:10px}
+.warehouse-capital-picked{min-width:0;border:1px solid #cfe3da;border-radius:10px;
+ padding:15px;display:grid;gap:13px;background:#f5faf7}
+.warehouse-capital-picked-desktop{position:sticky;top:12px}
+.warehouse-capital-picked-mobile{display:none}
+.warehouse-capital-picked-title{display:grid;gap:5px}
+.warehouse-capital-picked-title>span{font-size:11px;color:#608477}
+.warehouse-capital-picked-title strong{font-size:16px;overflow-wrap:anywhere}
+.warehouse-capital-picked-title small{font-size:11px;color:#6c8090}
+.warehouse-capital-picked-qty{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.warehouse-capital-picked-qty>div{border-radius:8px;padding:10px 5px;
+ background:var(--card,#fff);display:grid;gap:5px;text-align:center}
+.warehouse-capital-picked-qty span{font-size:11px;color:#597887}
+.warehouse-capital-picked-qty b{font-size:16px}
+.warehouse-capital-picked-price{display:grid;gap:5px;border-top:1px solid #d5e7db;padding-top:11px}
+.warehouse-capital-picked-price span{font-size:12px;color:#657e88}
+.warehouse-capital-picked-price strong{font-size:16px;overflow-wrap:anywhere}
+.warehouse-capital-picked-price small{font-size:11px;color:#6b8190}
+.warehouse-capital-data-issues{font-size:11px;color:#7d8690;padding:8px}
+@media(max-width:1090px){
+ .warehouse-capital-browser{grid-template-columns:minmax(0,1fr) minmax(205px,250px)}
+ .warehouse-capital-main-card{padding:16px 13px}
+ .warehouse-capital-main-split>span{min-width:100%}
+}
+@media(max-width:850px){
+ .warehouse-capital-browser{grid-template-columns:minmax(0,1fr)}
+ .warehouse-capital-picked-desktop{display:none}
+ .warehouse-capital-picked-mobile{display:grid;margin-top:2px}
+ .warehouse-capital-simple-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .warehouse-capital-main-card:first-child{grid-column:span 2}
+ .warehouse-capital-main-split>span{min-width:125px}
+}
+@media(max-width:620px){
+ .warehouse-capital-simple-kpis{grid-template-columns:1fr;gap:8px}
+ .warehouse-capital-main-card:first-child{grid-column:auto}
+ .warehouse-capital-main-card{padding:14px 13px;gap:10px}
+ .warehouse-capital-main-card>strong{font-size:26px}
+ .warehouse-capital-coverage{grid-template-columns:1fr;gap:13px;padding:13px}
+ .warehouse-capital-location-grid{grid-template-columns:1fr;gap:8px}
+ .warehouse-capital-browser{padding:8px;gap:8px}
+ .warehouse-capital-color-group{padding:10px}
+ .warehouse-capital-size-pills button{min-width:61px}
+ .warehouse-capital-picked{padding:12px}
+ .warehouse-capital-main-split>span{min-width:105px}
+}
