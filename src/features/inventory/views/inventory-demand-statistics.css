@@ -100,3 +100,9 @@
 @media(max-width:1180px){.demand-main-grid{grid-template-columns:minmax(0,1.4fr) minmax(270px,1fr)}.demand-other-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.demand-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:780px){.demand-main-grid{grid-template-columns:1fr}.demand-secondary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.demand-other-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.demand-dialog{width:min(570px,100vw)}}
 @media(max-width:560px){.demand-page{gap:15px}.demand-scope{grid-template-columns:1fr}.demand-scope button{padding:12px 14px}.demand-scope button.is-active{padding:11px 13px}.demand-period{padding:10px}.demand-date-caption{margin-left:0}.demand-secondary,.demand-other-grid{grid-template-columns:1fr}.demand-section-title{align-items:start}.demand-kpis>div{padding:12px}.demand-dialog-toolbar{padding:10px 13px}.demand-dialog-body{padding:18px 13px 36px}.demand-dialog-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Export belongs to the statistics page; no changes to existing cards or calculations. */
+.demand-top-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.demand-top-actions button{min-height:42px}
+.demand-top-actions .demand-download{background:#e9f4ec;border-color:#b4d1bd;color:#1f6545;font-weight:750}
+@media(max-width:540px){.demand-top-actions{width:100%}.demand-top-actions button{flex:1}}
