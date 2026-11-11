@@ -20,7 +20,7 @@ const t=(text:string,options?:{bold?:boolean;color?:string,size?:number})=>
   new TextRun({text,bold:options?.bold,color:options?.color||C.ink,
     size:options?.size||20,font:'Aptos'})
 const para=(text:string,opts?:{bold?:boolean,color?:string,size?:number,after?:number})=>
-  new Paragraph({children:[t(text,opts)],spacing:{after:opts?.after??90},breakLine:false})
+  new Paragraph({children:[t(text,opts)],spacing:{after:opts?.after??90}})
 const title=(text:string)=>new Paragraph({children:[t(text,{bold:true,size:42})],
   spacing:{before:150,after:140},keepNext:true})
 const h=(text:string)=>new Paragraph({children:[t(text,{bold:true,size:27})],
