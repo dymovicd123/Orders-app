@@ -1,3 +1,4 @@
+import {labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
 import { strToU8, zipSync } from 'fflate'
 import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 
@@ -105,12 +106,13 @@ const DIMENSIONS=[
   ['Цвета','color'],['Размеры','size'],['Материалы','material'],
   ['Длина','length'],['Пол','gender'],
 ] as const
-const safeText=(value:string|undefined|null)=>String(value||'Не указано')
+const safeText=(value:string|undefined|null)=>labelCharacteristic(String(value||''))
 const ratio=(numerator:number,denominator:number)=>denominator?N(Math.round(numerator/denominator*10000)/100):T('—')
 function groupedDemand(rows:WarehouseDemandRow[],field:keyof WarehouseDemandRow){
   const entries=new Map<string,{sold:number;net:number;returned:number;priced:number;revenue:number}>()
   for(const row of rows){
-    const name=safeText(String(row[field]??''))
+    const name=field==='source'?labelSource(String(row[field]??'')):
+      field==='category'?labelCategory(String(row[field]??'')):safeText(String(row[field]??''))
     const entry=entries.get(name)||{sold:0,net:0,returned:0,priced:0,revenue:0}
     entry.sold+=row.sold;entry.net+=row.net;entry.returned+=row.returned
     entry.priced+=row.pricedQuantity;entry.revenue+=row.knownRevenue
@@ -144,12 +146,12 @@ export function buildDemandStatisticsXlsx(args:{
     inconsistent:a.inconsistent+r.priceDiscrepancyQuantity,
   }),{sold:0,net:0,returned:0,priced:0,knownRevenue:0,inconsistent:0})
   const subtitle=choice.start+' — '+choice.end+' · '+(choice.scope==='shipped'?'Отправленные':'Оформленные')+
-    ' · '+choice.source+' · '+choice.category
+    ' · '+labelSource(choice.source)+' · '+labelCategory(choice.category)
   const summary:[string,Cell][]=[
     ['Сформировано',T(args.generatedAt||new Date().toISOString())],
     ['Начало периода',T(choice.start)],['Конец периода',T(choice.end)],
-    ['Режим',T(choice.scope==='shipped'?'Только отправленные товары':'Все оформленные заказы')],
-    ['Источник',T(choice.source)],['Категория',T(choice.category)],
+    ['Режим',T(labelScope(choice.scope))],
+    ['Источник',T(labelSource(choice.source))],['Категория',T(labelCategory(choice.category))],
     ['Число оформленных заказов за период (общая выборка)',N(demand.periodOrderCount||0)],
     ['Число отправленных заказов за период (общая выборка)',N(demand.periodShippedOrderCount||0)],
     ['Количество позиций, шт.',N(totals.sold)],
@@ -174,7 +176,7 @@ export function buildDemandStatisticsXlsx(args:{
   for(const r of rows)for(const [label,field] of [['Цвет','color'],['Размер','size'],['Материал','material'],
     ['Длина','length'],['Пол','gender'],['Источник','source']] as const){
     const key=[r.product,label,r[field]].join('\u001f')
-    const prev=breakdown.get(key)||{model:r.product,dimension:label,value:r[field],sold:0,net:0,returned:0,priced:0,revenue:0}
+    const prev=breakdown.get(key)||{model:r.product,dimension:label,value:field==='source'?labelSource(r[field]):labelCharacteristic(r[field]),sold:0,net:0,returned:0,priced:0,revenue:0}
     prev.sold+=r.sold;prev.net+=r.net;prev.returned+=r.returned
     prev.priced+=r.pricedQuantity;prev.revenue+=r.knownRevenue
     breakdown.set(key,prev)
@@ -195,7 +197,7 @@ export function buildDemandStatisticsXlsx(args:{
       'С известной ценой, шт.','Стоимость позиций, ₸','Средняя цена, ₸','Цена мин., ₸','Цена макс., ₸',
       'Расхождение цены, шт.'],
     [...rows].sort((a,b)=>a.product.localeCompare(b.product,'ru')||b.net-a.net).map(r=>[
-      T(r.product),T(r.color),T(r.size),T(r.material),T(r.length),T(r.gender),T(r.category),T(r.source),
+      T(r.product),T(labelCharacteristic(r.color)),T(labelCharacteristic(r.size)),T(labelCharacteristic(r.material)),T(labelCharacteristic(r.length)),T(labelCharacteristic(r.gender)),T(labelCategory(r.category)),T(labelSource(r.source)),
       N(r.sold),N(r.returned),N(r.net),ratio(r.net,totals.net),N(r.pricedQuantity),MONEY(r.knownRevenue),
       r.pricedQuantity?MONEY(r.knownRevenue/r.pricedQuantity):T('Неизвестна'),
       r.minPrice===null?T('Неизвестна'):MONEY(r.minPrice),
@@ -226,7 +228,9 @@ function capitalTotals(rows:WarehouseCapitalRow[]){
 const financeGroups=(rows:WarehouseCapitalRow[],fields:(keyof WarehouseCapitalRow)[])=>
   [...rows.reduce((map,r)=>{
     const key=fields.map(f=>String(r[f]??'—')).join('\u001f')
-    const prev=map.get(key)||{labels:fields.map(f=>String(r[f]??'—')),items:[] as WarehouseCapitalRow[]}
+    const prev=map.get(key)||{labels:fields.map(f=>f==='source'?labelSource(String(r[f]??'')):
+      f==='category'?labelCategory(String(r[f]??'')):f==='product'?String(r[f]??''):
+      labelCharacteristic(String(r[f]??''))),items:[] as WarehouseCapitalRow[]}
     prev.items.push(r);map.set(key,prev);return map
   },new Map<string,{labels:string[];items:WarehouseCapitalRow[]}>()).values()]
   .map(r=>({...r,summary:capitalTotals(r.items)}))
@@ -240,12 +244,12 @@ export function buildWarehouseCapitalXlsx(args:{
   const rows=capitalFiltered(capital,choice)
   const v=capitalTotals(rows)
   const captured=capital.capturedAt
-  const subtitle='Снимок '+captured+' · источник '+choice.source+' · категория '+choice.category+
+  const subtitle='Снимок '+captured+' · источник '+labelSourceFilter(choice.source)+' · категория '+labelCategory(choice.category)+
     ' · только положительные остатки'
   const val=(n:number)=>MONEY(n)
   const summary:[string,Cell][]=[
     ['Время оценки остатков',T(captured)],['Сформирован файл',T(args.generatedAt||new Date().toISOString())],
-    ['Источник',T(choice.source)],['Категория',T(choice.category)],
+    ['Источник',T(labelSourceFilter(choice.source))],['Категория',T(labelCategory(choice.category))],
     ['Физически на месте, шт.',N(v.quantity)],['Из них в резерве, шт.',N(v.reserved)],
     ['Свободно к продаже, шт.',N(v.free)],
     ['Стоимость по известной себестоимости, ₸',val(v.cost)],
@@ -290,7 +294,7 @@ export function buildWarehouseCapitalXlsx(args:{
       'Свободно по цене, ₸','Резерв по цене, ₸','Статус'],
     [...rows].sort((a,b)=>a.product.localeCompare(b.product,'ru')||a.material.localeCompare(b.material,'ru')||
       a.color.localeCompare(b.color,'ru')).map(r=>[
-      T(r.source),T(r.product),T(r.gender),T(r.material),T(r.length),T(r.category),T(r.color),T(r.size),
+      T(labelSource(r.source)),T(r.product),T(labelCharacteristic(r.gender)),T(labelCharacteristic(r.material)),T(labelCharacteristic(r.length)),T(labelCategory(r.category)),T(labelCharacteristic(r.color)),T(labelCharacteristic(r.size)),
       N(r.quantity),N(r.reserved),N(r.free),
       r.costPrice===null?T('Неизвестна'):MONEY(r.costPrice),
       r.salePrice===null?T('Неизвестна'):MONEY(r.salePrice),
