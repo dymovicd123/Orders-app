@@ -86,6 +86,8 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   const [loading,setLoading]=useState(false)
   const [error,setError]=useState('')
   const [refresh,setRefresh]=useState(0)
+  const [exporting,setExporting]=useState(false)
+  const [exportError,setExportError]=useState('')
   const [orders,setOrders]=useState<OrderLine[]>([])
   const [orderPage,setOrderPage]=useState(0)
   const [orderLoading,setOrderLoading]=useState(false)
@@ -150,6 +152,28 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   },[active,variantId,period.start,period.end,scope,orderPage])
 
 
+  async function exportStatistics(){
+    if(!response?.ok||response.truncated||!response.rows||loading||exporting)return
+    setExporting(true);setExportError('')
+    try{
+      const {buildDemandStatisticsXlsx}=await import('./warehouseReportExcel')
+      const bytes=buildDemandStatisticsXlsx({
+        demand:response,choice:{...period,scope,source,category},
+      })
+      const blob=new Blob([new Uint8Array(bytes)],{
+        type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      const url=URL.createObjectURL(blob)
+      const link=document.createElement('a')
+      link.href=url
+      link.download='Статистика-товаров-'+period.start+'-'+period.end+'.xlsx'
+      document.body.appendChild(link);link.click();link.remove()
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+    }catch(error){
+      setExportError(error instanceof Error?error.message:'Не удалось выгрузить Excel.')
+    }finally{setExporting(false)}
+  }
+
   function analysisCard(kind:Dimension,items:Summary[],limit:number) {
     const visible=showAll===kind?items:items.slice(0,limit)
     const max=Math.max(1,...items.map(item=>item.net))
@@ -175,7 +199,13 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   return <section className="demand-page" aria-label="Статистика спроса">
     <header className="demand-top"><div><span className="demand-eyebrow">СТАТИСТИКА ТОВАРОВ</span><h2>Какие товары пользуются спросом</h2>
       <p>Посмотрите, какие модели, цвета и размеры выбирают покупатели.</p></div>
-      <button className="demand-refresh" type="button" onClick={()=>setRefresh(v=>v+1)} disabled={loading}>↻ Обновить</button>
+      <div className="demand-top-actions">
+        <button className="demand-download" type="button" onClick={()=>void exportStatistics()}
+          disabled={loading||exporting||!response?.ok||Boolean(response.truncated)}>
+          {exporting?'Формируется…':'Скачать Excel'}
+        </button>
+        <button className="demand-refresh" type="button" onClick={()=>setRefresh(v=>v+1)} disabled={loading}>↻ Обновить</button>
+      </div>
     </header>
     <div className="demand-scope" aria-label="Что учитывается">
       <button type="button" aria-pressed={!isSent} className={!isSent?'is-active':''} onClick={()=>{setScope('orders');clearDetail()}}>
@@ -203,6 +233,7 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
 
     {loading&&<div className="demand-notice" role="status">Загружаем данные…</div>}
     {error&&<div className="demand-notice" role="alert">{error}</div>}
+    {exportError&&<div className="demand-notice" role="alert">{exportError}</div>}
     {response?.truncated&&<div className="demand-notice" role="alert">Слишком много сочетаний товаров — сократите период, чтобы рейтинг был полным.</div>}
     {response&&!response.truncated&&!loading&&<>
       <div className="demand-explain"><span className="demand-explain-dot" aria-hidden="true"/>

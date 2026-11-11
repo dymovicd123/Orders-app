@@ -57,3 +57,86 @@
 @media(max-width:370px){.warehouse-report-kpis{grid-template-columns:1fr}
 .warehouse-report-filters{grid-template-columns:1fr}.warehouse-report-list-row{align-items:start}
 .warehouse-report-list-row>b{white-space:normal}.warehouse-report-scope button{flex:1}}
+
+/* Dedicated inventory valuation: model -> execution -> exact variant. */
+.warehouse-capital-page{gap:16px}
+.warehouse-capital-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.warehouse-capital-actions button{min-height:43px;padding:10px 17px}
+.warehouse-capital-secondary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.warehouse-capital-secondary>div{display:grid;align-content:start;gap:8px;border:1px solid #dbe6eb;
+ border-radius:11px;padding:13px 14px;min-width:0;background:var(--card,#fff)}
+.warehouse-capital-secondary small{font-size:12px;color:#657a8b;line-height:1.4}
+.warehouse-capital-secondary strong{font-size:17px;overflow-wrap:anywhere}
+.warehouse-capital-models{border:1px solid #dbe5eb;border-radius:13px;overflow:hidden;background:var(--card,#fff)}
+.warehouse-capital-models-head{padding:17px;display:flex;align-items:center;justify-content:space-between;
+ gap:12px;flex-wrap:wrap;background:var(--surface,#f4f7f9)}
+.warehouse-capital-models-head h3{margin:0 0 5px;font-size:18px}
+.warehouse-capital-models-head p{margin:0;color:#687f90;font-size:12px;line-height:1.5}
+.warehouse-capital-models-head>span{font-size:12px;color:#597181}
+.warehouse-capital-controls{display:flex;align-items:end;flex-wrap:wrap;gap:11px;padding:13px 16px}
+.warehouse-capital-controls label{display:grid;gap:6px;min-width:170px;flex:1;font-size:12px;font-weight:700}
+.warehouse-capital-controls input,.warehouse-capital-controls select{border:1px solid #d5e0e6;
+ border-radius:9px;min-height:41px;max-width:100%;width:100%;font:inherit;font-size:13px;
+ background:var(--card,#fff);color:inherit;padding:9px 10px}
+.warehouse-capital-model{border-top:1px solid #dce5ea}
+.warehouse-capital-model-head{display:flex;align-items:center;gap:14px;cursor:pointer;
+ padding:15px 16px;list-style:none;min-height:75px}
+.warehouse-capital-model-head::-webkit-details-marker,.warehouse-capital-execution>summary::-webkit-details-marker{display:none}
+.warehouse-capital-model-head:hover{background:var(--surface,#f7fafb)}
+.warehouse-capital-model-title{display:grid;gap:4px;flex:1;min-width:0}
+.warehouse-capital-model-title b{font-size:14px;overflow-wrap:anywhere}
+.warehouse-capital-model-title small{font-size:11px;color:#698092}
+.warehouse-capital-model-values{display:grid;gap:4px;text-align:right;min-width:145px}
+.warehouse-capital-model-values strong{font-size:16px;font-variant-numeric:tabular-nums}
+.warehouse-capital-model-values small{font-size:11px;color:#698092;line-height:1.4}
+.warehouse-capital-chevron{font-size:22px;transform-origin:center;transition:transform .14s}
+.warehouse-capital-model[open]>.warehouse-capital-model-head>.warehouse-capital-chevron{transform:rotate(180deg)}
+.warehouse-capital-model-content{padding:4px 14px 15px;background:var(--surface,#f9fafb)}
+.warehouse-capital-model-content>p{color:#6b8090;font-size:12px;margin:4px 2px 10px}
+.warehouse-capital-execution{margin-top:9px;border:1px solid #dce5eb;border-radius:9px;overflow:hidden;background:var(--card,#fff)}
+.warehouse-capital-execution>summary{list-style:none;cursor:pointer;display:flex;
+ justify-content:space-between;align-items:center;gap:12px;padding:13px;flex-wrap:wrap;font-size:12px}
+.warehouse-capital-execution>summary>b{flex:1;min-width:150px;overflow-wrap:anywhere}
+.warehouse-capital-execution>summary>span{color:#667e8b}
+.warehouse-capital-execution[open]>summary{border-bottom:1px solid #dce5eb;background:var(--surface,#f5f8f9)}
+.warehouse-capital-table-scroll{overflow-x:auto;max-width:100%;overscroll-behavior-x:contain}
+.warehouse-capital-table{border-collapse:collapse;min-width:1220px;width:100%;font-size:11px}
+.warehouse-capital-table th,.warehouse-capital-table td{text-align:right;padding:10px 9px;border-bottom:1px solid #e7edf1;white-space:nowrap}
+.warehouse-capital-table th{color:#536c81;font-weight:750;background:var(--surface,#f6f9fa)}
+.warehouse-capital-table th:nth-child(-n+2),.warehouse-capital-table td:nth-child(-n+2){text-align:left}
+.warehouse-capital-table td strong,.warehouse-capital-table td small{display:block}
+.warehouse-capital-table td small{font-size:10px;color:#82909b;margin-top:3px}
+.warehouse-capital-mobile{display:none}
+.warehouse-capital-more{display:block;margin:14px auto;min-height:42px;padding:10px 18px}
+.warehouse-capital-model summary:focus-visible,.warehouse-capital-execution summary:focus-visible{
+ outline:2px solid #5687c9;outline-offset:-2px}
+@media(max-width:1100px){.warehouse-capital-secondary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){
+ .warehouse-capital-table-scroll{display:none}
+ .warehouse-capital-mobile{display:grid;gap:10px;padding:11px}
+ .warehouse-capital-mobile-item{display:grid;gap:7px;border:1px solid #dce5eb;border-radius:9px;
+ padding:11px;min-width:0}
+ .warehouse-capital-mobile-item>strong{font-size:13px}
+ .warehouse-capital-mobile-item>small{font-size:11px;color:#65798b}
+ .warehouse-capital-mobile-item>div{display:flex;justify-content:space-between;align-items:start;
+ gap:12px;border-top:1px solid #e7edf0;padding-top:7px;font-size:12px}
+ .warehouse-capital-mobile-item>div span{color:#637d8d;min-width:0}
+ .warehouse-capital-mobile-item>div b{text-align:right;overflow-wrap:anywhere;min-width:85px}
+}
+@media(max-width:650px){
+ .warehouse-capital-actions{width:100%}.warehouse-capital-actions button{flex:1}
+ .warehouse-capital-model-head{padding:13px 11px;gap:8px}
+ .warehouse-capital-model-values{min-width:0;max-width:42%}
+ .warehouse-capital-model-values strong{font-size:14px}
+ .warehouse-capital-model-values small{font-size:10px}
+ .warehouse-capital-model-content{padding:4px 9px 12px}
+ .warehouse-capital-execution>summary{padding:11px}
+ .warehouse-capital-secondary{gap:7px}
+ .warehouse-capital-secondary>div{padding:11px}
+ .warehouse-capital-secondary strong{font-size:15px}
+}
+@media(max-width:370px){.warehouse-capital-secondary{grid-template-columns:1fr}
+ .warehouse-capital-model-head{flex-wrap:wrap}
+ .warehouse-capital-model-values{max-width:none;text-align:left;flex:1}
+ .warehouse-capital-chevron{margin-left:auto}
+ .warehouse-capital-controls label{min-width:100%}}

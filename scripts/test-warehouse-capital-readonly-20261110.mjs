@@ -71,5 +71,5 @@ assert.ok(route.includes('requireAdminUser(authUser')&&route.indexOf('requireAdm
 const source=readFileSync('src/features/sections/InventorySection.tsx','utf8')
 assert.ok(source.includes("<InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} />"))
 assert.ok(source.includes("<WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} />"))
-assert.ok(source.includes("label: 'Статистика'")&&source.includes("label: 'Отчёты'"))
+assert.ok(source.includes("label: 'Статистика'")&&source.includes("label: 'Стоимость запасов'"))
 console.log('WAREHOUSE_CAPITAL_READ_ONLY_PASS: source, category, reserved clamp, unknown prices, exclusions and roles')
