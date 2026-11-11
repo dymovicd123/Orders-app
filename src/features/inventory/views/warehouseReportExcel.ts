@@ -18,10 +18,11 @@ export type WarehouseReportChoice={
   start:string; end:string; scope:'orders'|'shipped'; source:string; category:string
 }
 type Cell={value:string|number;style?:number}
-type Sheet={name:string;rows:Cell[][];widths:number[];freeze:number;filter?:string;merges?:string[]}
+type Sheet={name:string;rows:Cell[][];widths:number[];freeze:number;filter?:string;merges?:string[];bars?:string[];tabColor?:string;overview?:boolean}
 const T=(x:string,style=0):Cell=>({value:x,style})
 const N=(x:number,style=4):Cell=>({value:x,style})
 const MONEY=(x:number):Cell=>N(x,5)
+const COUNT=(x:number):Cell=>N(x,12)
 const xml=(v:string)=>v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')
 const head='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -46,37 +47,81 @@ function stylesXml(){
     '<font><sz val="10"/><color rgb="FF607387"/><name val="Aptos"/></font>',
     '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font>',
     '<font><b/><sz val="11"/><color rgb="FF206B4B"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="10"/><color rgb="FF456177"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="21"/><color rgb="FF183B54"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FF1C775E"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FF1B334A"/><name val="Aptos"/></font>',
   ].join('')
   const fills=[
     '<fill><patternFill patternType="none"/></fill>',
     '<fill><patternFill patternType="gray125"/></fill>',
     '<fill><patternFill patternType="solid"><fgColor rgb="FF194A65"/></patternFill></fill>',
     '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF4EF"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFEDF4FB"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF4F7FA"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF27578A"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/></patternFill></fill>',
   ].join('')
-  const xfs=[[0,0,0],[1,0,0],[2,0,0],[3,2,0],[0,0,3],[0,0,164],[4,3,164]]
-  return head+'<styleSheet xmlns="'+ns+'"><numFmts count="1"><numFmt numFmtId="164" formatCode="'+xml('#,##0 "₸";[Red](#,##0 "₸");0 "₸"')+'"/></numFmts>'+
-    '<fonts count="5">'+fonts+'</fonts><fills count="4">'+fills+'</fills>'+
+  // Keep old style indices stable for existing full-detail sheets.
+  // Cells use actual numbers (never strings) with a custom currency/count display format.
+  const xfs=[
+    [0,0,0], [1,0,0], [2,0,0], [3,2,0], [0,0,3],
+    [0,0,164], [4,3,164], [7,6,0], [5,3,0],
+    [6,3,166], [6,4,164], [2,0,0], [8,0,166],
+    [9,0,0], [0,5,0], [0,5,3], [0,5,164], [8,0,165],
+  ]
+  const formats=[
+    '<numFmt numFmtId="164" formatCode="'+xml('#,##0 "₸";[Red](#,##0 "₸");0 "₸"')+'"/>',
+    '<numFmt numFmtId="165" formatCode="'+xml('0.0" %"')+'"/>',
+    '<numFmt numFmtId="166" formatCode="'+xml('#,##0" шт."')+'"/>',
+  ].join('')
+  return head+'<styleSheet xmlns="'+ns+'"><numFmts count="3">'+formats+'</numFmts>'+
+    '<fonts count="10">'+fonts+'</fonts><fills count="8">'+fills+'</fills>'+
     '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'+
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
-    '<cellXfs count="'+xfs.length+'">'+xfs.map(([font,fill,format])=>'<xf numFmtId="'+format+'" fontId="'+font+'" fillId="'+fill+'" borderId="0" xfId="0" applyNumberFormat="1"/>').join('')+
-    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+    '<cellXfs count="'+xfs.length+'">'+xfs.map(([font,fill,format])=>
+      '<xf numFmtId="'+format+'" fontId="'+font+'" fillId="'+fill+
+      '" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1">'+
+      '<alignment vertical="center" wrapText="1"/></xf>').join('')+
+    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/>'+
+    '</cellStyles></styleSheet>'
 }
 function sheetXml(sheet:Sheet){
-  const rowXml=sheet.rows.map((cells,i)=>'<row r="'+(i+1)+'">'+cells.map((cell,j)=>{
-    const attr=' r="'+col(j)+(i+1)+'" s="'+(cell.style||0)+'"'
-    if(typeof cell.value==='number'){
-      if(!Number.isFinite(cell.value))throw Error('Отчёт содержит некорректное число')
-      return '<c'+attr+'><v>'+cell.value+'</v></c>'
-    }
-    return '<c'+attr+' t="inlineStr"><is><t xml:space="preserve">'+xml(cell.value)+'</t></is></c>'
-  }).join('')+'</row>').join('')
-  const widths=sheet.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')
-  const freeze='<sheetViews><sheetView workbookViewId="0"><pane ySplit="'+sheet.freeze+'" topLeftCell="A'+(sheet.freeze+1)+'" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-  const merges=sheet.merges?.length?'<mergeCells count="'+sheet.merges.length+'">'+sheet.merges.map(m=>'<mergeCell ref="'+m+'"/>').join('')+'</mergeCells>':''
+  const rowXml=sheet.rows.map((cells,i)=>{
+    const height=sheet.overview?(i===0?34:i===1?29:i===4?40:
+      i===3||i===6?30:26):(i===0?32:i===1?25:i===3?39:24)
+    return '<row r="'+(i+1)+'" ht="'+height+'" customHeight="1">'+
+      cells.map((cell,j)=>{
+        const attr=' r="'+col(j)+(i+1)+'" s="'+(cell.style||0)+'"'
+        if(typeof cell.value==='number'){
+          if(!Number.isFinite(cell.value))throw Error('Отчёт содержит некорректное число')
+          return '<c'+attr+'><v>'+cell.value+'</v></c>'
+        }
+        return '<c'+attr+' t="inlineStr"><is><t xml:space="preserve">'+
+          xml(cell.value)+'</t></is></c>'
+      }).join('')+'</row>'
+  }).join('')
+  const widths=sheet.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+
+    '" width="'+w+'" customWidth="1"/>').join('')
+  const freeze=sheet.freeze>0?'<pane ySplit="'+sheet.freeze+'" topLeftCell="A'+
+    (sheet.freeze+1)+'" activePane="bottomLeft" state="frozen"/>':''
+  const views='<sheetViews><sheetView workbookViewId="0" showGridLines="0">'+freeze+
+    '</sheetView></sheetViews>'
+  const merges=sheet.merges?.length?'<mergeCells count="'+sheet.merges.length+'">'+
+    sheet.merges.map(m=>'<mergeCell ref="'+m+'"/>').join('')+'</mergeCells>':''
   const filter=sheet.filter?'<autoFilter ref="'+sheet.filter+'"/>':''
-  return head+'<worksheet xmlns="'+ns+'"><dimension ref="A1:'+col(sheet.widths.length-1)+sheet.rows.length+'"/>'+freeze+
-    '<sheetFormatPr defaultRowHeight="20"/><cols>'+widths+'</cols><sheetData>'+rowXml+'</sheetData>'+filter+merges+
-    '<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>'
+  const bars=(sheet.bars||[]).map((ref,i)=>
+    '<conditionalFormatting sqref="'+ref+'"><cfRule type="dataBar" priority="'+(i+1)+'">'+
+    '<dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/>'+
+    '<color rgb="FF70BAA0"/></dataBar></cfRule></conditionalFormatting>').join('')
+  const sheetPr=sheet.tabColor?'<sheetPr><tabColor rgb="FF'+sheet.tabColor+'"/></sheetPr>':''
+  return head+'<worksheet xmlns="'+ns+'">'+sheetPr+
+    '<dimension ref="A1:'+col(sheet.widths.length-1)+sheet.rows.length+'"/>'+
+    views+'<sheetFormatPr defaultRowHeight="24"/><cols>'+widths+'</cols>'+
+    '<sheetData>'+rowXml+'</sheetData>'+filter+merges+bars+
+    '<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>'+
+    '<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'
 }
 function packageSheets(sheets:Sheet[]):Uint8Array{
   if(sheets.length<1||sheets.length>25)throw Error('Неверное количество листов')
