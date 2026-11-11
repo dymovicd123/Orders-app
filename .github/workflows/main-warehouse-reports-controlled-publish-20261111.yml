@@ -43,6 +43,19 @@ jobs:
           node scripts/test-warehouse-capital-ux-full-word-20261111.mjs
           npm run release:check
           npm run build
+      - name: Verify production catalog price structure in read-only Main D1
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','catalog_variants','catalog_products')) AS base_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS prices,
+              (SELECT COUNT(*) FROM pragma_table_info('catalog_execution_prices') WHERE name IN ('stock_position_id','category','cost_price','sale_price')) AS price_columns
+          " --json | jq -e '.[0].results[0] | .base_tables==3 and .prices==1 and .price_columns==4'
+          echo MAIN_WAREHOUSE_REPORT_PREVIEW_D1_READONLY_PASS
       - name: Cloudflare production bundle dry-run without deployment
         run: |
           set -euo pipefail
