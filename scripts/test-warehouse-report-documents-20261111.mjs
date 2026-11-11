@@ -89,7 +89,7 @@ for(const phrase of ['Стоимость товарных запасов','Гл�
   'Стоимость по моделям','Подробности по моделям','БАЯН СУЛУ ЖИЛЕТ']){
   assert.ok(financialXml.includes(phrase),'Capital DOCX omitted '+phrase)
 }
-assert.ok(financialXml.includes('Себестоимость')&&financialXml.includes('<w:t>8</w:t>')&&financialXml.includes('<w:t>10</w:t>'),'Coverage must show 8 of 10 priced units')
+assert.ok(financialXml.includes('Себестоимость')&&/<w:t[^>]*>8<\/w:t>/.test(financialXml)&&/<w:t[^>]*>10<\/w:t>/.test(financialXml),'Coverage must show 8 of 10 priced units')
 assert.ok(!financialXml.includes('>warehouse<')&&!financialXml.includes('>all<'))
 // The financial Word report must not repeat the old top-20/top-180 truncation.
 const longCapital=[]
