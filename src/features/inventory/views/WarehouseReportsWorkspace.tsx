@@ -249,7 +249,7 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
             </div>
           </div>
           <div className="warehouse-capital-main-card is-cost">
-            <span>Себестоимость товаров</span>
+            <span>Себестоимость · известная часть</span>
             <strong>{totals.costQty?money(totals.cost):'Не оценена'}</strong>
             <div className="warehouse-capital-main-split">
               <span>Свободно <b>{totals.costQty?money(totals.freeCost):'—'}</b></span>
@@ -257,7 +257,7 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
             </div>
           </div>
           <div className="warehouse-capital-main-card is-sale">
-            <span>По ценам продажи</span>
+            <span>Продажная стоимость · известная часть</span>
             <strong>{totals.revenueQty?money(totals.revenue):'Не оценено'}</strong>
             <div className="warehouse-capital-main-split">
               <span>Свободно <b>{totals.revenueQty?money(totals.freeRevenue):'—'}</b></span>
