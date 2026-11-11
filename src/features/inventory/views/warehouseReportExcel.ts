@@ -104,107 +104,16 @@ function capitalModels(rows:WarehouseCapitalRow[]){
   }
   return [...map.values()].sort((a,b)=>b.capital-a.capital||b.quantity-a.quantity)
 }
-export function buildWarehouseReportXlsx(args:{
-  demand:WarehouseDemandResponse; choice:WarehouseReportChoice;
-  capital?:WarehouseCapitalSnapshot|null; generatedAt?:string
-}):Uint8Array{
-  const {demand,choice,capital}=args
-  if(!demand.ok||demand.truncated||!demand.rows)throw Error('Неполные данные статистики нельзя выгружать')
-  const generatedAt=args.generatedAt||new Date().toISOString()
-  const rows=demand.rows.filter(row=>(choice.source==='all'||row.source===choice.source)&&
-    (choice.category==='all'||row.category===choice.category))
-  const sold=rows.reduce((s,r)=>s+r.sold,0),net=rows.reduce((s,r)=>s+r.net,0)
-  const returned=rows.reduce((s,r)=>s+r.returned,0)
-  const priced=rows.reduce((s,r)=>s+r.pricedQuantity,0)
-  const knownRevenue=rows.reduce((s,r)=>s+r.knownRevenue,0)
-  const scopeText=choice.scope==='shipped'?'Только отправленные':'Все оформленные'
-  const subtitle=choice.start+' — '+choice.end+' · '+scopeText+
-    ' · источник '+choice.source+' · категория '+choice.category
-  const overviewRows:Cell[][]=[
-    [T('Дата формирования'),T(generatedAt)],
-    [T('Период'),T(choice.start+' — '+choice.end)],
-    [T('Режим'),T(scopeText)],
-    [T('Источник'),T(choice.source)],
-    [T('Категория'),T(choice.category)],
-    [T('Заказано/отправлено, шт.'),N(sold)],
-    [T('После возвратов, шт.'),N(net)],
-    [T('Возвращено, шт.'),N(returned)],
-    [T('С ценами позиций, шт.'),N(priced)],
-    [T('Стоимость по известным ценам позиций'),MONEY(knownRevenue)],
-    [T('Средняя цена по известным позициям'),priced?MONEY(knownRevenue/priced):T('Нет данных')],
-    [T('Неполнота цен'),T(priced<net?'Цены известны не для всех позиций':'Нет пропусков по ценам')],
-    [T('Методика'),T('Сумма позиций — не поступившие платежи и не чистая прибыль')],
-    [T('Исторические изменения'),T('Обмены могут менять состав старых заказов; это не неизменяемый журнал продаж')],
-  ]
-  if(capital){
-    const t=capital.totals
-    overviewRows.push(
-      [T('Остатки: оценка на'),T(capital.capturedAt)],
-      [T('В наличии физически, шт.'),N(t.quantity)],
-      [T('Из них зарезервировано, шт.'),N(t.reserved)],
-      [T('Свободно, шт.'),N(t.free)],
-      [T('Стоимость остатков по известной себестоимости'),MONEY(t.knownCost)],
-      [T('Потенциальная выручка по известным ценам'),MONEY(t.knownSale)],
-      [T('Потенциальная валовая маржа (по обеим ценам)'),MONEY(t.knownGrossPotential)],
-      [T('Себестоимость известна для, шт.'),N(t.pricedCostQuantity)],
-      [T('Цена продажи известна для, шт.'),N(t.pricedSaleQuantity)],
-      [T('При обеих ценах, шт.'),N(t.bothPricedQuantity)],
-      [T('Важно'),T('Оценка по текущим ценам каталога; не исторические закупки и не гарантированная выручка')],
-    )
+
+function packageSheets(sheets:Sheet[]):Uint8Array{
+  if(sheets.length<1||sheets.length>25)throw Error('Неверное количество листов')
+  const names=new Set<string>()
+  for(const s of sheets){
+    if(s.name.length>31||names.has(s.name))throw Error('Некорректное или повторное имя листа: '+s.name)
+    names.add(s.name)
+    if(s.rows.length>20001)throw Error('Слишком много строк в Excel. Период необходимо сократить.')
   }
-  const sheets:Sheet[]=[
-    reportSheet('Сводка','СТАТИСТИКА И ФИНАНСЫ СКЛАДА',subtitle,['Показатель','Значение'],overviewRows,[53,90]),
-    dimensionSheet('Модели','product',rows,subtitle),
-    dimensionSheet('Цвета','color',rows,subtitle),
-    dimensionSheet('Размеры','size',rows,subtitle),
-    dimensionSheet('Материалы','material',rows,subtitle),
-    dimensionSheet('Длина','length',rows,subtitle),
-    dimensionSheet('Пол','gender',rows,subtitle),
-    reportSheet('Варианты спроса','ВСЕ ВАРИАНТЫ СПРОСА',subtitle,
-      ['Модель','Цвет','Размер','Материал','Длина','Пол','Категория','Источник','Заказано','Возвращено','Без возвратов','По цене, шт.','Стоимость, ₸','Цена мин., ₸','Цена макс., ₸'],
-      rows.map(r=>[T(r.product),T(r.color),T(r.size),T(r.material),T(r.length),T(r.gender),T(r.category),T(r.source),
-        N(r.sold),N(r.returned),N(r.net),N(r.pricedQuantity),MONEY(r.knownRevenue),
-        r.minPrice===null?T('Неизвестно'):MONEY(r.minPrice),r.maxPrice===null?T('Неизвестно'):MONEY(r.maxPrice)]),
-      [33,18,15,21,18,14,16,16,14,14,17,17,21,19,19]),
-  ]
-  if(capital){
-    sheets.push(reportSheet('Стоимость запасов','ОЦЕНКА ФИЗИЧЕСКИХ ОСТАТКОВ',
-      'По текущим ценам каталога · '+capital.capturedAt+' · только положительные остатки',
-      ['Источник','Модель','Пол','Цвет','Материал','Длина','Размер','Категория','На месте, шт.','Резерв, шт.','Свободно, шт.',
-        'Себестоимость/шт., ₸','Цена/шт., ₸','Стоимость по себ., ₸','Возможная выручка, ₸','Потенц. маржа, ₸','Особенности'],
-      capital.rows.map(r=>[T(r.source),T(r.product),T(r.gender),T(r.color),T(r.material),T(r.length),T(r.size),T(r.category),
-        N(r.quantity),N(r.reserved),N(r.free),r.costPrice===null?T('Неизвестна'):MONEY(r.costPrice),
-        r.salePrice===null?T('Неизвестна'):MONEY(r.salePrice),
-        r.costValue===null?T('Не оценено'):MONEY(r.costValue),
-        r.retailValue===null?T('Не оценено'):MONEY(r.retailValue),
-        r.grossPotential===null?T('Не оценено'):MONEY(r.grossPotential),
-        T([r.archived?'Архивная позиция':'',r.overReserved?'Резерв больше остатка':'',r.variantId===null?'Нет связанного SKU':''].filter(Boolean).join('; '))]),
-      [15,36,15,19,19,16,15,15,17,15,17,22,22,24,25,23,35]))
-    sheets.push(reportSheet('Капитал по моделям','КРУПНЕЙШИЕ ТОВАРНЫЕ ЗАПАСЫ',capital.capturedAt,
-      ['Модель','На месте, шт.','Свободно, шт.','Резерв, шт.','Оценено по себ., шт.','Себестоимость, ₸','Оценено по цене, шт.','Потенц. выручка, ₸'],
-      capitalModels(capital.rows).map(m=>[T(m.name),N(m.quantity),N(m.free),N(m.reserved),N(m.costKnown),
-        MONEY(m.capital),N(m.saleKnown),MONEY(m.retail)]),
-      [43,18,18,18,22,25,22,26]))
-    const t=capital.totals
-    sheets.push(reportSheet('Качество данных','ПОЛНОТА И ОГРАНИЧЕНИЯ ОЦЕНКИ',capital.capturedAt,
-      ['Проверка','Количество','Комментарий'],[
-        [T('Товаров с положительным остатком, шт.'),N(t.quantity),T('Физическое количество включает зарезервированные товары')],
-        [T('Оценено по себестоимости, шт.'),N(t.pricedCostQuantity),T('Без неизвестных себестоимостей')],
-        [T('Оценено по продажной цене, шт.'),N(t.pricedSaleQuantity),T('Только текущая цена исполнения')],
-        [T('Оценено по обеим ценам, шт.'),N(t.bothPricedQuantity),T('Только они участвуют в потенциальной марже')],
-        [T('Без себестоимости, шт.'),N(t.missingCostQuantity),T('Не заменяется средними ценами')],
-        [T('Без цены продажи, шт.'),N(t.missingSaleQuantity),T('Не заменяется историческими суммами заказов')],
-        [T('Строки с нулём'),N(t.zeroRows),T('Исключены из денежной оценки')],
-        [T('Строки с отрицательным остатком'),N(t.negativeRows),T('Исключены из денежной оценки; требуют отдельной сверки')],
-        [T('Строки, где резерв больше физического остатка'),N(t.overReservedRows),T('Резерв ограничен физическим количеством для денежной оценки')],
-        [T('Положительные позиции без связанного варианта'),N(t.unlinkedPositiveRows),T('Включены количественно, но часто без цены')],
-        [T('Есть таблица текущих цен'),T(capital.pricesAvailable?'Да':'Нет'),T('При отсутствии таблицы все суммы останутся неизвестными')],
-        [T('Метод расчёта'),T('Текущая оценка'),T('Не является бухгалтерской закупочной стоимостью или прогнозом фактической выручки')],
-      ],[50,24,96]))
-  }
-  if(sheets.length>25)throw Error('Слишком много листов')
   const files:Record<string,Uint8Array>={}
-  const relationshipId=sheets.length+1
   files['[Content_Types].xml']=strToU8(head+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
     '<Default Extension="xml" ContentType="application/xml"/>'+
@@ -215,8 +124,226 @@ export function buildWarehouseReportXlsx(args:{
   files['xl/workbook.xml']=strToU8(workbookXml(sheets))
   files['xl/_rels/workbook.xml.rels']=strToU8(head+'<Relationships xmlns="'+pkgNs+'">'+
     sheets.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="'+relNs+'/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+
-    '<Relationship Id="rId'+relationshipId+'" Type="'+relNs+'/styles" Target="styles.xml"/></Relationships>')
+    '<Relationship Id="rId'+(sheets.length+1)+'" Type="'+relNs+'/styles" Target="styles.xml"/></Relationships>')
   files['xl/styles.xml']=strToU8(stylesXml())
   sheets.forEach((sheet,i)=>{files['xl/worksheets/sheet'+(i+1)+'.xml']=strToU8(sheetXml(sheet))})
   return zipSync(files,{level:6})
+}
+const DIMENSIONS=[
+  ['Цвета','color'],['Размеры','size'],['Материалы','material'],
+  ['Длина','length'],['Пол','gender'],
+] as const
+const safeText=(value:string|undefined|null)=>String(value||'Не указано')
+const ratio=(numerator:number,denominator:number)=>denominator?N(Math.round(numerator/denominator*10000)/100):T('—')
+function groupedDemand(rows:WarehouseDemandRow[],field:keyof WarehouseDemandRow){
+  const entries=new Map<string,{sold:number;net:number;returned:number;priced:number;revenue:number}>()
+  for(const row of rows){
+    const name=safeText(String(row[field]??''))
+    const entry=entries.get(name)||{sold:0,net:0,returned:0,priced:0,revenue:0}
+    entry.sold+=row.sold;entry.net+=row.net;entry.returned+=row.returned
+    entry.priced+=row.pricedQuantity;entry.revenue+=row.knownRevenue
+    entries.set(name,entry)
+  }
+  return [...entries].map(([name,v])=>({name,...v})).sort((a,b)=>b.net-a.net||b.sold-a.sold||a.name.localeCompare(b.name,'ru'))
+}
+function demandRankSheet(name:string,field:keyof WarehouseDemandRow,rows:WarehouseDemandRow[],subtitle:string,totalNet:number){
+  const groups=groupedDemand(rows,field)
+  return reportSheet(name,'РЕЙТИНГ · '+name.toUpperCase(),subtitle,
+    ['№','Наименование','Заказано, шт.','Без возвратов, шт.','Возвращено, шт.','Доля спроса, %',
+      'Цена известна, шт.','Стоимость по ценам заказов, ₸','Средняя цена, ₸','Охват цен, %'],
+    groups.map((g,i)=>[N(i+1),T(g.name),N(g.sold),N(g.net),N(g.returned),ratio(g.net,totalNet),
+      N(g.priced),MONEY(g.revenue),g.priced?MONEY(g.revenue/g.priced):T('Неизвестна'),ratio(g.priced,g.net)]),
+    [9,37,17,21,20,20,22,30,24,19])
+}
+/** Same summary rows, scope and filters as the existing Statistics screen.
+ * Detail is exported as filterable model→property and exact variant rows; no private order list.
+ */
+export function buildDemandStatisticsXlsx(args:{
+  demand:WarehouseDemandResponse;choice:WarehouseReportChoice;generatedAt?:string
+}):Uint8Array{
+  const {demand,choice}=args
+  if(!demand.ok||demand.truncated||!Array.isArray(demand.rows))
+    throw Error('Неполные данные статистики нельзя выгружать')
+  const rows=demand.rows.filter(r=>(choice.source==='all'||r.source===choice.source)&&
+    (choice.category==='all'||r.category===choice.category))
+  const totals=rows.reduce((a,r)=>({
+    sold:a.sold+r.sold,net:a.net+r.net,returned:a.returned+r.returned,
+    priced:a.priced+r.pricedQuantity,knownRevenue:a.knownRevenue+r.knownRevenue,
+    inconsistent:a.inconsistent+r.priceDiscrepancyQuantity,
+  }),{sold:0,net:0,returned:0,priced:0,knownRevenue:0,inconsistent:0})
+  const subtitle=choice.start+' — '+choice.end+' · '+(choice.scope==='shipped'?'Отправленные':'Оформленные')+
+    ' · '+choice.source+' · '+choice.category
+  const summary:[string,Cell][]=[
+    ['Сформировано',T(args.generatedAt||new Date().toISOString())],
+    ['Начало периода',T(choice.start)],['Конец периода',T(choice.end)],
+    ['Режим',T(choice.scope==='shipped'?'Только отправленные товары':'Все оформленные заказы')],
+    ['Источник',T(choice.source)],['Категория',T(choice.category)],
+    ['Число оформленных заказов за период (общая выборка)',N(demand.periodOrderCount||0)],
+    ['Число отправленных заказов за период (общая выборка)',N(demand.periodShippedOrderCount||0)],
+    ['Количество позиций, шт.',N(totals.sold)],
+    ['После возвратов, шт.',N(totals.net)],
+    ['Возвраты, шт.',N(totals.returned)],
+    ['Стоимость по сохранённым ценам позиций, ₸',MONEY(totals.knownRevenue)],
+    ['Средняя цена известной позиции, ₸',totals.priced?MONEY(totals.knownRevenue/totals.priced):T('Неизвестна')],
+    ['Известна цена, шт.',N(totals.priced)],
+    ['Охват ценами, %',ratio(totals.priced,totals.net)],
+    ['С расхождением старой строки цены, шт.',N(totals.inconsistent)],
+    ['Методика',T('Срез состава заказов в выбранном периоде; история обменов может влиять на старые периоды')],
+    ['Важно',T('Стоимость позиций не равна поступлениям, валовой или чистой прибыли')],
+  ]
+  const sheets:Sheet[]=[
+    reportSheet('Сводка спроса','СТАТИСТИКА СПРОСА',subtitle,['Показатель','Значение'],
+      summary.map(([name,cell])=>[T(name),cell]),[64,88]),
+    demandRankSheet('Модели','product',rows,subtitle,totals.net),
+  ]
+  for(const [name,field] of DIMENSIONS)sheets.push(demandRankSheet(name,field,rows,subtitle,totals.net))
+  sheets.push(demandRankSheet('Источники','source',rows,subtitle,totals.net))
+  const breakdown=new Map<string,{model:string;dimension:string;value:string;sold:number;net:number;returned:number;priced:number;revenue:number}>()
+  for(const r of rows)for(const [label,field] of [['Цвет','color'],['Размер','size'],['Материал','material'],
+    ['Длина','length'],['Пол','gender'],['Источник','source']] as const){
+    const key=[r.product,label,r[field]].join('\u001f')
+    const prev=breakdown.get(key)||{model:r.product,dimension:label,value:r[field],sold:0,net:0,returned:0,priced:0,revenue:0}
+    prev.sold+=r.sold;prev.net+=r.net;prev.returned+=r.returned
+    prev.priced+=r.pricedQuantity;prev.revenue+=r.knownRevenue
+    breakdown.set(key,prev)
+  }
+  const modelNet=new Map(groupedDemand(rows,'product').map(x=>[x.name,x.net]))
+  const breakdownRows=[...breakdown.values()].sort((a,b)=>a.model.localeCompare(b.model,'ru')||
+    a.dimension.localeCompare(b.dimension,'ru')||b.net-a.net)
+  sheets.push(reportSheet('Разбор моделей','МОДЕЛИ И ХАРАКТЕРИСТИКИ',subtitle,
+    ['Модель','Характеристика','Значение','Заказано, шт.','Без возвратов, шт.','Возвращено, шт.',
+      'Доля внутри модели, %','С известной ценой, шт.','Стоимость позиций, ₸','Средняя цена, ₸'],
+    breakdownRows.map(r=>[T(r.model),T(r.dimension),T(r.value),N(r.sold),N(r.net),N(r.returned),
+      ratio(r.net,modelNet.get(r.model)||0),N(r.priced),MONEY(r.revenue),
+      r.priced?MONEY(r.revenue/r.priced):T('Неизвестна')]),
+    [37,25,26,18,23,18,23,22,28,23]))
+  sheets.push(reportSheet('Все варианты','ТОЧНЫЕ ВАРИАНТЫ ТОВАРОВ',subtitle,
+    ['Модель','Цвет','Размер','Материал','Длина','Пол','Категория','Источник',
+      'Заказано, шт.','Возвращено, шт.','Без возвратов, шт.','Доля всего спроса, %',
+      'С известной ценой, шт.','Стоимость позиций, ₸','Средняя цена, ₸','Цена мин., ₸','Цена макс., ₸',
+      'Расхождение цены, шт.'],
+    [...rows].sort((a,b)=>a.product.localeCompare(b.product,'ru')||b.net-a.net).map(r=>[
+      T(r.product),T(r.color),T(r.size),T(r.material),T(r.length),T(r.gender),T(r.category),T(r.source),
+      N(r.sold),N(r.returned),N(r.net),ratio(r.net,totals.net),N(r.pricedQuantity),MONEY(r.knownRevenue),
+      r.pricedQuantity?MONEY(r.knownRevenue/r.pricedQuantity):T('Неизвестна'),
+      r.minPrice===null?T('Неизвестна'):MONEY(r.minPrice),
+      r.maxPrice===null?T('Неизвестна'):MONEY(r.maxPrice),N(r.priceDiscrepancyQuantity)]),
+    [34,20,16,22,19,17,17,17,17,20,23,23,23,29,24,22,22,24]))
+  return packageSheets(sheets)
+}
+type FinancialSource='all'|'warehouse'|'boutique'
+export type WarehouseFinanceChoice={source:FinancialSource;category:string}
+function capitalFiltered(snapshot:WarehouseCapitalSnapshot,choice:WarehouseFinanceChoice){
+  return snapshot.rows.filter(r=>(choice.source==='all'||r.source===choice.source)&&
+    (choice.category==='all'||r.category===choice.category))
+}
+function capitalTotals(rows:WarehouseCapitalRow[]){
+  return rows.reduce((t,r)=>{
+    t.quantity+=r.quantity;t.reserved+=r.reserved;t.free+=r.free
+    if(r.costPrice!==null){t.costQty+=r.quantity;t.cost+=r.costValue||0;
+      t.freeCost+=r.free*r.costPrice;t.reservedCost+=r.reserved*r.costPrice}
+    else t.unknownCostQty+=r.quantity
+    if(r.salePrice!==null){t.saleQty+=r.quantity;t.sale+=r.retailValue||0;
+      t.freeSale+=r.free*r.salePrice;t.reservedSale+=r.reserved*r.salePrice}
+    else t.unknownSaleQty+=r.quantity
+    if(r.grossPotential!==null){t.bothQty+=r.quantity;t.gross+=r.grossPotential}
+    return t
+  },{quantity:0,reserved:0,free:0,costQty:0,saleQty:0,bothQty:0,cost:0,sale:0,gross:0,
+    freeCost:0,reservedCost:0,freeSale:0,reservedSale:0,unknownCostQty:0,unknownSaleQty:0})
+}
+const financeGroups=(rows:WarehouseCapitalRow[],fields:(keyof WarehouseCapitalRow)[])=>
+  [...rows.reduce((map,r)=>{
+    const key=fields.map(f=>String(r[f]??'—')).join('\u001f')
+    const prev=map.get(key)||{labels:fields.map(f=>String(r[f]??'—')),items:[] as WarehouseCapitalRow[]}
+    prev.items.push(r);map.set(key,prev);return map
+  },new Map<string,{labels:string[];items:WarehouseCapitalRow[]}>()).values()]
+  .map(r=>({...r,summary:capitalTotals(r.items)}))
+  .sort((a,b)=>b.summary.cost-a.summary.cost||b.summary.quantity-a.summary.quantity)
+/** Financial inventory is a snapshot, not period sales; no orders or demand sheets. */
+export function buildWarehouseCapitalXlsx(args:{
+  capital:WarehouseCapitalSnapshot;choice:WarehouseFinanceChoice;generatedAt?:string
+}):Uint8Array{
+  const {capital,choice}=args
+  if(!capital.ok||!Array.isArray(capital.rows))throw Error('Нет полной оценки склада')
+  const rows=capitalFiltered(capital,choice)
+  const v=capitalTotals(rows)
+  const captured=capital.capturedAt
+  const subtitle='Снимок '+captured+' · источник '+choice.source+' · категория '+choice.category+
+    ' · только положительные остатки'
+  const val=(n:number)=>MONEY(n)
+  const summary:[string,Cell][]=[
+    ['Время оценки остатков',T(captured)],['Сформирован файл',T(args.generatedAt||new Date().toISOString())],
+    ['Источник',T(choice.source)],['Категория',T(choice.category)],
+    ['Физически на месте, шт.',N(v.quantity)],['Из них в резерве, шт.',N(v.reserved)],
+    ['Свободно к продаже, шт.',N(v.free)],
+    ['Стоимость по известной себестоимости, ₸',val(v.cost)],
+    ['Потенциальная продажная стоимость, ₸',val(v.sale)],
+    ['Потенциальная валовая маржа (где известны обе цены), ₸',val(v.gross)],
+    ['Охват себестоимостью, %',ratio(v.costQty,v.quantity)],
+    ['Охват продажной ценой, %',ratio(v.saleQty,v.quantity)],
+    ['Маржа на сопоставимых позициях, %',T('См. лист «Модели»; общий % не рассчитывается при неполных ценах')],
+    ['Свободно по известной себестоимости, ₸',val(v.freeCost)],
+    ['Резерв по известной себестоимости, ₸',val(v.reservedCost)],
+    ['Свободно по известной цене продажи, ₸',val(v.freeSale)],
+    ['Резерв по известной цене продажи, ₸',val(v.reservedSale)],
+    ['Без известной себестоимости, шт.',N(v.unknownCostQty)],
+    ['Без известной продажной цены, шт.',N(v.unknownSaleQty)],
+    ['Важно',T('Текущая оценка по каталогу, не исторические закупки, не реальные платежи и не чистая прибыль')],
+    ['Качество неотрицательных остатков',T('Исключённые 0/минус и аномалии показаны на листе «Качество»')],
+  ]
+  const sheets:Sheet[]=[
+    reportSheet('Сводка запасов','ДЕНЬГИ В ТОВАРНЫХ ОСТАТКАХ',subtitle,
+      ['Показатель','Значение'],summary.map(([label,value])=>[T(label),value]),[66,95]),
+  ]
+  function financialGroupSheet(name:string,fields:(keyof WarehouseCapitalRow)[],headers:string[]){
+    const entries=financeGroups(rows,fields)
+    return reportSheet(name,name.toUpperCase(),subtitle,
+      [...headers,'Физически, шт.','Резерв, шт.','Свободно, шт.','Себ. известна, шт.',
+        'Стоимость по себ., ₸','Цена известна, шт.','Возможная выручка, ₸',
+        'Обе цены, шт.','Возможная маржа, ₸','Охват себ., %','Охват цены, %'],
+      entries.map(e=>[...e.labels.map(l=>T(l)),N(e.summary.quantity),N(e.summary.reserved),
+        N(e.summary.free),N(e.summary.costQty),MONEY(e.summary.cost),N(e.summary.saleQty),
+        MONEY(e.summary.sale),N(e.summary.bothQty),MONEY(e.summary.gross),
+        ratio(e.summary.costQty,e.summary.quantity),ratio(e.summary.saleQty,e.summary.quantity)]),
+      [...fields.map(()=>33),18,18,18,23,28,23,28,20,28,20,20])
+  }
+  sheets.push(financialGroupSheet('Модели',['product'],['Модель']))
+  sheets.push(financialGroupSheet('Исполнения',['product','gender','material','length','category'],
+    ['Модель','Пол','Материал','Длина','Категория']))
+  sheets.push(financialGroupSheet('Источники',['source'],['Источник']))
+  sheets.push(reportSheet('Все остатки','ВСЕ ТОВАРЫ В НАЛИЧИИ',subtitle,
+    ['Источник','Модель','Пол','Материал','Длина','Категория','Цвет','Размер','Физически, шт.',
+      'Резерв, шт.','Свободно, шт.','Себестоимость / шт., ₸','Цена / шт., ₸',
+      'Стоимость по себ., ₸','Возможная выручка, ₸','Возможная маржа, ₸',
+      'Свободно по цене, ₸','Резерв по цене, ₸','Статус'],
+    [...rows].sort((a,b)=>a.product.localeCompare(b.product,'ru')||a.material.localeCompare(b.material,'ru')||
+      a.color.localeCompare(b.color,'ru')).map(r=>[
+      T(r.source),T(r.product),T(r.gender),T(r.material),T(r.length),T(r.category),T(r.color),T(r.size),
+      N(r.quantity),N(r.reserved),N(r.free),
+      r.costPrice===null?T('Неизвестна'):MONEY(r.costPrice),
+      r.salePrice===null?T('Неизвестна'):MONEY(r.salePrice),
+      r.costValue===null?T('Не оценено'):MONEY(r.costValue),
+      r.retailValue===null?T('Не оценено'):MONEY(r.retailValue),
+      r.grossPotential===null?T('Не оценено'):MONEY(r.grossPotential),
+      r.salePrice===null?T('Не оценено'):MONEY(r.free*r.salePrice),
+      r.salePrice===null?T('Не оценено'):MONEY(r.reserved*r.salePrice),
+      T([r.overReserved?'Резерв превышает количество':'',r.archived?'Архивная модель или вариант':'',
+        r.variantId===null?'Нет связанного варианта':''].filter(Boolean).join('; ')||'—')]),
+    [16,37,15,21,19,18,20,15,18,18,18,27,25,28,29,27,25,25,42]))
+  const global=capital.totals
+  sheets.push(reportSheet('Качество','ПОЛНОТА ДАННЫХ И ИСКЛЮЧЕНИЯ',
+    'Качество 0/минус и аномалий — глобально по всем источникам. Цена и количество — по выбранным фильтрам.',
+    ['Показатель','Число','Описание'],[
+      [T('Положительный физический остаток, шт.'),N(v.quantity),T('Включая резерв; после выбранных фильтров')],
+      [T('Неизвестная себестоимость, шт.'),N(v.unknownCostQty),T('Не оценивается по себестоимости')],
+      [T('Неизвестная цена продажи, шт.'),N(v.unknownSaleQty),T('Не оценивается по цене продажи')],
+      [T('Известны обе цены, шт.'),N(v.bothQty),T('Только они входят в потенциальную валовую маржу')],
+      [T('Строк с нулевым остатком (все источники)'),N(global.zeroRows),T('Исключены из расчёта')],
+      [T('Строк с отрицательным остатком (все источники)'),N(global.negativeRows),T('Исключены из расчёта')],
+      [T('Резерв превышает остаток (все источники)'),N(global.overReservedRows),T('Для оценки резерв ограничен физическим запасом')],
+      [T('Позиция без каталожного варианта (все источники)'),N(global.unlinkedPositiveRows),T('Физическое количество учитывается')],
+      [T('Цены каталога доступны'),T(capital.pricesAvailable?'Да':'Нет'),T('При отсутствии цен суммы являются частичными')],
+      [T('Методика'),T('Оценочная'),T('Не бухгалтерская стоимость закупок и не гарантированная выручка')],
+    ],[58,26,96]))
+  return packageSheets(sheets)
 }
