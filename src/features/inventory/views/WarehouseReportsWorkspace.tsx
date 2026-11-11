@@ -16,7 +16,6 @@ type Breakdown={key:string;name:string;items:WarehouseCapitalRow[];summary:Summa
 const fmt=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0})
 const num=(n:number)=>fmt.format(n)
 const money=(n:number)=>fmt.format(Math.round(n))+' ₸'
-const pct=(a:number,b:number)=>b?(a/b*100).toFixed(1).replace('.',',')+'%':'—'
 const label=(s:string)=>labelCharacteristic(s)
 function summarize(rows:WarehouseCapitalRow[]):Summary{
   const v:Summary={quantity:0,reserved:0,free:0,cost:0,revenue:0,gross:0,
