@@ -26,7 +26,7 @@ const choice={start:'2026-11-01',end:'2026-11-30',scope:'orders',source:'all',ca
 const doc=await buildDemandStatisticsDocx({demand,choice,generatedAt:'2026-11-11T08:00:00Z'})
 assert.ok(doc.size>1500)
 const xml=new TextDecoder().decode(unzipSync(new Uint8Array(await doc.arrayBuffer()))['word/document.xml'])
-for(const phrase of ['Какие товары пользуются спросом','Главное за выбранный период','Все модели и точные варианты',
+for(const phrase of ['Какие товары пользуются спросом','Главное за выбранный период','Что чаще всего заказывают','Подробности по моделям',
   'БАЯН СУЛУ ЖИЛЕТ','Бежевый','Склад','Бутик','Взрослые']){
   assert.ok(xml.includes(phrase), 'Demand DOCX omitted '+phrase)
 }
@@ -84,13 +84,36 @@ const report=await buildWarehouseCapitalDocx({capital,choice:cChoice,generatedAt
 assert.ok(report.size>1500)
 const zip=unzipSync(new Uint8Array(await report.arrayBuffer()))
 const financialXml=new TextDecoder().decode(zip['word/document.xml'])
-for(const phrase of ['Сколько средств находится в товарах','Насколько полная эта оценка',
-  'Без себестоимости','Склад','Бутик','Какая часть товара свободна',
-  'Ключевые модели','Точные остатки','БАЯН СУЛУ ЖИЛЕТ']){
+for(const phrase of ['Стоимость товарных запасов','Главное о запасах','Насколько известны цены',
+  'Себестоимость','Склад','Бутик','Где находится товар',
+  'Стоимость по моделям','Подробности по моделям','БАЯН СУЛУ ЖИЛЕТ']){
   assert.ok(financialXml.includes(phrase),'Capital DOCX omitted '+phrase)
 }
-assert.ok(financialXml.includes('8 из 10 шт.'),'Coverage must not present partial cost as complete')
+assert.ok(financialXml.includes('Себестоимость')&&financialXml.includes('<w:t>8</w:t>')&&financialXml.includes('<w:t>10</w:t>'),'Coverage must show 8 of 10 priced units')
 assert.ok(!financialXml.includes('>warehouse<')&&!financialXml.includes('>all<'))
+// The financial Word report must not repeat the old top-20/top-180 truncation.
+const longCapital=[]
+for(let model=0;model<28;model++)for(let variant=0;variant<17;variant++){
+  longCapital.push({...base,stockId:model*17+variant+100,
+    product:'СКЛАД_МОДЕЛЬ_'+String(model).padStart(2,'0'),
+    color:'ЦВЕТ_СКЛАДА_'+String(variant).padStart(2,'0'),
+    size:String(36+variant),quantity:2,reserved:0,free:2,
+    costPrice:10000,salePrice:30000,costValue:20000,retailValue:60000,grossPotential:40000})
+}
+const longReport=await buildWarehouseCapitalDocx({
+  capital:{...capital,rows:longCapital},choice:cChoice,generatedAt:'2026-11-11T08:00:00Z',
+})
+const longXml=new TextDecoder().decode(unzipSync(
+  new Uint8Array(await longReport.arrayBuffer()))['word/document.xml'])
+for(const value of ['СКЛАД_МОДЕЛЬ_00','СКЛАД_МОДЕЛЬ_20','СКЛАД_МОДЕЛЬ_27',
+  'ЦВЕТ_СКЛАДА_00','ЦВЕТ_СКЛАДА_12','ЦВЕТ_СКЛАДА_16']){
+  assert.ok(longXml.includes(value),'Finance Word missed full detail '+value)
+}
+assert.ok((longXml.match(/ЦВЕТ_СКЛАДА_/g)||[]).length>=476,
+  'All 476 financial variants must appear, not only top 180')
+assert.ok(!longXml.includes('Показаны 12 исполнений')&&!longXml.includes('первых 180'),
+  'Financial Word must be a full document, not a preview')
+
 const capitalFile=buildWarehouseCapitalXlsx({capital,choice:cChoice,generatedAt:'2026-11-11T08:00:00Z'})
 const capSheets=Object.entries(unzipSync(capitalFile)).filter(([name])=>name.startsWith('xl/worksheets/'))
 const capJoined=capSheets.map(([,bytes])=>new TextDecoder().decode(bytes)).join('\n')
