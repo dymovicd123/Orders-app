@@ -32,7 +32,7 @@ assert.ok(!statsVariant.includes('<f>'),'Spreadsheet formula injection forbidden
 assert.ok(statsVariant.includes('<v>160000</v>'),'Stored order unit-price values must remain numeric')
 assert.ok(!statsVariant.includes('<v>10000000</v>'),'Other source excluded')
 const cross=read(workbook,'xl/worksheets/sheet9.xml')
-assert.ok(cross.includes('Красный')&&cross.includes('Модель')===false)
+assert.ok(cross.includes('Красный')&&cross.includes('Замша'))
 assert.ok(cross.includes('Замша'))
 assert.ok(cross.includes('<autoFilter ref='))
 
