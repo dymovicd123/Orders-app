@@ -1080,7 +1080,7 @@ function App() {
   }
   const openInventoryPanel = (panel: InventoryPanel) => {
     const nextPanel: InventoryPanel = panel === 'audit' ? 'settings' : panel
-    if (!canManageWarehouse && (nextPanel === 'catalog' || nextPanel === 'settings')) {
+    if ((!canManageWarehouse && (nextPanel === 'catalog' || nextPanel === 'settings')) || (nextPanel === 'reports' && !isAdmin)) {
       setInventoryPanel('overview')
       return
     }
@@ -1748,7 +1748,7 @@ function App() {
       void loadReferencesData()
       void loadInventoryControlSettings()
       if (!canManageWarehouse && inventoryPanel === 'catalog') setInventoryPanel('overview')
-      if (canManageWarehouse && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
+      if ((canManageWarehouse && !inventoryAdminPanels.includes(inventoryPanel)) || (inventoryPanel === 'reports' && !isAdmin)) setInventoryPanel('overview')
     }
     if ((activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange'))) {
       // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
