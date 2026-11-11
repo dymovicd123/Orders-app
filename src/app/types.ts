@@ -1119,7 +1119,7 @@ export type FinanceReportType = 'payments' | 'managers' | 'products' | 'cities' 
 export type AppSector = 'overview' | 'orders' | 'kaspi' | 'clients' | 'workshop' | 'inventory' | 'finance' | 'references' | 'reports' | 'leads' | 'plan' | 'team'
 
 
-export type InventoryPanel = 'statistics' | 'overview' | 'attention' | 'stocktake' | 'movement' | 'settings' | 'exact' | 'warehouse' | 'boutique' | 'catalog' | 'history' | 'audit'
+export type InventoryPanel = 'statistics' | 'overview' | 'attention' | 'stocktake' | 'movement' | 'settings' | 'exact' | 'warehouse' | 'boutique' | 'catalog' | 'history' | 'audit' | 'reports'
 
 
 export type InventoryStatusFilter = 'all' | 'positive' | 'zero' | 'negative'
