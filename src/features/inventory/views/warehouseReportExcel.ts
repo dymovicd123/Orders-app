@@ -1,4 +1,4 @@
-import {labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
+import {integerRu,labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
 import { strToU8, zipSync } from 'fflate'
 import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 
@@ -262,27 +262,39 @@ export function buildDemandStatisticsXlsx(args:{
   }),{sold:0,net:0,returned:0,priced:0,knownRevenue:0,inconsistent:0})
   const subtitle=choice.start+' — '+choice.end+' · '+(choice.scope==='shipped'?'Отправленные':'Оформленные')+
     ' · '+labelSource(choice.source)+' · '+labelCategory(choice.category)
-  const summary:[string,Cell][]=[
-    ['Сформировано',T(args.generatedAt||new Date().toISOString())],
-    ['Начало периода',T(choice.start)],['Конец периода',T(choice.end)],
-    ['Режим',T(labelScope(choice.scope))],
-    ['Источник',T(labelSource(choice.source))],['Категория',T(labelCategory(choice.category))],
-    ['Число оформленных заказов за период (общая выборка)',N(demand.periodOrderCount||0)],
-    ['Число отправленных заказов за период (общая выборка)',N(demand.periodShippedOrderCount||0)],
-    ['Количество позиций, шт.',N(totals.sold)],
-    ['После возвратов, шт.',N(totals.net)],
-    ['Возвраты, шт.',N(totals.returned)],
-    ['Стоимость по сохранённым ценам позиций, ₸',MONEY(totals.knownRevenue)],
-    ['Средняя цена известной позиции, ₸',totals.priced?MONEY(totals.knownRevenue/totals.priced):T('Неизвестна')],
-    ['Известна цена, шт.',N(totals.priced)],
-    ['Охват ценами, %',ratio(totals.priced,totals.net)],
-    ['С расхождением старой строки цены, шт.',N(totals.inconsistent)],
-    ['Методика',T('Срез состава заказов в выбранном периоде; история обменов может влиять на старые периоды')],
-    ['Важно',T('Стоимость позиций не равна поступлениям, валовой или чистой прибыли')],
+  const rankBy=(field:keyof WarehouseDemandRow)=>groupedDemand(rows,field)
+    .map(r=>({name:r.name,value:r.net}))
+  const cards:DashboardCard[]=[
+    {label:choice.scope==='shipped'?'Отправлено товаров':'Заказано товаров',
+      value:COUNT(totals.sold),detail:'Количество с учётом выбранных фильтров'},
+    {label:'Без возвратов',value:COUNT(totals.net),
+      detail:'Возвращено '+integerRu(totals.returned)+' шт.'},
+    {label:'Стоимость по ценам позиций',
+      value:totals.priced?MONEY(totals.knownRevenue):T('Нет цены'),
+      detail:'Известная цена для '+integerRu(totals.priced)+' из '+integerRu(totals.net)+' шт.'},
+    {label:'Средняя цена товара',
+      value:totals.priced?MONEY(totals.knownRevenue/totals.priced):T('Нет цены'),
+      detail:'По товарам с известной ценой'},
   ]
+  const overview=dashboardSheet('Сводка спроса','КАКИЕ ТОВАРЫ ПОЛЬЗУЮТСЯ СПРОСОМ',subtitle,
+    cards,
+    [
+      {title:'МОДЕЛИ',rows:rankBy('product')},
+      {title:'ЦВЕТА',rows:rankBy('color')},
+      {title:'РАЗМЕРЫ',rows:rankBy('size')},
+    ],[
+      {title:'МАТЕРИАЛЫ',rows:rankBy('material')},
+      {title:'ДЛИНА',rows:rankBy('length')},
+      {title:'ПОЛ',rows:rankBy('gender')},
+    ],
+    'Выборка: '+labelScope(choice.scope)+' · '+labelSource(choice.source)+
+    ' · '+labelCategory(choice.category)+'\nЗаказов за весь период: оформлено '+
+    integerRu(demand.periodOrderCount||0)+', отправлено '+
+    integerRu(demand.periodShippedOrderCount||0)+'. Сформировано: '+
+    (args.generatedAt||new Date().toISOString()),
+  )
   const sheets:Sheet[]=[
-    reportSheet('Сводка спроса','СТАТИСТИКА СПРОСА',subtitle,['Показатель','Значение'],
-      summary.map(([name,cell])=>[T(name),cell]),[64,88]),
+    overview,
     demandRankSheet('Модели','product',rows,subtitle,totals.net),
   ]
   for(const [name,field] of DIMENSIONS)sheets.push(demandRankSheet(name,field,rows,subtitle,totals.net))
