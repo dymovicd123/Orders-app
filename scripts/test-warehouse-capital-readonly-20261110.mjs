@@ -70,6 +70,6 @@ assert.ok(route.includes('requireAdminUser(authUser')&&route.indexOf('requireAdm
  'Finance API must guard admin role before reading confidential prices')
 const source=readFileSync('src/features/sections/InventorySection.tsx','utf8')
 assert.ok(source.includes("<InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} />"))
-assert.ok(source.includes("<WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isAdmin} />"))
+assert.ok(source.includes("<WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} />"))
 assert.ok(source.includes("label: 'Статистика'")&&source.includes("label: 'Отчёты'"))
 console.log('WAREHOUSE_CAPITAL_READ_ONLY_PASS: source, category, reserved clamp, unknown prices, exclusions and roles')
