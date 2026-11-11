@@ -1,4 +1,4 @@
-import {integerRu,labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
+import {integerRu,moneyRu,labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
 import { strToU8, zipSync } from 'fflate'
 import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 
@@ -373,31 +373,45 @@ export function buildWarehouseCapitalXlsx(args:{
   const captured=capital.capturedAt
   const subtitle='Снимок '+captured+' · источник '+labelSourceFilter(choice.source)+' · категория '+labelCategory(choice.category)+
     ' · только положительные остатки'
-  const val=(n:number)=>MONEY(n)
-  const summary:[string,Cell][]=[
-    ['Время оценки остатков',T(captured)],['Сформирован файл',T(args.generatedAt||new Date().toISOString())],
-    ['Источник',T(labelSourceFilter(choice.source))],['Категория',T(labelCategory(choice.category))],
-    ['Физически на месте, шт.',N(v.quantity)],['Из них в резерве, шт.',N(v.reserved)],
-    ['Свободно к продаже, шт.',N(v.free)],
-    ['Стоимость по известной себестоимости, ₸',val(v.cost)],
-    ['Потенциальная продажная стоимость, ₸',val(v.sale)],
-    ['Потенциальная валовая маржа (где известны обе цены), ₸',val(v.gross)],
-    ['Охват себестоимостью, %',ratio(v.costQty,v.quantity)],
-    ['Охват продажной ценой, %',ratio(v.saleQty,v.quantity)],
-    ['Маржа на сопоставимых позициях, %',ratio(v.gross,v.comparableSale)],
-    ['Свободно по известной себестоимости, ₸',val(v.freeCost)],
-    ['Резерв по известной себестоимости, ₸',val(v.reservedCost)],
-    ['Свободно по известной цене продажи, ₸',val(v.freeSale)],
-    ['Резерв по известной цене продажи, ₸',val(v.reservedSale)],
-    ['Без известной себестоимости, шт.',N(v.unknownCostQty)],
-    ['Без известной продажной цены, шт.',N(v.unknownSaleQty)],
-    ['Важно',T('Текущая оценка по каталогу, не исторические закупки, не реальные платежи и не чистая прибыль')],
-    ['Качество неотрицательных остатков',T('Исключённые 0/минус и аномалии показаны на листе «Качество»')],
-  ]
-  const sheets:Sheet[]=[
-    reportSheet('Сводка запасов','ДЕНЬГИ В ТОВАРНЫХ ОСТАТКАХ',subtitle,
-      ['Показатель','Значение'],summary.map(([label,value])=>[T(label),value]),[66,95]),
-  ]
+  const grouped=financeGroups(rows,['product']).map(g=>({
+    name:g.labels[0],quantity:g.summary.quantity,cost:g.summary.cost,sale:g.summary.sale,
+  }))
+  const bySource=financeGroups(rows,['source']).map(g=>({
+    name:g.labels[0],value:g.summary.quantity,
+  }))
+  const overview=dashboardSheet('Сводка запасов','СТОИМОСТЬ ТОВАРНЫХ ЗАПАСОВ',subtitle,
+    [
+      {label:'Товаров в наличии',value:COUNT(v.quantity),
+        detail:'Свободно '+integerRu(v.free)+' шт. · резерв '+integerRu(v.reserved)+' шт.'},
+      {label:'Себестоимость · известная часть',
+        value:v.costQty?MONEY(v.cost):T('Не оценена'),
+        detail:'Свободно '+moneyRu(v.freeCost)+' · резерв '+moneyRu(v.reservedCost)},
+      {label:'Продажная стоимость · известная часть',
+        value:v.saleQty?MONEY(v.sale):T('Не оценена'),
+        detail:'Свободно '+moneyRu(v.freeSale)+' · резерв '+moneyRu(v.reservedSale)},
+    ],
+    [
+      {title:'МОДЕЛИ ПО СЕБЕСТОИМОСТИ',money:true,
+        rows:[...grouped].sort((a,b)=>b.cost-a.cost).map(x=>({name:x.name,value:x.cost}))},
+      {title:'МОДЕЛИ ПО КОЛИЧЕСТВУ',
+        rows:[...grouped].sort((a,b)=>b.quantity-a.quantity).map(x=>({name:x.name,value:x.quantity}))},
+      {title:'МОДЕЛИ ПО ЦЕНАМ ПРОДАЖИ',money:true,
+        rows:[...grouped].sort((a,b)=>b.sale-a.sale).map(x=>({name:x.name,value:x.sale}))},
+    ],[
+      {title:'СКЛАД И БУТИК',rows:bySource},
+      {title:'ПОЛНОТА СЕБЕСТОИМОСТИ',rows:[
+        {name:'Известна',value:v.costQty},{name:'Неизвестна',value:v.unknownCostQty},
+      ]},
+      {title:'СВОБОДНО И РЕЗЕРВ',rows:[
+        {name:'Свободно',value:v.free},{name:'В резерве',value:v.reserved},
+      ]},
+    ],
+    'Дата оценки: '+captured+'\nИсточник: '+labelSourceFilter(choice.source)+
+    ' · категория: '+labelCategory(choice.category)+
+    ' · себестоимость известна у '+integerRu(v.costQty)+' из '+
+    integerRu(v.quantity)+' шт. · цена продажи у '+integerRu(v.saleQty)+' шт.',
+  )
+  const sheets:Sheet[]=[overview]
   function financialGroupSheet(name:string,fields:(keyof WarehouseCapitalRow)[],headers:string[]){
     const entries=financeGroups(rows,fields)
     return reportSheet(name,name.toUpperCase(),subtitle,
