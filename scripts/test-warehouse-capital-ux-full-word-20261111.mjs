@@ -41,6 +41,9 @@ assert.ok(!doc.includes("h('О чём важно помнить')"),
 assert.ok(!doc.includes("modelRows.slice(0,35)")&&
   !doc.includes("items.length>12")&&!doc.includes("values.slice(0,limit)"),
   'Word must contain all models, all exact variants and full rankings')
-assert.ok(doc.includes("function table(headers:string[],rows:CellValue[][],limit?:number)"),
-  'Word table must not silently truncate to 250 rows')
+assert.ok(!doc.includes('modelRows.slice(0,35)')&&!doc.includes('modelGroups.slice(0,20)')&&
+  !doc.includes('rows.slice(0,180)')&&!doc.includes('values.slice(0,limit)'),
+  'Word must not silently truncate ranked or exact rows')
+assert.ok(doc.includes('function demandVariantTable(')&&doc.includes('function capitalVariantTable('),
+  'Both Word reports must render readable variant cards')
 console.log('WAREHOUSE_CAPITAL_UX_AND_FULL_WORD_PASS: overall totals, compact variants, mobile details and zero Word truncation')

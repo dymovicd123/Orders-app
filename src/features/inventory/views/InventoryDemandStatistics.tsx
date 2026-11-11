@@ -220,11 +220,11 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
       <div className="demand-top-actions">
         <button className="demand-download" type="button" onClick={()=>void exportDocument()}
           disabled={loading||documentExporting||!response?.ok||Boolean(response.truncated)}>
-          {documentExporting?'Готовим документ…':'Красивый отчёт · Word'}
+          {documentExporting?'Готовим документ…':'Отчёт Word'}
         </button>
         <button className="demand-refresh" type="button" onClick={()=>void exportStatistics()}
           disabled={loading||exporting||!response?.ok||Boolean(response.truncated)}>
-          {exporting?'Формируется…':'Таблицы Excel'}
+          {exporting?'Формируется…':'Отчёт Excel'}
         </button>
         <button className="demand-refresh" type="button" onClick={()=>setRefresh(v=>v+1)} disabled={loading}>↻ Обновить</button>
       </div>

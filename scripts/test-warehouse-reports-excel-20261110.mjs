@@ -21,7 +21,22 @@ assert.ok(statsBook.includes('Разбор моделей'))
 assert.ok(statsBook.includes('Все варианты'))
 assert.ok(!statsBook.includes('Сводка запасов'))
 assert.ok(!statsBook.includes('Стоимость запасов'))
+const styles=read(workbook,'xl/styles.xml')
+assert.ok(styles.includes('fonts count="10"')&&styles.includes('cellXfs count="18"'),
+  'Excel must include readable KPI, ranking, currency and alternating-row styles')
+assert.ok(styles.includes('numFmtId="166"'),'Counts must display with Russian units')
 const statisticsSummary=read(workbook,'xl/worksheets/sheet1.xml')
+assert.ok(statisticsSummary.includes('КАКИЕ ТОВАРЫ ПОЛЬЗУЮТСЯ СПРОСОМ')&&
+  statisticsSummary.includes('МОДЕЛИ')&&statisticsSummary.includes('ЦВЕТА')&&
+  statisticsSummary.includes('РАЗМЕРЫ')&&statisticsSummary.includes('МАТЕРИАЛЫ')&&
+  statisticsSummary.includes('ДЛИНА')&&statisticsSummary.includes('ПОЛ'),
+  'Statistics Excel first sheet must follow all six page rankings')
+assert.ok(statisticsSummary.includes('<mergeCell ref="A4:C4"/>')&&
+  statisticsSummary.includes('<mergeCell ref="A5:C6"/>'),
+  'Statistics Excel must have four large KPI cards rather than a dry name/value table')
+assert.ok(statisticsSummary.includes('<conditionalFormatting sqref="D11:D20">')&&
+  statisticsSummary.includes('showGridLines="0"'),
+  'Overview must have visual data bars and clean spreadsheet layout')
 assert.ok(statisticsSummary.includes('<v>6</v>'),'Totals must be scoped to current source')
 assert.ok(statisticsSummary.includes('<v>160000</v>')===false,
   'Summary revenue includes all current filtered variants and is not a single row')
@@ -58,6 +73,19 @@ assert.equal((financeBook.match(/<sheet name=/g)||[]).length,6)
 assert.ok(financeBook.includes('Сводка запасов')&&financeBook.includes('Исполнения'))
 assert.ok(financeBook.includes('Все остатки')&&financeBook.includes('Качество'))
 assert.ok(!financeBook.includes('Разбор моделей'),'Demand analysis must not contaminate capital report')
+const financeOverview=read(financial,'xl/worksheets/sheet1.xml')
+assert.ok(financeOverview.includes('СТОИМОСТЬ ТОВАРНЫХ ЗАПАСОВ')&&
+  financeOverview.includes('Товаров в наличии')&&
+  financeOverview.includes('Себестоимость')&&financeOverview.includes('Продажная стоимость')&&
+  financeOverview.includes('СКЛАД И БУТИК')&&financeOverview.includes('МОДЕЛИ ПО СЕБЕСТОИМОСТИ'),
+  'Financial Excel overview must follow the actual stock page')
+assert.ok(financeOverview.includes('<mergeCell ref="A4:D4"/>')&&
+  financeOverview.includes('<mergeCell ref="A5:D6"/>'),
+  'Financial Excel must have three clear total/free/reserved KPI cards')
+assert.ok(financeOverview.includes('<v>30000</v>')&&financeOverview.includes('<v>120000</v>'),
+  'Financial overview must use exact filtered valuation data')
+assert.ok(!financeOverview.includes('Потенциальная валовая маржа'),
+  'Do not reintroduce removed headline KPI in the finance overview')
 const financeRows=read(financial,'xl/worksheets/sheet5.xml')
 assert.ok(financeRows.includes('<v>30000</v>')&&financeRows.includes('<v>120000</v>'))
 assert.ok(!financeRows.includes('<v>5000000</v>'),'Source filter must exclude boutique assets')

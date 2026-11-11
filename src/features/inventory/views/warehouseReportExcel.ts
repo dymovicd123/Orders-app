@@ -1,4 +1,4 @@
-import {labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
+import {integerRu,moneyRu,labelCategory,labelCharacteristic,labelScope,labelSource,labelSourceFilter} from './warehouseReportLocale.ts'
 import { strToU8, zipSync } from 'fflate'
 import type { WarehouseCapitalSnapshot, WarehouseCapitalRow } from '../../../../shared/warehouse-capital-types.ts'
 
@@ -18,10 +18,11 @@ export type WarehouseReportChoice={
   start:string; end:string; scope:'orders'|'shipped'; source:string; category:string
 }
 type Cell={value:string|number;style?:number}
-type Sheet={name:string;rows:Cell[][];widths:number[];freeze:number;filter?:string;merges?:string[]}
+type Sheet={name:string;rows:Cell[][];widths:number[];freeze:number;filter?:string;merges?:string[];bars?:string[];tabColor?:string;overview?:boolean}
 const T=(x:string,style=0):Cell=>({value:x,style})
 const N=(x:number,style=4):Cell=>({value:x,style})
 const MONEY=(x:number):Cell=>N(x,5)
+const COUNT=(x:number):Cell=>N(x,12)
 const xml=(v:string)=>v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')
 const head='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -29,10 +30,80 @@ const relNs='http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const pkgNs='http://schemas.openxmlformats.org/package/2006/relationships'
 const col=(i:number)=>{let r='';for(let k=i+1;k;k=Math.floor((k-1)/26))r=String.fromCharCode(65+(k-1)%26)+r;return r}
 function reportSheet(name:string,title:string,subtitle:string,headers:string[],records:Cell[][],widths:number[]):Sheet{
+  const striped=records.map((row,i)=>i%2===0?row:row.map(c=>{
+    if(c.style===0)return {...c,style:14}
+    if(c.style===4)return {...c,style:15}
+    if(c.style===5)return {...c,style:16}
+    return c
+  }))
+  const metricColumn=headers.findIndex(h=>h.includes('Без возвратов')||
+    h==='Физически, шт.'||h.includes('Стоимость по себ., ₸'))
+  const dataEnd=records.length+4
+  const bars=metricColumn>=0&&records.length>1?[
+    col(metricColumn)+'5:'+col(metricColumn)+dataEnd,
+  ]:[]
   return {
-    name,widths,freeze:4,filter:'A4:'+col(headers.length-1)+(records.length+4),
+    name,widths,freeze:4,filter:'A4:'+col(headers.length-1)+dataEnd,
     merges:['A1:'+col(headers.length-1)+'1','A2:'+col(headers.length-1)+'2'],
-    rows:[[T(title,1)],[T(subtitle,2)],[],headers.map(h=>T(h,3)),...records],
+    rows:[[T(title,1)],[T(subtitle,2)],[],headers.map(h=>T(h,3)),...striped],
+    bars,tabColor:name.includes('остатки')?'1C775E':'27578A',
+  }
+}
+type DashboardCard={label:string;value:Cell;detail:string}
+type DashboardGroup={title:string;rows:{name:string;value:number}[];money?:boolean}
+function dashboardSheet(
+  name:string,title:string,subtitle:string,
+  cards:DashboardCard[],top:DashboardGroup[],secondary:DashboardGroup[],caption:string,
+):Sheet{
+  if(cards.length!==3&&cards.length!==4)throw Error('Для обзора нужно 3 или 4 показателя')
+  if(top.length!==3||secondary.length!==3)throw Error('Для обзора нужны 6 групп рейтингов')
+  const rows:Cell[][]=Array.from({length:38},()=>Array.from({length:12},()=>T('')))
+  const merges:string[]=[]
+  const put=(row:number,column:number,value:Cell)=>{rows[row-1][column]=value}
+  const merge=(startRow:number,startCol:number,endRow:number,endCol:number)=>{
+    merges.push(col(startCol)+(startRow)+':'+col(endCol)+(endRow))
+  }
+  put(1,0,T(title,1));merge(1,0,1,11)
+  put(2,0,T(subtitle,2));merge(2,0,2,11)
+  const cardSpan=12/cards.length
+  cards.forEach((card,i)=>{
+    const c=i*cardSpan
+    put(4,c,T(card.label,8));merge(4,c,4,c+cardSpan-1)
+    put(5,c,{...card.value,style:card.value.style===5?10:9})
+    merge(5,c,6,c+cardSpan-1)
+    put(7,c,T(card.detail,11));merge(7,c,7,c+cardSpan-1)
+  })
+  const groupSection=(row:number,titleText:string)=>{
+    put(row,0,T(titleText,7));merge(row,0,row,11)
+  }
+  function insertGroups(titleRow:number,list:DashboardGroup[]){
+    list.forEach((group,index)=>{
+      const start=index*4
+      put(titleRow,start,T(group.title,8))
+      merge(titleRow,start,titleRow,start+3)
+      for(let i=0;i<10;i++){
+        const item=group.rows[i]
+        if(!item)continue
+        const r=titleRow+i+1
+        put(r,start,T(String(i+1),12))
+        put(r,start+1,T(item.name,13))
+        merge(r,start+1,r,start+2)
+        put(r,start+3,N(item.value,group.money?5:12))
+      }
+    })
+  }
+  groupSection(9,'ЧТО ПОКАЗЫВАЮТ ДАННЫЕ')
+  insertGroups(10,top)
+  groupSection(22,'ДРУГИЕ ПОКАЗАТЕЛИ')
+  insertGroups(23,secondary)
+  groupSection(35,'ПЕРИОД И ДАННЫЕ')
+  put(36,0,T(caption,11));merge(36,0,37,11)
+  put(38,0,T('Полные рейтинги и все варианты — на следующих вкладках файла.',2))
+  merge(38,0,38,11)
+  return {
+    name,widths:[8,14,20,18,8,14,20,18,8,14,20,18],
+    rows,merges,freeze:3,overview:true,tabColor:'1C775E',
+    bars:['D11:D20','H11:H20','L11:L20','D24:D33','H24:H33','L24:L33'],
   }
 }
 function workbookXml(sheets:Sheet[]){
@@ -46,37 +117,81 @@ function stylesXml(){
     '<font><sz val="10"/><color rgb="FF607387"/><name val="Aptos"/></font>',
     '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font>',
     '<font><b/><sz val="11"/><color rgb="FF206B4B"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="10"/><color rgb="FF456177"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="21"/><color rgb="FF183B54"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FF1C775E"/><name val="Aptos"/></font>',
+    '<font><b/><sz val="11"/><color rgb="FF1B334A"/><name val="Aptos"/></font>',
   ].join('')
   const fills=[
     '<fill><patternFill patternType="none"/></fill>',
     '<fill><patternFill patternType="gray125"/></fill>',
     '<fill><patternFill patternType="solid"><fgColor rgb="FF194A65"/></patternFill></fill>',
     '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF4EF"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFEDF4FB"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF4F7FA"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF27578A"/></patternFill></fill>',
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/></patternFill></fill>',
   ].join('')
-  const xfs=[[0,0,0],[1,0,0],[2,0,0],[3,2,0],[0,0,3],[0,0,164],[4,3,164]]
-  return head+'<styleSheet xmlns="'+ns+'"><numFmts count="1"><numFmt numFmtId="164" formatCode="'+xml('#,##0 "₸";[Red](#,##0 "₸");0 "₸"')+'"/></numFmts>'+
-    '<fonts count="5">'+fonts+'</fonts><fills count="4">'+fills+'</fills>'+
+  // Keep old style indices stable for existing full-detail sheets.
+  // Cells use actual numbers (never strings) with a custom currency/count display format.
+  const xfs=[
+    [0,0,0], [1,0,0], [2,0,0], [3,2,0], [0,0,3],
+    [0,0,164], [4,3,164], [7,6,0], [5,3,0],
+    [6,3,166], [6,4,164], [2,0,0], [8,0,166],
+    [9,0,0], [0,5,0], [0,5,3], [0,5,164], [8,0,165],
+  ]
+  const formats=[
+    '<numFmt numFmtId="164" formatCode="'+xml('#,##0 "₸";[Red](#,##0 "₸");0 "₸"')+'"/>',
+    '<numFmt numFmtId="165" formatCode="'+xml('0.0" %"')+'"/>',
+    '<numFmt numFmtId="166" formatCode="'+xml('#,##0" шт."')+'"/>',
+  ].join('')
+  return head+'<styleSheet xmlns="'+ns+'"><numFmts count="3">'+formats+'</numFmts>'+
+    '<fonts count="10">'+fonts+'</fonts><fills count="8">'+fills+'</fills>'+
     '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'+
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
-    '<cellXfs count="'+xfs.length+'">'+xfs.map(([font,fill,format])=>'<xf numFmtId="'+format+'" fontId="'+font+'" fillId="'+fill+'" borderId="0" xfId="0" applyNumberFormat="1"/>').join('')+
-    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+    '<cellXfs count="'+xfs.length+'">'+xfs.map(([font,fill,format])=>
+      '<xf numFmtId="'+format+'" fontId="'+font+'" fillId="'+fill+
+      '" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1">'+
+      '<alignment vertical="center" wrapText="1"/></xf>').join('')+
+    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/>'+
+    '</cellStyles></styleSheet>'
 }
 function sheetXml(sheet:Sheet){
-  const rowXml=sheet.rows.map((cells,i)=>'<row r="'+(i+1)+'">'+cells.map((cell,j)=>{
-    const attr=' r="'+col(j)+(i+1)+'" s="'+(cell.style||0)+'"'
-    if(typeof cell.value==='number'){
-      if(!Number.isFinite(cell.value))throw Error('Отчёт содержит некорректное число')
-      return '<c'+attr+'><v>'+cell.value+'</v></c>'
-    }
-    return '<c'+attr+' t="inlineStr"><is><t xml:space="preserve">'+xml(cell.value)+'</t></is></c>'
-  }).join('')+'</row>').join('')
-  const widths=sheet.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')
-  const freeze='<sheetViews><sheetView workbookViewId="0"><pane ySplit="'+sheet.freeze+'" topLeftCell="A'+(sheet.freeze+1)+'" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-  const merges=sheet.merges?.length?'<mergeCells count="'+sheet.merges.length+'">'+sheet.merges.map(m=>'<mergeCell ref="'+m+'"/>').join('')+'</mergeCells>':''
+  const rowXml=sheet.rows.map((cells,i)=>{
+    const height=sheet.overview?(i===0?34:i===1?29:i===4?40:
+      i===3||i===6?30:26):(i===0?32:i===1?25:i===3?39:24)
+    return '<row r="'+(i+1)+'" ht="'+height+'" customHeight="1">'+
+      cells.map((cell,j)=>{
+        const attr=' r="'+col(j)+(i+1)+'" s="'+(cell.style||0)+'"'
+        if(typeof cell.value==='number'){
+          if(!Number.isFinite(cell.value))throw Error('Отчёт содержит некорректное число')
+          return '<c'+attr+'><v>'+cell.value+'</v></c>'
+        }
+        return '<c'+attr+' t="inlineStr"><is><t xml:space="preserve">'+
+          xml(cell.value)+'</t></is></c>'
+      }).join('')+'</row>'
+  }).join('')
+  const widths=sheet.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+
+    '" width="'+w+'" customWidth="1"/>').join('')
+  const freeze=sheet.freeze>0?'<pane ySplit="'+sheet.freeze+'" topLeftCell="A'+
+    (sheet.freeze+1)+'" activePane="bottomLeft" state="frozen"/>':''
+  const views='<sheetViews><sheetView workbookViewId="0" showGridLines="0">'+freeze+
+    '</sheetView></sheetViews>'
+  const merges=sheet.merges?.length?'<mergeCells count="'+sheet.merges.length+'">'+
+    sheet.merges.map(m=>'<mergeCell ref="'+m+'"/>').join('')+'</mergeCells>':''
   const filter=sheet.filter?'<autoFilter ref="'+sheet.filter+'"/>':''
-  return head+'<worksheet xmlns="'+ns+'"><dimension ref="A1:'+col(sheet.widths.length-1)+sheet.rows.length+'"/>'+freeze+
-    '<sheetFormatPr defaultRowHeight="20"/><cols>'+widths+'</cols><sheetData>'+rowXml+'</sheetData>'+filter+merges+
-    '<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>'
+  const bars=(sheet.bars||[]).map((ref,i)=>
+    '<conditionalFormatting sqref="'+ref+'"><cfRule type="dataBar" priority="'+(i+1)+'">'+
+    '<dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/>'+
+    '<color rgb="FF70BAA0"/></dataBar></cfRule></conditionalFormatting>').join('')
+  const sheetPr=sheet.tabColor?'<sheetPr><tabColor rgb="FF'+sheet.tabColor+'"/></sheetPr>':''
+  return head+'<worksheet xmlns="'+ns+'">'+sheetPr+
+    '<dimension ref="A1:'+col(sheet.widths.length-1)+sheet.rows.length+'"/>'+
+    views+'<sheetFormatPr defaultRowHeight="24"/><cols>'+widths+'</cols>'+
+    '<sheetData>'+rowXml+'</sheetData>'+filter+merges+bars+
+    '<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>'+
+    '<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'
 }
 function packageSheets(sheets:Sheet[]):Uint8Array{
   if(sheets.length<1||sheets.length>25)throw Error('Неверное количество листов')
@@ -147,27 +262,39 @@ export function buildDemandStatisticsXlsx(args:{
   }),{sold:0,net:0,returned:0,priced:0,knownRevenue:0,inconsistent:0})
   const subtitle=choice.start+' — '+choice.end+' · '+(choice.scope==='shipped'?'Отправленные':'Оформленные')+
     ' · '+labelSource(choice.source)+' · '+labelCategory(choice.category)
-  const summary:[string,Cell][]=[
-    ['Сформировано',T(args.generatedAt||new Date().toISOString())],
-    ['Начало периода',T(choice.start)],['Конец периода',T(choice.end)],
-    ['Режим',T(labelScope(choice.scope))],
-    ['Источник',T(labelSource(choice.source))],['Категория',T(labelCategory(choice.category))],
-    ['Число оформленных заказов за период (общая выборка)',N(demand.periodOrderCount||0)],
-    ['Число отправленных заказов за период (общая выборка)',N(demand.periodShippedOrderCount||0)],
-    ['Количество позиций, шт.',N(totals.sold)],
-    ['После возвратов, шт.',N(totals.net)],
-    ['Возвраты, шт.',N(totals.returned)],
-    ['Стоимость по сохранённым ценам позиций, ₸',MONEY(totals.knownRevenue)],
-    ['Средняя цена известной позиции, ₸',totals.priced?MONEY(totals.knownRevenue/totals.priced):T('Неизвестна')],
-    ['Известна цена, шт.',N(totals.priced)],
-    ['Охват ценами, %',ratio(totals.priced,totals.net)],
-    ['С расхождением старой строки цены, шт.',N(totals.inconsistent)],
-    ['Методика',T('Срез состава заказов в выбранном периоде; история обменов может влиять на старые периоды')],
-    ['Важно',T('Стоимость позиций не равна поступлениям, валовой или чистой прибыли')],
+  const rankBy=(field:keyof WarehouseDemandRow)=>groupedDemand(rows,field)
+    .map(r=>({name:r.name,value:r.net}))
+  const cards:DashboardCard[]=[
+    {label:choice.scope==='shipped'?'Отправлено товаров':'Заказано товаров',
+      value:COUNT(totals.sold),detail:'Количество с учётом выбранных фильтров'},
+    {label:'Без возвратов',value:COUNT(totals.net),
+      detail:'Возвращено '+integerRu(totals.returned)+' шт.'},
+    {label:'Стоимость по ценам позиций',
+      value:totals.priced?MONEY(totals.knownRevenue):T('Нет цены'),
+      detail:'Известная цена для '+integerRu(totals.priced)+' из '+integerRu(totals.net)+' шт.'},
+    {label:'Средняя цена товара',
+      value:totals.priced?MONEY(totals.knownRevenue/totals.priced):T('Нет цены'),
+      detail:'По товарам с известной ценой'},
   ]
+  const overview=dashboardSheet('Сводка спроса','КАКИЕ ТОВАРЫ ПОЛЬЗУЮТСЯ СПРОСОМ',subtitle,
+    cards,
+    [
+      {title:'МОДЕЛИ',rows:rankBy('product')},
+      {title:'ЦВЕТА',rows:rankBy('color')},
+      {title:'РАЗМЕРЫ',rows:rankBy('size')},
+    ],[
+      {title:'МАТЕРИАЛЫ',rows:rankBy('material')},
+      {title:'ДЛИНА',rows:rankBy('length')},
+      {title:'ПОЛ',rows:rankBy('gender')},
+    ],
+    'Выборка: '+labelScope(choice.scope)+' · '+labelSource(choice.source)+
+    ' · '+labelCategory(choice.category)+'\nЗаказов за весь период: оформлено '+
+    integerRu(demand.periodOrderCount||0)+', отправлено '+
+    integerRu(demand.periodShippedOrderCount||0)+'. Сформировано: '+
+    (args.generatedAt||new Date().toISOString()),
+  )
   const sheets:Sheet[]=[
-    reportSheet('Сводка спроса','СТАТИСТИКА СПРОСА',subtitle,['Показатель','Значение'],
-      summary.map(([name,cell])=>[T(name),cell]),[64,88]),
+    overview,
     demandRankSheet('Модели','product',rows,subtitle,totals.net),
   ]
   for(const [name,field] of DIMENSIONS)sheets.push(demandRankSheet(name,field,rows,subtitle,totals.net))
@@ -246,31 +373,45 @@ export function buildWarehouseCapitalXlsx(args:{
   const captured=capital.capturedAt
   const subtitle='Снимок '+captured+' · источник '+labelSourceFilter(choice.source)+' · категория '+labelCategory(choice.category)+
     ' · только положительные остатки'
-  const val=(n:number)=>MONEY(n)
-  const summary:[string,Cell][]=[
-    ['Время оценки остатков',T(captured)],['Сформирован файл',T(args.generatedAt||new Date().toISOString())],
-    ['Источник',T(labelSourceFilter(choice.source))],['Категория',T(labelCategory(choice.category))],
-    ['Физически на месте, шт.',N(v.quantity)],['Из них в резерве, шт.',N(v.reserved)],
-    ['Свободно к продаже, шт.',N(v.free)],
-    ['Стоимость по известной себестоимости, ₸',val(v.cost)],
-    ['Потенциальная продажная стоимость, ₸',val(v.sale)],
-    ['Потенциальная валовая маржа (где известны обе цены), ₸',val(v.gross)],
-    ['Охват себестоимостью, %',ratio(v.costQty,v.quantity)],
-    ['Охват продажной ценой, %',ratio(v.saleQty,v.quantity)],
-    ['Маржа на сопоставимых позициях, %',ratio(v.gross,v.comparableSale)],
-    ['Свободно по известной себестоимости, ₸',val(v.freeCost)],
-    ['Резерв по известной себестоимости, ₸',val(v.reservedCost)],
-    ['Свободно по известной цене продажи, ₸',val(v.freeSale)],
-    ['Резерв по известной цене продажи, ₸',val(v.reservedSale)],
-    ['Без известной себестоимости, шт.',N(v.unknownCostQty)],
-    ['Без известной продажной цены, шт.',N(v.unknownSaleQty)],
-    ['Важно',T('Текущая оценка по каталогу, не исторические закупки, не реальные платежи и не чистая прибыль')],
-    ['Качество неотрицательных остатков',T('Исключённые 0/минус и аномалии показаны на листе «Качество»')],
-  ]
-  const sheets:Sheet[]=[
-    reportSheet('Сводка запасов','ДЕНЬГИ В ТОВАРНЫХ ОСТАТКАХ',subtitle,
-      ['Показатель','Значение'],summary.map(([label,value])=>[T(label),value]),[66,95]),
-  ]
+  const grouped=financeGroups(rows,['product']).map(g=>({
+    name:g.labels[0],quantity:g.summary.quantity,cost:g.summary.cost,sale:g.summary.sale,
+  }))
+  const bySource=financeGroups(rows,['source']).map(g=>({
+    name:g.labels[0],value:g.summary.quantity,
+  }))
+  const overview=dashboardSheet('Сводка запасов','СТОИМОСТЬ ТОВАРНЫХ ЗАПАСОВ',subtitle,
+    [
+      {label:'Товаров в наличии',value:COUNT(v.quantity),
+        detail:'Свободно '+integerRu(v.free)+' шт. · резерв '+integerRu(v.reserved)+' шт.'},
+      {label:'Себестоимость · известная часть',
+        value:v.costQty?MONEY(v.cost):T('Не оценена'),
+        detail:'Свободно '+moneyRu(v.freeCost)+' · резерв '+moneyRu(v.reservedCost)},
+      {label:'Продажная стоимость · известная часть',
+        value:v.saleQty?MONEY(v.sale):T('Не оценена'),
+        detail:'Свободно '+moneyRu(v.freeSale)+' · резерв '+moneyRu(v.reservedSale)},
+    ],
+    [
+      {title:'МОДЕЛИ ПО СЕБЕСТОИМОСТИ',money:true,
+        rows:[...grouped].sort((a,b)=>b.cost-a.cost).map(x=>({name:x.name,value:x.cost}))},
+      {title:'МОДЕЛИ ПО КОЛИЧЕСТВУ',
+        rows:[...grouped].sort((a,b)=>b.quantity-a.quantity).map(x=>({name:x.name,value:x.quantity}))},
+      {title:'МОДЕЛИ ПО ЦЕНАМ ПРОДАЖИ',money:true,
+        rows:[...grouped].sort((a,b)=>b.sale-a.sale).map(x=>({name:x.name,value:x.sale}))},
+    ],[
+      {title:'СКЛАД И БУТИК',rows:bySource},
+      {title:'ПОЛНОТА СЕБЕСТОИМОСТИ',rows:[
+        {name:'Известна',value:v.costQty},{name:'Неизвестна',value:v.unknownCostQty},
+      ]},
+      {title:'СВОБОДНО И РЕЗЕРВ',rows:[
+        {name:'Свободно',value:v.free},{name:'В резерве',value:v.reserved},
+      ]},
+    ],
+    'Дата оценки: '+captured+'\nИсточник: '+labelSourceFilter(choice.source)+
+    ' · категория: '+labelCategory(choice.category)+
+    ' · себестоимость известна у '+integerRu(v.costQty)+' из '+
+    integerRu(v.quantity)+' шт. · цена продажи у '+integerRu(v.saleQty)+' шт.',
+  )
+  const sheets:Sheet[]=[overview]
   function financialGroupSheet(name:string,fields:(keyof WarehouseCapitalRow)[],headers:string[]){
     const entries=financeGroups(rows,fields)
     return reportSheet(name,name.toUpperCase(),subtitle,

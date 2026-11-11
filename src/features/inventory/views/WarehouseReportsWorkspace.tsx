@@ -214,9 +214,9 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
       </div>
       <div className="warehouse-capital-actions">
         <button type="button" className="primary" disabled={!capital||loading||documentExporting}
-          onClick={()=>void downloadDocument()}>{documentExporting?'Формируем…':'Красивый отчёт · Word'}</button>
+          onClick={()=>void downloadDocument()}>{documentExporting?'Формируем…':'Отчёт Word'}</button>
         <button type="button" className="secondary" disabled={!capital||loading||exporting}
-          onClick={()=>void download()}>{exporting?'Формируем…':'Таблицы Excel'}</button>
+          onClick={()=>void download()}>{exporting?'Формируем…':'Отчёт Excel'}</button>
         <button type="button" className="secondary" disabled={loading}
           onClick={()=>setRefresh(n=>n+1)}>Обновить</button>
       </div>
