@@ -2,6 +2,7 @@
 const translations:Record<string,string>={
   all:'Все', warehouse:'Склад', boutique:'Бутик', workshop:'Цех',
   adult:'Взрослые', child:'Детские', unknown:'Не указано',
+  standard:'Стандарт', default:'Стандарт', unspecified:'Не указано',
   male:'Мужской', female:'Женский', unisex:'Унисекс',
   men:'Мужской', women:'Женский',
   present:'Присутствует', absent:'Отсутствует',
