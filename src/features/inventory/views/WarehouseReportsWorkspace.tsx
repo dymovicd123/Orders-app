@@ -1,11 +1,11 @@
 import {useEffect,useMemo,useState} from 'react'
 import type {WarehouseCapitalSnapshot,WarehouseCapitalRow} from '../../../../shared/warehouse-capital-types.ts'
 import type {WarehouseFinanceChoice} from './warehouseReportExcel'
-import {labelCategory,labelCharacteristic,percentRu} from './warehouseReportLocale.ts'
+import {labelCategory,labelCharacteristic} from './warehouseReportLocale.ts'
 import './warehouse-report-workspace.css'
 
 type Props={active:boolean;isAdmin:boolean}
-type OrderBy='cost'|'revenue'|'quantity'|'gross'
+type OrderBy='cost'|'revenue'|'quantity'
 type Summary={
   quantity:number;reserved:number;free:number;cost:number;revenue:number;gross:number;
   freeCost:number;reservedCost:number;freeRevenue:number;reservedRevenue:number;
@@ -46,59 +46,88 @@ function groupBy(rows:WarehouseCapitalRow[],key:(r:WarehouseCapitalRow)=>string,
   return [...map].map(([key,g])=>({key,name:g.name,items:g.items,summary:summarize(g.items)}))
 }
 const sortGroups=(groups:Breakdown[],order:OrderBy)=>[...groups].sort((a,b)=>{
-  const field={cost:'cost',revenue:'revenue',quantity:'quantity',gross:'gross'}[order] as keyof Summary
+  const field={cost:'cost',revenue:'revenue',quantity:'quantity'}[order] as keyof Summary
   return b.summary[field]-a.summary[field]||a.name.localeCompare(b.name,'ru')
 })
 const sourceNames:{[key:string]:string}={warehouse:'Склад',boutique:'Бутик'}
 const executionKey=(r:WarehouseCapitalRow)=>[r.gender,r.material,r.length,r.category].join('\u001f')
 const executionName=(r:WarehouseCapitalRow)=>[r.material,r.length,r.gender].map(labelCharacteristic).join(' · ')+
   ' · '+labelCategory(r.category)
-function Amount({value,known}:{value:number;known:boolean}){
-  return <span>{known?money(value):'Цена неизвестна'}</span>
-}
-function OverviewCard({labelText,value,note,accent}:{labelText:string;value:string;note:string;accent?:string}){
-  return <div className={'warehouse-report-kpi'+(accent?' warehouse-report-kpi-'+accent:'')}>
-    <span>{labelText}</span><strong>{value}</strong><small>{note}</small>
-  </div>
-}
-function Meter({title,count,total,detail}:{title:string;count:number;total:number;detail:string}){
-  const ratio=total?Math.min(100,Math.max(0,count/total*100)):0
-  return <div className="warehouse-capital-meter">
-    <div className="warehouse-capital-meter-head"><strong>{title}</strong>
-      <span>{percentRu(count,total)}</span></div>
-    <div className="warehouse-capital-meter-track"><span style={{width:ratio+'%'}}/></div>
-    <small>{detail}</small>
-  </div>
-}
 function StockDetails({rows}:{rows:WarehouseCapitalRow[]}){
-  return <>
-    <div className="warehouse-capital-table-scroll">
-      <table className="warehouse-capital-table">
-        <thead><tr><th>Источник</th><th>Цвет / размер</th><th>В наличии</th><th>Резерв</th><th>Свободно</th>
-          <th>Себестоимость / шт.</th><th>Цена / шт.</th><th>Средства в товаре</th>
-          <th>Возможная выручка</th><th>Возможная маржа</th></tr></thead>
-        <tbody>{rows.map(r=><tr key={r.stockId}>
-          <td>{sourceNames[r.source]||r.source}</td><td><strong>{label(r.color)}</strong><small>{label(r.size)}{r.archived?' · архив':''}</small></td>
-          <td>{num(r.quantity)}</td><td>{num(r.reserved)}</td><td>{num(r.free)}</td>
-          <td><Amount value={r.costPrice||0} known={r.costPrice!==null}/></td>
-          <td><Amount value={r.salePrice||0} known={r.salePrice!==null}/></td>
-          <td><Amount value={r.costValue||0} known={r.costValue!==null}/></td>
-          <td><Amount value={r.retailValue||0} known={r.retailValue!==null}/></td>
-          <td><Amount value={r.grossPotential||0} known={r.grossPotential!==null}/></td>
-        </tr>)}</tbody>
-      </table>
+  const [selectedId,setSelectedId]=useState<number|null>(rows[0]?.stockId??null)
+  const [search,setSearch]=useState('')
+  const [showAllColors,setShowAllColors]=useState(false)
+  const groups=useMemo(()=>sortGroups(groupBy(rows,r=>r.color,r=>label(r.color)),'quantity'),[rows])
+  const needle=search.trim().toLocaleLowerCase('ru')
+  const filtered=groups.filter(g=>!needle||g.name.toLocaleLowerCase('ru').includes(needle)||
+    g.items.some(r=>label(r.size).toLocaleLowerCase('ru').includes(needle)))
+  const shown=showAllColors||needle?filtered:filtered.slice(0,6)
+  const selected=rows.find(r=>r.stockId===selectedId)||rows[0]
+  const multipleSources=new Set(rows.map(r=>r.source)).size>1
+  return <div className="warehouse-capital-browser">
+    <div className="warehouse-capital-browser-colors">
+      {groups.length>8&&<input className="warehouse-capital-color-search" type="search"
+        aria-label="Найти цвет или размер" placeholder="Цвет или размер"
+        value={search} onChange={e=>setSearch(e.target.value)}/>}
+      {shown.map(group=><section className="warehouse-capital-color-group" key={group.key}>
+        <div className="warehouse-capital-color-header">
+          <strong>{group.name}</strong>
+          <span>{num(group.summary.quantity)} шт.</span>
+        </div>
+        <div className="warehouse-capital-size-pills">
+          {group.items.filter(r=>!needle||
+            group.name.toLocaleLowerCase('ru').includes(needle)||
+            label(r.size).toLocaleLowerCase('ru').includes(needle)).map(r=>
+            <button key={r.stockId} type="button" aria-pressed={selected?.stockId===r.stockId}
+              className={selected?.stockId===r.stockId?'is-picked':''}
+              onClick={()=>setSelectedId(r.stockId)}>
+              <b>{label(r.size)}</b>
+              <span>{num(r.quantity)} шт.</span>
+              {multipleSources&&<small>{sourceNames[r.source]||r.source}</small>}
+              {r.reserved>0&&<small className="warehouse-capital-has-reserve">
+                Резерв {num(r.reserved)}</small>}
+            </button>)}
+        </div>
+      </section>)}
+      {!shown.length&&<p className="warehouse-capital-no-colors">Таких цветов или размеров нет.</p>}
+      {!needle&&filtered.length>6&&<button type="button" className="warehouse-capital-all-colors"
+        onClick={()=>setShowAllColors(v=>!v)}>
+        {showAllColors?'Свернуть цвета':'Показать все цвета · '+num(groups.length)}
+      </button>}
     </div>
-    <div className="warehouse-capital-mobile">
-      {rows.map(r=><div className="warehouse-capital-mobile-item" key={r.stockId}>
-        <strong>{label(r.color)} · {label(r.size)}</strong>
-        <small>{sourceNames[r.source]||r.source}{r.archived?' · архив':''}</small>
-        <div><span>В наличии / резерв / свободно</span><b>{num(r.quantity)} / {num(r.reserved)} / {num(r.free)}</b></div>
-        <div><span>Себестоимость / цена за шт.</span><b>{r.costPrice===null?'—':money(r.costPrice)} / {r.salePrice===null?'—':money(r.salePrice)}</b></div>
-        <div><span>Средства / выручка</span><b>{r.costValue===null?'—':money(r.costValue)} / {r.retailValue===null?'—':money(r.retailValue)}</b></div>
-        <div><span>Потенциальная маржа</span><b>{r.grossPotential===null?'—':money(r.grossPotential)}</b></div>
-      </div>)}
+    {selected&&<aside className="warehouse-capital-picked">
+      <div className="warehouse-capital-picked-title">
+        <span>Выбранный вариант</span>
+        <strong>{label(selected.color)} · {label(selected.size)}</strong>
+        <small>{sourceNames[selected.source]||selected.source}{selected.archived?' · архив':''}</small>
+      </div>
+      <div className="warehouse-capital-picked-qty">
+        <div><span>Всего</span><b>{num(selected.quantity)}</b></div>
+        <div><span>Свободно</span><b>{num(selected.free)}</b></div>
+        <div><span>Резерв</span><b>{num(selected.reserved)}</b></div>
+      </div>
+      <div className="warehouse-capital-picked-price">
+        <span>Себестоимость</span>
+        <strong>{selected.costPrice===null?'Не указана':money(selected.costPrice)+' / шт.'}</strong>
+        <small>Все {num(selected.quantity)} шт.:
+          {' '}{selected.costValue===null?'не оценены':money(selected.costValue)}</small>
+      </div>
+      <div className="warehouse-capital-picked-price">
+        <span>Цена продажи</span>
+        <strong>{selected.salePrice===null?'Не указана':money(selected.salePrice)+' / шт.'}</strong>
+        <small>Все {num(selected.quantity)} шт.:
+          {' '}{selected.retailValue===null?'не оценены':money(selected.retailValue)}</small>
+      </div>
+    </aside>}
+  </div>
+}
+function Coverage({title,count,total}:{title:string;count:number;total:number}){
+  return <div className="warehouse-capital-coverage-item">
+    <div><span>{title}</span><strong>{num(count)} из {num(total)} шт.</strong></div>
+    <div className="warehouse-capital-meter-track">
+      <span style={{width:(total?count/total*100:0)+'%'}}/>
     </div>
-  </>
+  </div>
 }
 export function WarehouseReportsWorkspace({active,isAdmin}:Props){
   const [capital,setCapital]=useState<WarehouseCapitalSnapshot|null>(null)
@@ -136,16 +165,11 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
     [rows,order])
   const found=useMemo(()=>models.filter(r=>r.name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru').trim())),
     [models,query])
-  const coveredMargin=pct(totals.gross,totals.comparableRevenue)
   const sourceGroups=useMemo(()=>[
     {name:'Склад',items:rows.filter(r=>r.source==='warehouse')},
     {name:'Бутик',items:rows.filter(r=>r.source==='boutique')},
   ].map(g=>({...g,summary:summarize(g.items)})).filter(g=>g.summary.quantity>0),[rows])
-  const topThree=useMemo(()=>models.slice(0,3).reduce((sum,r)=>sum+r.summary.cost,0),[models])
   const biggest=Math.max(1,...models.map(r=>r.summary.cost))
-  const pricedCost=totals.costQty>0?money(totals.cost):'Пока нет оценки'
-  const pricedSale=totals.revenueQty>0?money(totals.revenue):'Пока нет оценки'
-  const pricedMargin=totals.bothQty>0?money(totals.gross):'Пока нет оценки'
   async function download(){
     if(!capital||loading||exporting)return
     setExporting(true);setExportError('')
@@ -208,81 +232,52 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
           <option value="child">Детские</option><option value="unknown">Не указано</option>
         </select></label>
       </div>
-      <div className="warehouse-capital-overview">
-        <div className="warehouse-capital-overview-title">
-          <div><h3>Главное о запасах</h3><p>Что сейчас есть в наличии и какую стоимость удалось посчитать.</p></div>
-          <span>{num(totals.quantity)} единиц в наличии</span>
-        </div>
-        <div className="warehouse-report-kpis">
-          <OverviewCard accent="green" labelText="Средства в товарах · известная часть" value={pricedCost}
-            note={'Себестоимость известна у '+num(totals.costQty)+' из '+num(totals.quantity)+' шт.'}/>
-          <OverviewCard accent="blue" labelText="Продажная стоимость · известная часть" value={pricedSale}
-            note={'Цена известна у '+num(totals.revenueQty)+' из '+num(totals.quantity)+' шт.'}/>
-          <OverviewCard labelText="Разница на сопоставимых позициях" value={pricedMargin}
-            note={'Обе цены известны у '+num(totals.bothQty)+' шт. · '+coveredMargin+' от их выручки'}/>
-          <OverviewCard labelText="Свободный товар" value={num(totals.free)+' шт.'}
-            note={'В резерве '+num(totals.reserved)+' шт. · всего '+num(totals.quantity)+' шт.'}/>
-        </div>
-        <div className="warehouse-capital-quality">
-          <div className="warehouse-capital-quality-title">
-            <div><h4>Насколько полная денежная оценка?</h4>
-              <p>Отсутствующие цены не превращаем в ноль: суммы выше показывают только оценённую часть.</p></div>
-            <span>{totals.costQty===totals.quantity&&totals.revenueQty===totals.quantity?
-              'Все цены известны':'Оценка частичная'}</span>
+      <section className="warehouse-capital-overview">
+        <div className="warehouse-capital-simple-kpis">
+          <div className="warehouse-capital-main-card">
+            <span>Товаров в наличии</span>
+            <strong>{num(totals.quantity)} шт.</strong>
+            <div className="warehouse-capital-main-split">
+              <span>Свободно <b>{num(totals.free)}</b></span>
+              <span>В резерве <b>{num(totals.reserved)}</b></span>
+            </div>
           </div>
-          <div className="warehouse-capital-meter-grid">
-            <Meter title="Себестоимость" count={totals.costQty} total={totals.quantity}
-              detail={num(totals.costQty)+' из '+num(totals.quantity)+' шт. · неизвестна у '+num(totals.missingCost)+' шт.'}/>
-            <Meter title="Продажная цена" count={totals.revenueQty} total={totals.quantity}
-              detail={num(totals.revenueQty)+' из '+num(totals.quantity)+' шт. · неизвестна у '+num(totals.missingRevenue)+' шт.'}/>
+          <div className="warehouse-capital-main-card is-cost">
+            <span>Себестоимость товаров</span>
+            <strong>{totals.costQty?money(totals.cost):'Не оценена'}</strong>
+            <div className="warehouse-capital-main-split">
+              <span>Свободно <b>{totals.costQty?money(totals.freeCost):'—'}</b></span>
+              <span>В резерве <b>{totals.costQty?money(totals.reservedCost):'—'}</b></span>
+            </div>
+          </div>
+          <div className="warehouse-capital-main-card is-sale">
+            <span>По ценам продажи</span>
+            <strong>{totals.revenueQty?money(totals.revenue):'Не оценено'}</strong>
+            <div className="warehouse-capital-main-split">
+              <span>Свободно <b>{totals.revenueQty?money(totals.freeRevenue):'—'}</b></span>
+              <span>В резерве <b>{totals.revenueQty?money(totals.reservedRevenue):'—'}</b></span>
+            </div>
           </div>
         </div>
-      </div>
-      <div className="warehouse-capital-quickfacts">
-        <section className="warehouse-capital-fact">
-          <h4>Где сосредоточены средства</h4>
-          <strong>{totals.costQty?percentRu(topThree,totals.cost):'Не оценено'}</strong>
-          <p>Доля трёх крупнейших моделей в <b>известной</b> себестоимости.</p>
-        </section>
-        <section className="warehouse-capital-fact">
-          <h4>Сколько уже занято</h4>
-          <strong>{percentRu(totals.reserved,totals.quantity)}</strong>
-          <p>{num(totals.reserved)} из {num(totals.quantity)} единиц зарезервированы.</p>
-        </section>
-        <section className="warehouse-capital-fact">
-          <h4>Что можно продавать сейчас</h4>
-          <strong>{totals.revenueQty?money(totals.freeRevenue):'Не оценено'}</strong>
-          <p>Цена свободного товара, для которого известна продажная цена.</p>
-        </section>
-      </div>
-      <div className="warehouse-capital-distribution">
-        <div className="warehouse-capital-section-label"><h3>Склад и бутик</h3>
-          <p>Физические остатки и известная стоимость по каждому источнику.</p></div>
-        <div className="warehouse-capital-source-grid">
-          {sourceGroups.map(g=><div className="warehouse-capital-source" key={g.name}>
-            <div><b>{g.name}</b><span>{num(g.summary.quantity)} шт.</span></div>
-            <div className="warehouse-capital-meter-track"><span
-              style={{width:(totals.quantity?g.summary.quantity/totals.quantity*100:0)+'%'}}/></div>
-            <small>Известная себестоимость: <b>{g.summary.costQty?money(g.summary.cost):'Неизвестна'}</b></small>
-            <small>Возможная выручка: <b>{g.summary.revenueQty?money(g.summary.revenue):'Неизвестна'}</b></small>
+        <div className="warehouse-capital-coverage">
+          <Coverage title="Известна себестоимость" count={totals.costQty} total={totals.quantity}/>
+          <Coverage title="Известна цена продажи" count={totals.revenueQty} total={totals.quantity}/>
+        </div>
+      </section>
+      {source==='all'&&sourceGroups.length>1&&<section className="warehouse-capital-location">
+        <h3>Где находится товар</h3>
+        <div className="warehouse-capital-location-grid">
+          {sourceGroups.map(g=><div key={g.name}>
+            <b>{g.name}</b><strong>{num(g.summary.quantity)} шт.</strong>
+            <span className="warehouse-capital-meter-track"><span style={{width:
+              (totals.quantity?g.summary.quantity/totals.quantity*100:0)+'%'}}/></span>
           </div>)}
         </div>
-      </div>
-      <details className="warehouse-capital-method">
-        <summary>Как понимать эти суммы и резервы?</summary>
-        <div className="warehouse-capital-secondary">
-          <div><small>Свободный товар по цене продажи</small><strong>{money(totals.freeRevenue)}</strong></div>
-          <div><small>Зарезервированный по цене продажи</small><strong>{money(totals.reservedRevenue)}</strong></div>
-          <div><small>Свободный товар по себестоимости</small><strong>{money(totals.freeCost)}</strong></div>
-          <div><small>Зарезервированный по себестоимости</small><strong>{money(totals.reservedCost)}</strong></div>
-        </div>
-        <p>Резерв уже входит в физический остаток. Цифры рассчитаны по текущим ценам каталога,
-          не по историческим закупкам. Возможная выручка не гарантирована, а валовая разница не является чистой прибылью.</p>
-      </details>
+      </section>}
       <div className="warehouse-capital-models">
         <div className="warehouse-capital-models-head">
-          <div><h3>Какие модели связывают больше всего средств</h3>
-            <p>Рейтинг по известной себестоимости. Откройте модель, затем исполнение — увидите цвета, размеры и цены.</p></div>
+          <div><h3>Стоимость по моделям</h3>
+            <p></p></div>
           <span>{found.length} моделей · {rows.length} позиций</span>
         </div>
         <div className="warehouse-capital-controls">
@@ -294,7 +289,7 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
             <option value="cost">По средствам в остатках</option>
             <option value="revenue">По потенциальной выручке</option>
             <option value="quantity">По количеству</option>
-            <option value="gross">По потенциальной марже</option>
+            
           </select></label>
         </div>
         <div className="warehouse-capital-model-list">{found.slice(0,visible).map(model=>
@@ -307,19 +302,20 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
               </span>
               <span className="warehouse-capital-model-values">
                 <strong>{model.summary.costQty?money(model.summary.cost):'Нет себестоимости'}</strong>
-                <small>{model.summary.costQty}/{model.summary.quantity} шт. с себ. · продажа
-                  {' '}{model.summary.revenueQty?money(model.summary.revenue):'неизвестна'}</small>
+                <small>По цене продажи: {model.summary.revenueQty?money(model.summary.revenue):'неизвестно'}</small>
               </span>
               <span className="warehouse-capital-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div className="warehouse-capital-model-content">
-              <p>Себестоимость известна для {num(model.summary.costQty)} из {num(model.summary.quantity)} шт.;
-                цена продажи — для {num(model.summary.revenueQty)} шт.</p>
+              {(model.summary.costQty<model.summary.quantity||model.summary.revenueQty<model.summary.quantity)&&
+                <p>Оценено по себестоимости: {num(model.summary.costQty)} шт.;
+                  по цене продажи: {num(model.summary.revenueQty)} из {num(model.summary.quantity)} шт.</p>}
               {sortGroups(groupBy(model.items,executionKey,executionName),'cost').map(execution=>
                 <details className="warehouse-capital-execution" key={execution.key}>
                   <summary><b>{execution.name}</b>
-                    <span>{num(execution.summary.quantity)} шт. · себ. {money(execution.summary.cost)}
-                      · продажа {money(execution.summary.revenue)}</span>
+                    <span>{num(execution.summary.quantity)} шт. · себестоимость
+                      {' '}{execution.summary.costQty?money(execution.summary.cost):'неизвестна'}
+                      {' '}· продажа {execution.summary.revenueQty?money(execution.summary.revenue):'неизвестна'}</span>
                     <span aria-hidden="true">⌄</span>
                   </summary>
                   <StockDetails rows={execution.items}/>
@@ -331,12 +327,11 @@ export function WarehouseReportsWorkspace({active,isAdmin}:Props){
         {visible<found.length&&<button type="button" className="secondary warehouse-capital-more"
           onClick={()=>setVisible(v=>v+30)}>Показать ещё модели ({num(found.length-visible)})</button>}
       </div>
-      <p className="warehouse-report-smallnote">
-        В системе отдельно отмечены {num(capital.totals.zeroRows)} строк с нулевым остатком,
-        {num(capital.totals.negativeRows)} с отрицательным и
-        {num(capital.totals.overReservedRows)} с резервом больше наличия.
-        Эти сведения относятся ко всем источникам; нулевые и отрицательные остатки не входят в оценку.
-      </p>
+      {(capital.totals.negativeRows>0||capital.totals.overReservedRows>0)&&
+        <div className="warehouse-capital-data-issues">
+          Расхождения учёта: {num(capital.totals.negativeRows)} отрицательных остатков,
+          {' '}{num(capital.totals.overReservedRows)} случаев резерва выше наличия.
+        </div>}
     </>}
   </section>
 }
