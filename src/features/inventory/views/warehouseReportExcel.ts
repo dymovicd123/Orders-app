@@ -83,7 +83,7 @@ function packageSheets(sheets:Sheet[]):Uint8Array{
   for(const s of sheets){
     if(s.name.length>31||names.has(s.name))throw Error('Некорректное или повторное имя листа: '+s.name)
     names.add(s.name)
-    if(s.rows.length>20001)throw Error('Слишком много строк в Excel. Период необходимо сократить.')
+    if(s.rows.length>65001)throw Error('Слишком много строк в Excel. Период необходимо сократить.')
   }
   const files:Record<string,Uint8Array>={}
   files['[Content_Types].xml']=strToU8(head+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
@@ -218,10 +218,10 @@ function capitalTotals(rows:WarehouseCapitalRow[]){
     if(r.salePrice!==null){t.saleQty+=r.quantity;t.sale+=r.retailValue||0;
       t.freeSale+=r.free*r.salePrice;t.reservedSale+=r.reserved*r.salePrice}
     else t.unknownSaleQty+=r.quantity
-    if(r.grossPotential!==null){t.bothQty+=r.quantity;t.gross+=r.grossPotential}
+    if(r.grossPotential!==null&&r.salePrice!==null){t.bothQty+=r.quantity;t.gross+=r.grossPotential;t.comparableSale+=r.quantity*r.salePrice}
     return t
   },{quantity:0,reserved:0,free:0,costQty:0,saleQty:0,bothQty:0,cost:0,sale:0,gross:0,
-    freeCost:0,reservedCost:0,freeSale:0,reservedSale:0,unknownCostQty:0,unknownSaleQty:0})
+    freeCost:0,reservedCost:0,freeSale:0,reservedSale:0,comparableSale:0,unknownCostQty:0,unknownSaleQty:0})
 }
 const financeGroups=(rows:WarehouseCapitalRow[],fields:(keyof WarehouseCapitalRow)[])=>
   [...rows.reduce((map,r)=>{
@@ -253,7 +253,7 @@ export function buildWarehouseCapitalXlsx(args:{
     ['Потенциальная валовая маржа (где известны обе цены), ₸',val(v.gross)],
     ['Охват себестоимостью, %',ratio(v.costQty,v.quantity)],
     ['Охват продажной ценой, %',ratio(v.saleQty,v.quantity)],
-    ['Маржа на сопоставимых позициях, %',T('См. лист «Модели»; общий % не рассчитывается при неполных ценах')],
+    ['Маржа на сопоставимых позициях, %',ratio(v.gross,v.comparableSale)],
     ['Свободно по известной себестоимости, ₸',val(v.freeCost)],
     ['Резерв по известной себестоимости, ₸',val(v.reservedCost)],
     ['Свободно по известной цене продажи, ₸',val(v.freeSale)],
@@ -272,12 +272,12 @@ export function buildWarehouseCapitalXlsx(args:{
     return reportSheet(name,name.toUpperCase(),subtitle,
       [...headers,'Физически, шт.','Резерв, шт.','Свободно, шт.','Себ. известна, шт.',
         'Стоимость по себ., ₸','Цена известна, шт.','Возможная выручка, ₸',
-        'Обе цены, шт.','Возможная маржа, ₸','Охват себ., %','Охват цены, %'],
+        'Обе цены, шт.','Возможная маржа, ₸','Возможная маржа, %','Охват себ., %','Охват цены, %'],
       entries.map(e=>[...e.labels.map(l=>T(l)),N(e.summary.quantity),N(e.summary.reserved),
         N(e.summary.free),N(e.summary.costQty),MONEY(e.summary.cost),N(e.summary.saleQty),
-        MONEY(e.summary.sale),N(e.summary.bothQty),MONEY(e.summary.gross),
+        MONEY(e.summary.sale),N(e.summary.bothQty),MONEY(e.summary.gross),ratio(e.summary.gross,e.summary.comparableSale),
         ratio(e.summary.costQty,e.summary.quantity),ratio(e.summary.saleQty,e.summary.quantity)]),
-      [...fields.map(()=>33),18,18,18,23,28,23,28,20,28,20,20])
+      [...fields.map(()=>33),18,18,18,23,28,23,28,20,28,22,20,20])
   }
   sheets.push(financialGroupSheet('Модели',['product'],['Модель']))
   sheets.push(financialGroupSheet('Исполнения',['product','gender','material','length','category'],
