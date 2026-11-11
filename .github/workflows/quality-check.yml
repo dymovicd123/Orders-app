@@ -94,6 +94,9 @@ jobs:
       - name: Verify complete warehouse report XLSX and admin-only valuation
         if: github.base_ref == 'branch2'
         run: node scripts/test-warehouse-reports-excel-20261110.mjs
+      - name: Verify native Russian reports and financial valuation coverage
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-warehouse-report-documents-20261111.mjs
       - name: Verify Reports navigation works for manager and administrator
         if: github.base_ref == 'branch2'
         run: node scripts/test-warehouse-reports-navigation-20261111.mjs
