@@ -34,22 +34,6 @@ function reportSheet(name:string,title:string,subtitle:string,headers:string[],r
     rows:[[T(title,1)],[T(subtitle,2)],[],headers.map(h=>T(h,3)),...records],
   }
 }
-function values(rows:WarehouseDemandRow[],key:keyof WarehouseDemandRow){
-  const groups=new Map<string,{sold:number;net:number;returned:number;priced:number;revenue:number}>()
-  for(const row of rows){
-    const name=String(row[key]||'Не указано')
-    const old=groups.get(name)||{sold:0,net:0,returned:0,priced:0,revenue:0}
-    old.sold+=row.sold;old.net+=row.net;old.returned+=row.returned
-    old.priced+=row.pricedQuantity;old.revenue+=row.knownRevenue
-    groups.set(name,old)
-  }
-  return [...groups].map(([name,v])=>({name,...v})).sort((a,b)=>b.net-a.net||b.sold-a.sold||a.name.localeCompare(b.name,'ru'))
-}
-function dimensionSheet(name:string,key:keyof WarehouseDemandRow,rows:WarehouseDemandRow[],description:string){
-  return reportSheet(name,name,description,['Значение','Заказано, шт.','Без возвратов, шт.','Возвраты, шт.','Оценено, шт.','Стоимость позиций, ₸','Средняя цена, ₸'],
-    values(rows,key).map(g=>[T(g.name),N(g.sold),N(g.net),N(g.returned),N(g.priced),MONEY(g.revenue),g.priced?MONEY(g.revenue/g.priced):T('Нет цены')]),
-    [44,19,22,18,18,25,23])
-}
 function workbookXml(sheets:Sheet[]){
   const cols=sheets.map((s,i)=>'<sheet name="'+xml(s.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')
   return head+'<workbook xmlns="'+ns+'" xmlns:r="'+relNs+'"><sheets>'+cols+'</sheets></workbook>'
@@ -93,18 +77,6 @@ function sheetXml(sheet:Sheet){
     '<sheetFormatPr defaultRowHeight="20"/><cols>'+widths+'</cols><sheetData>'+rowXml+'</sheetData>'+filter+merges+
     '<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>'
 }
-function capitalModels(rows:WarehouseCapitalRow[]){
-  const map=new Map<string,{name:string;quantity:number;free:number;reserved:number;capital:number;retail:number;costKnown:number;saleKnown:number}>()
-  for(const item of rows){
-    const old=map.get(item.product)||{name:item.product,quantity:0,free:0,reserved:0,capital:0,retail:0,costKnown:0,saleKnown:0}
-    old.quantity+=item.quantity;old.reserved+=item.reserved;old.free+=item.free
-    if(item.costValue!==null){old.capital+=item.costValue;old.costKnown+=item.quantity}
-    if(item.retailValue!==null){old.retail+=item.retailValue;old.saleKnown+=item.quantity}
-    map.set(item.product,old)
-  }
-  return [...map.values()].sort((a,b)=>b.capital-a.capital||b.quantity-a.quantity)
-}
-
 function packageSheets(sheets:Sheet[]):Uint8Array{
   if(sheets.length<1||sheets.length>25)throw Error('Неверное количество листов')
   const names=new Set<string>()
