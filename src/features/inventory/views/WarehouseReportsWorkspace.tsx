@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from 'react'
 import type {WarehouseCapitalSnapshot,WarehouseCapitalRow} from '../../../../shared/warehouse-capital-types.ts'
 import type {WarehouseFinanceChoice} from './warehouseReportExcel'
-import {labelCategory,labelCharacteristic,labelSource,moneyRu,dateTimeRu,percentRu} from './warehouseReportLocale.ts'
+import {labelCategory,labelCharacteristic,percentRu} from './warehouseReportLocale.ts'
 import './warehouse-report-workspace.css'
 
 type Props={active:boolean;isAdmin:boolean}
