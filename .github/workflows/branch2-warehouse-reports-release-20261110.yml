@@ -1,5 +1,5 @@
-name: One-shot Branch2 specialized Statistics and Capital XLSX release
-# Two separate detailed reports; Statistics rankings and warehouse-demand API remain unchanged.
+name: One-shot Branch2 editorial stock reports and Russian Word release
+# Same demand calculations; more readable finance dashboard and native Russian DOCX exports.
 on:
   pull_request:
     branches: [branch2]
@@ -32,6 +32,7 @@ jobs:
           npm ci
           node scripts/test-warehouse-capital-readonly-20261110.mjs
           node scripts/test-warehouse-reports-excel-20261110.mjs
+          node scripts/test-warehouse-report-documents-20261111.mjs
           node scripts/test-warehouse-reports-navigation-20261111.mjs
       - name: Real Wrangler package preview, no publishing
         run: node scripts/branch2-manual-release.mjs --ci-preview
@@ -39,7 +40,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/branch2' &&
-      startsWith(github.event.head_commit.message, 'release(branch2): separate statistics and capital xlsx')
+      startsWith(github.event.head_commit.message, 'release(branch2): editorial stock reports docx')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -64,15 +65,18 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '3d58cc383455c90e960eafed42ab3265e664822c'
+          test "$(git rev-parse HEAD^)" = '982d9310b02fb6551c26166f4691c4c0a47afc5b'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-warehouse-reports-release-20261110.yml'
-          test "$(git hash-object src/features/inventory/views/InventoryDemandStatistics.tsx)" = 'fc4b45d958e6b8c264b76c46ab26ea496608d389'
+          test "$(git hash-object src/features/inventory/views/InventoryDemandStatistics.tsx)" = 'b491e4e2b4938ca43efdfc9d5836aff77b3cefdf'
           test "$(git hash-object src/features/inventory/views/inventory-demand-statistics.css)" = '867f906165ca1c8c4058c72979178f479769a175'
           test "$(git hash-object worker/domains/warehouse-demand.ts)" = 'e0a35dd872f8d1a7bf5a6aa9c6fe310784993967'
-          test "$(git hash-object src/features/inventory/views/WarehouseReportsWorkspace.tsx)" = '8152d577058ec71d576843f936f43b8403e11b99'
-          test "$(git hash-object src/features/inventory/views/warehouse-report-workspace.css)" = 'b9c8b900867854cf697e4f9881ec5b1b4ab21a79'
-          test "$(git hash-object src/features/inventory/views/warehouseReportExcel.ts)" = '5ba04e6cd0f37359ccf6a2305872f1c46aa5a898'
+          test "$(git hash-object src/features/inventory/views/WarehouseReportsWorkspace.tsx)" = 'deed1f0ec00959d8d187089f8d0fae2a4180bafd'
+          test "$(git hash-object src/features/inventory/views/warehouse-report-workspace.css)" = 'bade69f77b051be619a4d60172c6fbd155c5e8e0'
+          test "$(git hash-object src/features/inventory/views/warehouseReportExcel.ts)" = 'aa14d117160e119090ef7ceea874de87175ef20b'
           test "$(git hash-object worker/domains/warehouse-capital.ts)" = '1bf091334396d6230cac1c6eccd121783e7da9d2'
+          test "$(git hash-object src/features/inventory/views/warehouseReportDocument.ts)" = '9da777eff3b76b358e03d6afacc65630f99e4b3e'
+          test "$(git hash-object src/features/inventory/views/warehouseReportLocale.ts)" = 'b1c540ce28755797cc61977d294b153b6058db95'
+          test "$(git hash-object scripts/test-warehouse-report-documents-20261111.mjs)" = '38dfaed3dbd6963a98205606e672dbbdf61ec833'
           test "$(git hash-object src/app/controllers/useOperationalViewModel.ts)" = 'ab5f981c7d10f97b1911d1f061242af3d3d495f5'
           test "$(git hash-object src/App.tsx)" = 'a7ce34ae263e34d6a271c91904dceebc6b1bf967'
           test "$(git hash-object scripts/test-warehouse-reports-navigation-20261111.mjs)" = '92579f4d62d9fe7397caee8cf12da0f2a8e77f8a'
@@ -80,12 +84,12 @@ jobs:
           test "$(git hash-object src/features/sections/InventorySection.tsx)" = 'c3913995ddf297229c600c1a44a8f3474ffc6ed1'
           test "$(git hash-object src/app/types.ts)" = '1ce8fb8ec368caa60bdf4adc63db2a4ed5f45bf3'
           test "$(git hash-object worker/index.ts)" = 'd806f28af72c73a6d05c6f123c4cb03507c04204'
-          test "$(git hash-object .github/workflows/quality-check.yml)" = 'fcb6f92953f3b7b330cb3d793aef8d7d7779cdc6'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = 'e76c77db57c949ade4a30c48475aa980577b3cf1'
           test "$(git hash-object scripts/test-warehouse-capital-readonly-20261110.mjs)" = '614e820a9222c766381cf3e1e81c7241bec56b4a'
           test "$(git hash-object scripts/test-warehouse-reports-excel-20261110.mjs)" = 'b830e27fda965bbe4589bd3a4a7ef55ad66cdf34'
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           node scripts/branch2-manual-release.mjs --check
-          echo 'BRANCH2_SEPARATE_STATISTICS_AND_CAPITAL_SOURCE_PASS'
+          echo 'BRANCH2_EDITORIAL_WORD_REPORTS_SOURCE_PASS'
       - name: Verify actual Branch2 stock schema SELECT-only
         shell: bash
         run: |
@@ -93,10 +97,11 @@ jobs:
           npm ci
           node scripts/test-warehouse-capital-readonly-20261110.mjs
           node scripts/test-warehouse-reports-excel-20261110.mjs
+          node scripts/test-warehouse-report-documents-20261111.mjs
           node scripts/test-warehouse-reports-navigation-20261111.mjs
           schema="$(npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','catalog_variants','catalog_products')) AS base_tables, (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS price_table" --json)"
           printf '%s' "$schema" | jq -e 'if type == "array" then .[0].results[0] else .results[0] end | .base_tables == 3 and (.price_table == 0 or .price_table == 1)'
-          echo 'BRANCH2_SEPARATE_REPORTS_SCHEMA_SELECT_ONLY_PASS'
+          echo 'BRANCH2_EDITORIAL_REPORTS_D1_READ_ONLY_PASS'
       - name: Recheck business gate, build and publish ONLY Branch2 Worker
         shell: bash
         run: |
@@ -110,7 +115,7 @@ jobs:
             auth="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status)"
             finance="$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' https://orders-app-branch2.orders-clothes.workers.dev/api/reports/warehouse-capital)"
             if [[ "$auth" == 200 && "$finance" == 401 ]]; then
-              echo "BRANCH2_SEPARATE_REPORTS_PUBLISHED_FINANCE_GUARDED: $GITHUB_SHA"
+              echo "BRANCH2_EDITORIAL_REPORTS_PUBLISHED_FINANCE_GUARDED: $GITHUB_SHA"
               exit 0
             fi
             sleep 3
