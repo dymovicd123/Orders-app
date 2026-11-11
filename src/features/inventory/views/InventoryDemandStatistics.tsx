@@ -87,6 +87,7 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   const [error,setError]=useState('')
   const [refresh,setRefresh]=useState(0)
   const [exporting,setExporting]=useState(false)
+  const [documentExporting,setDocumentExporting]=useState(false)
   const [exportError,setExportError]=useState('')
   const [orders,setOrders]=useState<OrderLine[]>([])
   const [orderPage,setOrderPage]=useState(0)
@@ -174,6 +175,23 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
     }finally{setExporting(false)}
   }
 
+  async function exportDocument(){
+    if(!response?.ok||response.truncated||!response.rows||loading||documentExporting)return
+    setDocumentExporting(true);setExportError('')
+    try{
+      const {buildDemandStatisticsDocx}=await import('./warehouseReportDocument')
+      const file=await buildDemandStatisticsDocx({
+        demand:response,choice:{...period,scope,source,category},
+      })
+      const url=URL.createObjectURL(file)
+      const link=document.createElement('a')
+      link.href=url
+      link.download='Аналитика-спроса-'+period.start+'-'+period.end+'.docx'
+      document.body.appendChild(link);link.click();link.remove()
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+    }catch(error){setExportError(error instanceof Error?error.message:'Не удалось подготовить документ.')}
+    finally{setDocumentExporting(false)}
+  }
   function analysisCard(kind:Dimension,items:Summary[],limit:number) {
     const visible=showAll===kind?items:items.slice(0,limit)
     const max=Math.max(1,...items.map(item=>item.net))
@@ -200,9 +218,13 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
     <header className="demand-top"><div><span className="demand-eyebrow">СТАТИСТИКА ТОВАРОВ</span><h2>Какие товары пользуются спросом</h2>
       <p>Посмотрите, какие модели, цвета и размеры выбирают покупатели.</p></div>
       <div className="demand-top-actions">
-        <button className="demand-download" type="button" onClick={()=>void exportStatistics()}
+        <button className="demand-download" type="button" onClick={()=>void exportDocument()}
+          disabled={loading||documentExporting||!response?.ok||Boolean(response.truncated)}>
+          {documentExporting?'Готовим документ…':'Красивый отчёт · Word'}
+        </button>
+        <button className="demand-refresh" type="button" onClick={()=>void exportStatistics()}
           disabled={loading||exporting||!response?.ok||Boolean(response.truncated)}>
-          {exporting?'Формируется…':'Скачать Excel'}
+          {exporting?'Формируется…':'Таблицы Excel'}
         </button>
         <button className="demand-refresh" type="button" onClick={()=>setRefresh(v=>v+1)} disabled={loading}>↻ Обновить</button>
       </div>
