@@ -5,7 +5,7 @@ const ui=readFileSync('src/features/inventory/views/WarehouseReportsWorkspace.ts
 const css=readFileSync('src/features/inventory/views/warehouse-report-workspace.css','utf8')
 const doc=readFileSync('src/features/inventory/views/warehouseReportDocument.ts','utf8')
 
-for(const label of ['Товаров в наличии','Себестоимость товаров','По ценам продажи',
+for(const label of ['Товаров в наличии','Себестоимость · известная часть','Продажная стоимость · известная часть',
   'Свободно','В резерве','Известна себестоимость','Известна цена продажи']){
   assert.ok(ui.includes(label),'Financial overview must show '+label)
 }
