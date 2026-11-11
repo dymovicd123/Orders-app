@@ -173,6 +173,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     printInventoryStocktakePdf,
     inventoryStatusFilter,
     isAdmin,
+    isFinanceAdmin,
     loadCatalogData,
     loadCatalogReview,
     reconcileCatalogReview,
@@ -2222,7 +2223,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               </div>
 
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
-              <div style={inventoryPanelStyle('reports')}><WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isAdmin} /></div>
+              <div style={inventoryPanelStyle('reports')}><WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} /></div>
 
               {renderInventoryAttentionPanel({
         attentionCategory,
