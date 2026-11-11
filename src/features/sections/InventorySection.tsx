@@ -2203,7 +2203,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
                     { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
                     { value: 'statistics' as const, label: 'Статистика', hint: 'Популярность товаров, цветов и размеров' },
-                    { value: 'reports' as const, label: 'Отчёты', hint: 'Excel статистики и финансовая оценка остатков' },
+                    ...(isFinanceAdmin ? [{ value: 'reports' as const, label: 'Стоимость запасов', hint: 'Средства в товарах, подробные цены и финансовый Excel' }] : []),
                   ].map((entry) => (
                     <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
                       <strong>{entry.label}</strong>
