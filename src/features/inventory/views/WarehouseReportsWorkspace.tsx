@@ -78,10 +78,10 @@ function VariantPricing({item}:{item:WarehouseCapitalRow}){
   </>
 }
 function StockDetails({rows}:{rows:WarehouseCapitalRow[]}){
-  const [selectedId,setSelectedId]=useState<number|null>(rows[0]?.stockId??null)
+  const groups=useMemo(()=>sortGroups(groupBy(rows,r=>r.color,r=>label(r.color)),'quantity'),[rows])
+  const [selectedId,setSelectedId]=useState<number|null>(groups[0]?.items[0]?.stockId??null)
   const [search,setSearch]=useState('')
   const [showAllColors,setShowAllColors]=useState(false)
-  const groups=useMemo(()=>sortGroups(groupBy(rows,r=>r.color,r=>label(r.color)),'quantity'),[rows])
   const needle=search.trim().toLocaleLowerCase('ru')
   const filtered=groups.filter(g=>!needle||g.name.toLocaleLowerCase('ru').includes(needle)||
     g.items.some(r=>label(r.size).toLocaleLowerCase('ru').includes(needle)))
