@@ -30,10 +30,80 @@ const relNs='http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const pkgNs='http://schemas.openxmlformats.org/package/2006/relationships'
 const col=(i:number)=>{let r='';for(let k=i+1;k;k=Math.floor((k-1)/26))r=String.fromCharCode(65+(k-1)%26)+r;return r}
 function reportSheet(name:string,title:string,subtitle:string,headers:string[],records:Cell[][],widths:number[]):Sheet{
+  const striped=records.map((row,i)=>i%2===0?row:row.map(c=>{
+    if(c.style===0)return {...c,style:14}
+    if(c.style===4)return {...c,style:15}
+    if(c.style===5)return {...c,style:16}
+    return c
+  }))
+  const metricColumn=headers.findIndex(h=>h.includes('Без возвратов')||
+    h==='Физически, шт.'||h.includes('Стоимость по себ., ₸'))
+  const dataEnd=records.length+4
+  const bars=metricColumn>=0&&records.length>1?[
+    col(metricColumn)+'5:'+col(metricColumn)+dataEnd,
+  ]:[]
   return {
-    name,widths,freeze:4,filter:'A4:'+col(headers.length-1)+(records.length+4),
+    name,widths,freeze:4,filter:'A4:'+col(headers.length-1)+dataEnd,
     merges:['A1:'+col(headers.length-1)+'1','A2:'+col(headers.length-1)+'2'],
-    rows:[[T(title,1)],[T(subtitle,2)],[],headers.map(h=>T(h,3)),...records],
+    rows:[[T(title,1)],[T(subtitle,2)],[],headers.map(h=>T(h,3)),...striped],
+    bars,tabColor:name.includes('остатки')?'1C775E':'27578A',
+  }
+}
+type DashboardCard={label:string;value:Cell;detail:string}
+type DashboardGroup={title:string;rows:{name:string;value:number}[];money?:boolean}
+function dashboardSheet(
+  name:string,title:string,subtitle:string,
+  cards:DashboardCard[],top:DashboardGroup[],secondary:DashboardGroup[],caption:string,
+):Sheet{
+  if(cards.length!==3&&cards.length!==4)throw Error('Для обзора нужно 3 или 4 показателя')
+  if(top.length!==3||secondary.length!==3)throw Error('Для обзора нужны 6 групп рейтингов')
+  const rows:Cell[][]=Array.from({length:38},()=>Array.from({length:12},()=>T('')))
+  const merges:string[]=[]
+  const put=(row:number,column:number,value:Cell)=>{rows[row-1][column]=value}
+  const merge=(startRow:number,startCol:number,endRow:number,endCol:number)=>{
+    merges.push(col(startCol)+(startRow)+':'+col(endCol)+(endRow))
+  }
+  put(1,0,T(title,1));merge(1,0,1,11)
+  put(2,0,T(subtitle,2));merge(2,0,2,11)
+  const cardSpan=12/cards.length
+  cards.forEach((card,i)=>{
+    const c=i*cardSpan
+    put(4,c,T(card.label,8));merge(4,c,4,c+cardSpan-1)
+    put(5,c,{...card.value,style:card.value.style===5?10:9})
+    merge(5,c,6,c+cardSpan-1)
+    put(7,c,T(card.detail,11));merge(7,c,7,c+cardSpan-1)
+  })
+  const groupSection=(row:number,titleText:string)=>{
+    put(row,0,T(titleText,7));merge(row,0,row,11)
+  }
+  function insertGroups(titleRow:number,list:DashboardGroup[]){
+    list.forEach((group,index)=>{
+      const start=index*4
+      put(titleRow,start,T(group.title,8))
+      merge(titleRow,start,titleRow,start+3)
+      for(let i=0;i<10;i++){
+        const item=group.rows[i]
+        if(!item)continue
+        const r=titleRow+i+1
+        put(r,start,T(String(i+1),12))
+        put(r,start+1,T(item.name,13))
+        merge(r,start+1,r,start+2)
+        put(r,start+3,N(item.value,group.money?5:12))
+      }
+    })
+  }
+  groupSection(9,'ЧТО ПОКАЗЫВАЮТ ДАННЫЕ')
+  insertGroups(10,top)
+  groupSection(22,'ДРУГИЕ ПОКАЗАТЕЛИ')
+  insertGroups(23,secondary)
+  groupSection(35,'ПЕРИОД И ДАННЫЕ')
+  put(36,0,T(caption,11));merge(36,0,37,11)
+  put(38,0,T('Полные рейтинги и все варианты — на следующих вкладках файла.',2))
+  merge(38,0,38,11)
+  return {
+    name,widths:[8,14,20,18,8,14,20,18,8,14,20,18],
+    rows,merges,freeze:3,overview:true,tabColor:'1C775E',
+    bars:['D11:D20','H11:H20','L11:L20','D24:D33','H24:H33','L24:L33'],
   }
 }
 function workbookXml(sheets:Sheet[]){
