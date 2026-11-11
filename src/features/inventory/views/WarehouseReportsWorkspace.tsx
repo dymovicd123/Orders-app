@@ -53,6 +53,30 @@ const sourceNames:{[key:string]:string}={warehouse:'Склад',boutique:'Бут
 const executionKey=(r:WarehouseCapitalRow)=>[r.gender,r.material,r.length,r.category].join('\u001f')
 const executionName=(r:WarehouseCapitalRow)=>[r.material,r.length,r.gender].map(labelCharacteristic).join(' · ')+
   ' · '+labelCategory(r.category)
+function VariantPricing({item}:{item:WarehouseCapitalRow}){
+  return <>
+    <div className="warehouse-capital-picked-title">
+      <span>Товар</span>
+      <strong>{label(item.color)} · {label(item.size)}</strong>
+      <small>{sourceNames[item.source]||item.source}{item.archived?' · архив':''}</small>
+    </div>
+    <div className="warehouse-capital-picked-qty">
+      <div><span>Всего</span><b>{num(item.quantity)}</b></div>
+      <div><span>Свободно</span><b>{num(item.free)}</b></div>
+      <div><span>Резерв</span><b>{num(item.reserved)}</b></div>
+    </div>
+    <div className="warehouse-capital-picked-price">
+      <span>Себестоимость</span>
+      <strong>{item.costPrice===null?'Не указана':money(item.costPrice)+' / шт.'}</strong>
+      <small>Всего: {item.costValue===null?'не оценено':money(item.costValue)}</small>
+    </div>
+    <div className="warehouse-capital-picked-price">
+      <span>Цена продажи</span>
+      <strong>{item.salePrice===null?'Не указана':money(item.salePrice)+' / шт.'}</strong>
+      <small>Всего: {item.retailValue===null?'не оценено':money(item.retailValue)}</small>
+    </div>
+  </>
+}
 function StockDetails({rows}:{rows:WarehouseCapitalRow[]}){
   const [selectedId,setSelectedId]=useState<number|null>(rows[0]?.stockId??null)
   const [search,setSearch]=useState('')
@@ -88,6 +112,10 @@ function StockDetails({rows}:{rows:WarehouseCapitalRow[]}){
                 Резерв {num(r.reserved)}</small>}
             </button>)}
         </div>
+        {selected&&group.items.some(r=>r.stockId===selected.stockId)&&
+          <div className="warehouse-capital-picked warehouse-capital-picked-mobile">
+            <VariantPricing item={selected}/>
+          </div>}
       </section>)}
       {!shown.length&&<p className="warehouse-capital-no-colors">Таких цветов или размеров нет.</p>}
       {!needle&&filtered.length>6&&<button type="button" className="warehouse-capital-all-colors"
@@ -95,29 +123,8 @@ function StockDetails({rows}:{rows:WarehouseCapitalRow[]}){
         {showAllColors?'Свернуть цвета':'Показать все цвета · '+num(groups.length)}
       </button>}
     </div>
-    {selected&&<aside className="warehouse-capital-picked">
-      <div className="warehouse-capital-picked-title">
-        <span>Выбранный вариант</span>
-        <strong>{label(selected.color)} · {label(selected.size)}</strong>
-        <small>{sourceNames[selected.source]||selected.source}{selected.archived?' · архив':''}</small>
-      </div>
-      <div className="warehouse-capital-picked-qty">
-        <div><span>Всего</span><b>{num(selected.quantity)}</b></div>
-        <div><span>Свободно</span><b>{num(selected.free)}</b></div>
-        <div><span>Резерв</span><b>{num(selected.reserved)}</b></div>
-      </div>
-      <div className="warehouse-capital-picked-price">
-        <span>Себестоимость</span>
-        <strong>{selected.costPrice===null?'Не указана':money(selected.costPrice)+' / шт.'}</strong>
-        <small>Все {num(selected.quantity)} шт.:
-          {' '}{selected.costValue===null?'не оценены':money(selected.costValue)}</small>
-      </div>
-      <div className="warehouse-capital-picked-price">
-        <span>Цена продажи</span>
-        <strong>{selected.salePrice===null?'Не указана':money(selected.salePrice)+' / шт.'}</strong>
-        <small>Все {num(selected.quantity)} шт.:
-          {' '}{selected.retailValue===null?'не оценены':money(selected.retailValue)}</small>
-      </div>
+    {selected&&<aside className="warehouse-capital-picked warehouse-capital-picked-desktop">
+      <VariantPricing item={selected}/>
     </aside>}
   </div>
 }
