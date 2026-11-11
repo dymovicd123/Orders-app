@@ -78,6 +78,15 @@ jobs:
           node scripts/test-team-timesheet-report-v2-20261110.mjs
           node scripts/test-team-timesheet-mobile-ux-20261110.mjs
 
+      - name: Verify Main stock valuation, Russian Word/Excel reports and admin-only navigation
+        if: github.base_ref == 'main'
+        run: |
+          node scripts/test-warehouse-capital-readonly-20261110.mjs
+          node scripts/test-warehouse-reports-navigation-20261111.mjs
+          node scripts/test-warehouse-reports-excel-20261110.mjs
+          node scripts/test-warehouse-report-documents-20261111.mjs
+          node scripts/test-warehouse-capital-ux-full-word-20261111.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
