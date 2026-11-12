@@ -1,0 +1,162 @@
+name: DDS allow negative balance in Branch2 and Main D1 (one-shot)
+on:
+  pull_request:
+    branches: [branch2, main]
+    paths:
+      - '.github/workflows/dds-negative-balance-one-shot-20261112.yml'
+      - 'migrations/0123_dds_allow_negative_balance.sql'
+      - 'scripts/test-simple-dds-ledger-20261110.mjs'
+  push:
+    branches: [branch2, main]
+    paths:
+      - '.github/workflows/dds-negative-balance-one-shot-20261112.yml'
+permissions:
+  contents: read
+concurrency:
+  group: dds-negative-balance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify negative expenses and reversals retain DDS safeguards
+        run: |
+          set -euo pipefail
+          test "$(cat migrations/0123_dds_allow_negative_balance.sql)" = 'DROP TRIGGER IF EXISTS dds_prevent_overdraft;'
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+  release:
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/branch2' || github.ref == 'refs/heads/main') &&
+      startsWith(github.event.head_commit.message, 'release(dds): allow negative balance')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin reviewed branch, exact change and isolated D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          case "$GITHUB_REF" in
+            refs/heads/branch2)
+              expected_parent='5af4becd099d50230860eede1fa8c2354b9ea353'
+              db='orders_db_branch2_mirror_20261027'
+              db_uuid='0904a573-21ff-44d8-93b0-c9200f771702'
+              worker='orders-app-branch2'
+              ;;
+            refs/heads/main)
+              expected_parent='4376e2c3ec626386a4166373134c66cecd257644'
+              db='orders_db_prod'
+              db_uuid='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+              worker='orders-app'
+              ;;
+            *) exit 10 ;;
+          esac
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/dds-negative-balance-one-shot-20261112.yml' 'migrations/0123_dds_allow_negative_balance.sql' 'scripts/test-simple-dds-ledger-20261110.mjs')"
+          test "$actual" = "$expected"
+          test "$(cat migrations/0123_dds_allow_negative_balance.sql)" = 'DROP TRIGGER IF EXISTS dds_prevent_overdraft;'
+          grep -Fq "\"name\": \"$worker\"" wrangler.jsonc
+          grep -Fq "\"database_name\": \"$db\"" wrangler.jsonc
+          grep -Fq "\"database_id\": \"$db_uuid\"" wrangler.jsonc
+          if [ "$GITHUB_REF" = refs/heads/main ]; then
+            ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          else
+            ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          fi
+          printf '%s' "$db" >/tmp/dds-target-name
+          printf '%s' "$db_uuid" >/tmp/dds-target-id
+          echo DDS_ALLOW_NEGATIVE_EXACT_TARGET_AND_SCOPE_PASS
+      - run: npm ci
+      - name: Verify complete isolated DDS tests before remote schema change
+        run: |
+          set -euo pipefail
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+      - name: Verify remote DDS precondition and fingerprint all unrelated DDS objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          db="$(cat /tmp/dds-target-name)"
+          npx --no-install wrangler d1 execute "$db" --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dds_entries') AS journal,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='dds_prevent_overdraft') AS overdraft,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='dds_expense_active_article_guard') AS active_article_guard,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category')) AS indexes
+          " --json | jq -cSe 'if type=="array" then .[0].results[0] else .results[0] end' > /tmp/dds-negative-before.json
+          jq -e '.journal==1 and .overdraft==1 and .active_article_guard==1 and .indexes==3' /tmp/dds-negative-before.json
+          npx --no-install wrangler d1 execute "$db" --remote --config wrangler.jsonc --command "
+            SELECT type,name,sql FROM sqlite_master
+            WHERE name IN ('dds_entries','dds_categories','dds_articles',
+             'idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category',
+             'dds_expense_active_article_guard') ORDER BY name
+          " --json | jq -Sc 'if type=="array" then .[0].results else .results end' > /tmp/dds-schema-preserved-before.json
+          test -s /tmp/dds-schema-preserved-before.json
+          echo DDS_REMOTE_PRECHECK_EXISTING_TRIGGER_AND_ARTICLE_GUARD_PASS
+      - name: Capture target D1 time travel bookmark before trigger change
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_uuid="$(cat /tmp/dds-target-id)"
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_uuid/time_travel/bookmark" | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("Missing bookmark") end' > /tmp/dds-negative-bookmark
+          test -s /tmp/dds-negative-bookmark
+          echo DDS_TARGET_BOOKMARK_CAPTURED
+      - name: Remove only the DDS overdraft restriction
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /tmp/dds-negative-bookmark
+          db="$(cat /tmp/dds-target-name)"
+          npx --no-install wrangler d1 execute "$db" --remote --config wrangler.jsonc --file migrations/0123_dds_allow_negative_balance.sql
+          echo DDS_OVERDRAFT_TRIGGER_REMOVED
+      - name: Confirm negative balance enabled, article validation and schema preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          db="$(cat /tmp/dds-target-name)"
+          npx --no-install wrangler d1 execute "$db" --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dds_entries') AS journal,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='dds_prevent_overdraft') AS overdraft,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='dds_expense_active_article_guard') AS active_article_guard,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category')) AS indexes
+          " --json | jq -cSe 'if type=="array" then .[0].results[0] else .results[0] end' > /tmp/dds-negative-after.json
+          jq -e '.journal==1 and .overdraft==0 and .active_article_guard==1 and .indexes==3' /tmp/dds-negative-after.json
+          npx --no-install wrangler d1 execute "$db" --remote --config wrangler.jsonc --command "
+            SELECT type,name,sql FROM sqlite_master
+            WHERE name IN ('dds_entries','dds_categories','dds_articles',
+             'idx_dds_reverse_once','idx_dds_month','idx_dds_articles_category',
+             'dds_expense_active_article_guard') ORDER BY name
+          " --json | jq -Sc 'if type=="array" then .[0].results else .results end' > /tmp/dds-schema-preserved-after.json
+          cmp /tmp/dds-schema-preserved-before.json /tmp/dds-schema-preserved-after.json
+          case "$GITHUB_REF" in
+            refs/heads/main) url='https://orders-app.orders-clothes.workers.dev' ;;
+            refs/heads/branch2) url='https://orders-app-branch2.orders-clothes.workers.dev' ;;
+          esac
+          test "$(curl --max-time 15 -fsS -o /dev/null -w '%{http_code}' "$url/api/auth/status")" = 200
+          test "$(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' "$url/api/dds")" = 401
+          echo DDS_NEGATIVE_BALANCE_ENABLED_OTHER_GUARDS_PRESERVED
