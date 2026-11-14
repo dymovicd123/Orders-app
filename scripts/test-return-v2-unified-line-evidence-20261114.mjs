@@ -125,12 +125,12 @@ sql.prepare('UPDATE inventory_reservations SET quantity=1 WHERE order_item_id=95
 assert.deepEqual(snapshot(),badReserveBefore)
 
 const badDispatchBefore=snapshot()
-sql.prepare("INSERT INTO inventory_reservations (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES (9551,9561,'warehouse',9521,9531,2,'active','2026-11-14T10:00:00Z','2026-11-14T10:00:00Z')").run()
+sql.prepare("UPDATE inventory_reservations SET status='active' WHERE order_item_id=9561 AND status='fulfilled'").run()
 const contradictory=await previewUnifiedReturnV2LineEvidence(DB,9551)
 assert.equal(contradictory.lines.find(x=>x.orderItemId===9561).reasonCode,'dispatch_or_reservation_mismatch')
 assert.equal(contradictory.summary.requiresReviewQuantity,2)
 assert.equal(contradictory.summary.selectedQuantity,4)
-sql.prepare('DELETE FROM inventory_reservations WHERE order_item_id=9561 AND status=?').run('active')
+sql.prepare("UPDATE inventory_reservations SET status='fulfilled' WHERE order_item_id=9561 AND status='active'").run()
 assert.deepEqual(snapshot(),badDispatchBefore)
 
 async function insertReviewOrder(orderId,itemId,status,stockQty,resQty,workshop=0,shippingStatus='not_sent'){
