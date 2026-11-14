@@ -346,12 +346,27 @@ const mixedPreview=await previewUnifiedReturnV2LineEvidence(DB,9855)
 assert.equal(mixedPreview.summary.selectedQuantity,2)
 assert.equal(mixedPreview.summary.pendingPhysicalQuantity,1)
 assert.equal(mixedPreview.summary.reservedCancellationQuantity,1)
-const mixedPost=await postUnifiedReturnV2Prototype(DB,{
+const mixedPostingInput={
  requestId:'v2u-cancel-proven-posting-0001',orderId:9855,
  expectedOrderVersion:mixedPreview.orderVersion,
  items:mixedPreview.lines.map(l=>({orderItemId:l.orderItemId,quantity:l.selectedQuantity,receiptIntent:'pending'})),
  refundAmount:1000,refundMethod:'KASPI'
-})
+}
+// A payment that has been physically inserted but not fully completed is an
+// incompatible outstanding V1 saga, not permission to post a V2 Return.
+sql.prepare(`INSERT INTO critical_operations(
+ request_id,operation_type,request_fingerprint,status,step,context_json,
+ lease_token,lease_until_ms,created_at,updated_at)
+ VALUES('v2u-inflight-old-payment','order_payment_create','test-only-fingerprint',
+ 'started','payment_written',?,'test-lease',9999999999999,
+ '2026-11-14T00:00:00Z','2026-11-14T00:00:00Z')`)
+ .run(JSON.stringify({orderId:9855,plan:{orderId:9855}}))
+const pendingBefore=sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9855').get().n
+await assert.rejects(postUnifiedReturnV2Prototype(DB,mixedPostingInput),/изменились|проверка|резерв|оплата/)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9855').get().n,pendingBefore,
+ 'An in-flight V1 payment cannot be outpaced by Return V2 contract posting')
+sql.prepare("DELETE FROM critical_operations WHERE request_id='v2u-inflight-old-payment'").run()
+const mixedPost=await postUnifiedReturnV2Prototype(DB,mixedPostingInput)
 assert.equal(mixedPost.remainingSale,0)
 assert.equal((await readVersionedReturnMoney(DB,9855)).customerOverpay,3000)
 const beforeCancelStock=mixedStock()
