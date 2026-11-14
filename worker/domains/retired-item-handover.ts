@@ -110,5 +110,5 @@ export async function confirmRetiredOrderItemDelivered(
   }
   // A racing retry can pass the initial read but lose INSERT OR IGNORE.
   // In that case there is only one journal event, and no second activity event.
-  return {ok:true,alreadyConfirmed:toInt(writes[0]?.meta?.changes,0)===0,orderId,orderItemId:itemId};
+  return {ok:true,alreadyConfirmed:toInt(writes[v2Gate.v2SchemaReady?1:0]?.meta?.changes,0)===0,orderId,orderItemId:itemId};
 }
