@@ -64,7 +64,7 @@ async function preview(db:D1Database,orderId:number){
    :Math.max(0,paidIn-paidOut)
  const currentSale=financial.kind==='return_v2'
    ?financial.currentSale:financial.totalAmount
- return {ok:true,enabled:true,eligible,
+ return {ok:true,enabled:true,eligible,exclusive:financial.kind==='return_v2',
    reason:hasUnsupported
       ?'У заказа есть старая операция, обмен или отменённый Return V2. Сначала требуется проверка истории.'
       :provenLines.length===0
