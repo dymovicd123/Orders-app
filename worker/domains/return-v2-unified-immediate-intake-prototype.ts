@@ -11,7 +11,8 @@ type FreshnessDecision='already_counted'|'arrived_after_check'
 type Line={
   posting_id:number;return_id:number;order_id:number;order_item_id:number;
   action:string;receipt_intent:string;return_item_id:number|null;
-  physical_received_at:string|null;return_status:string
+  physical_received_at:string|null;inventory_source:string|null;
+  restocked:number;return_status:string
 }
 export class ReturnV2ImmediateIntakeConflict extends Error {
   readonly status=409
@@ -22,6 +23,7 @@ async function readLines(db:D1Database,postingId:number){
   const rows=(await db.prepare(
     `SELECT up.id AS posting_id,up.return_id,up.order_id,ul.order_item_id,ul.action,
       ul.receipt_intent,ri.id AS return_item_id,ri.physical_received_at,
+      ri.inventory_source,ri.restocked,
       r.status AS return_status
      FROM return_v2_unified_postings up
      JOIN returns r ON r.id=up.return_id AND r.order_id=up.order_id
@@ -48,7 +50,7 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
   const rows=await readLines(db,postingId)
   const results:Array<{
     orderItemId:number;intent:ReturnV2ReceiptIntent;
-    state:'pending'|'received'|'confirmation_required'|'failed';
+    state:'pending'|'received'|'stock_pending'|'confirmation_required'|'failed';
     stockApplied:boolean;stockAlreadyApplied:boolean;freshnessProtected:boolean;
     message?:string;detail?:unknown
   }>=[]
@@ -58,6 +60,55 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
     if(intent==='pending'){
       results.push({orderItemId:row.order_item_id,intent,state:'pending',
         stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false})
+      continue
+    }
+    if(row.physical_received_at){
+      // Read the durable outcome instead of replaying an intake request with
+      // a potentially different freshnessDecision / critical-operation payload.
+      // This is essential after "already_counted" or a lost HTTP response.
+      const storedDestination=row.inventory_source||'no_stock'
+      if(storedDestination!==intent){
+        results.push({orderItemId:row.order_item_id,intent,state:'failed',
+          stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
+          message:'Позиция уже принята с другим складским решением.'})
+        break
+      }
+      if(intent==='no_stock'){
+        if(row.restocked!==0) {
+          results.push({orderItemId:row.order_item_id,intent,state:'failed',
+            stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
+            message:'Не согласован факт физического приёма без склада.'})
+          break
+        }
+        results.push({orderItemId:row.order_item_id,intent,state:'received',
+          stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false})
+        continue
+      }
+      const lifecycle=await db.prepare(
+        `SELECT status,resolution_comment,movement_id FROM inventory_lifecycle_events
+          WHERE operation_type='return' AND operation_id=? AND operation_item_id=?
+          LIMIT 1`
+      ).bind(row.return_id,row.return_item_id).first<{
+        status:string;resolution_comment:string|null;movement_id:number|null
+      }>()
+      const alreadyCounted=lifecycle?.status==='cancelled'&&
+        String(lifecycle.resolution_comment||'').startsWith('При приёмке подтверждено:')
+      if(lifecycle?.status==='applied'&&row.restocked===1){
+        results.push({orderItemId:row.order_item_id,intent,state:'received',
+          stockApplied:false,stockAlreadyApplied:true,freshnessProtected:false})
+      }else if(alreadyCounted&&row.restocked===0){
+        results.push({orderItemId:row.order_item_id,intent,state:'received',
+          stockApplied:false,stockAlreadyApplied:false,freshnessProtected:true})
+      }else if(lifecycle?.status==='pending'){
+        results.push({orderItemId:row.order_item_id,intent,state:'stock_pending',
+          stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
+          message:'Физически принят, но приход в остаток ожидает проверки артикула.'})
+      }else{
+        results.push({orderItemId:row.order_item_id,intent,state:'failed',
+          stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
+          message:'История приёмки и складского события противоречит выбранному решению.'})
+      }
+      if(results.at(-1)?.state!=='received')break
       continue
     }
     const confirmation=freshnessDecisions[String(row.order_item_id)]
@@ -84,11 +135,13 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
         detail:received})
       break
     }
-    results.push({orderItemId:row.order_item_id,intent,state:'received',
+    results.push({orderItemId:row.order_item_id,intent,
+      state:Number(received.pendingInventoryCount||0)>0?'stock_pending':'received',
       stockApplied:Boolean(received.stockApplied),
       stockAlreadyApplied:Boolean(received.stockAlreadyApplied),
       freshnessProtected:Boolean(received.freshnessProtected),
       detail:received})
+    if(Number(received.pendingInventoryCount||0)>0)break
   }
   const intended=rows.filter(r=>r.action==='physical_return_pending'&&r.receipt_intent!=='pending').length
   const completed=results.filter(r=>r.state==='received').length
