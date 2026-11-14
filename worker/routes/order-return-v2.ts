@@ -99,14 +99,22 @@ export async function handleOrderReturnV2Route(
    return response(await preview(db,orderId))
   }
   if(request.method==='POST'&&suffix===''){
-   const check=await preview(db,orderId)
-   if(!check.eligible)
-    return disabled(check.reason||'Состав заказа требует проверки.','return_v2_not_eligible')
    const input=await readJson<{
     requestId?:unknown;expectedOrderVersion?:unknown;
     items?:Array<{orderItemId:number;quantity:number;receiptIntent?:'pending'|'warehouse'|'boutique'|'no_stock'}>;
     refundAmount?:unknown;refundMethod?:unknown
    }>(request)
+   // A completed request must be replayable even after the sale is fully
+   // terminated and the fresh preview has no selectable items. The domain
+   // replay verifies the exact immutable fingerprint and return status.
+   const old=await db.prepare(
+     'SELECT id FROM return_v2_unified_postings WHERE request_id=?'
+   ).bind(String(input.requestId||'')).first<{id:number}>()
+   if(!old){
+     const check=await preview(db,orderId)
+     if(!check.eligible)
+       return disabled(check.reason||'Состав заказа требует проверки.','return_v2_not_eligible')
+   }
    // Request always belongs to the URL order; never honor a body orderId.
    const saved=await submitUnifiedReturnV2WithReceiptPrototype(db,{
     requestId:String(input.requestId||''),orderId,
