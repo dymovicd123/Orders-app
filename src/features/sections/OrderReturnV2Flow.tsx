@@ -177,8 +177,8 @@ export function OrderReturnV2Flow({
        <h3>Возврат товаров · новый учёт</h3>
        <p className="mini-panel-note">Отмена покупки и физическая приёмка — разные действия. Неотправленные товары уже находятся в остатке: их резерв снимается без повторного прихода.</p>
      </div>
-     <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult}
-       onClick={()=>void refresh(orderId)}>Обновить данные</button>
+     <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
+       onClick={()=>void refresh(orderId)}>{fetching?'Проверяю…':'Обновить данные'}</button>
    </div>
    {!eligible?<div className="history-note is-danger"><strong>Операция требует проверки</strong>
       <span>{preview?.reason||'В заказе нет подтверждённых товаров для нового возврата.'}</span>
