@@ -1,0 +1,188 @@
+name: One-time Main Return intake SELECT-only audit
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/one-time-main-return-readonly-20261114.yml']
+permissions:
+  contents: read
+concurrency:
+  group: one-time-main-return-readonly-20261114
+  cancel-in-progress: false
+jobs:
+  main-return-readonly:
+    if: >-
+      github.repository == 'dymovicd123/Orders-app' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'audit/main-return-intake-readonly-20261114'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Require exact Main D1 target, secrets and no branch2 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_BASE_REF" = 'main'
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          echo READ_ONLY_MAIN_D1_TARGET_VERIFIED
+      - run: npm ci
+      - name: Aggregated SELECT-only return and exchange intake, no names or writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,subprocess
+          pending="""
+          WITH pending AS (
+           SELECT 'return' kind, ri.return_id operation_id, ri.id item_id, ri.quantity qty,
+             COALESCE(NULLIF(ri.created_at,''),NULLIF(r.created_at,''),r.return_date) created_at,
+             oi.variant_id variant_id
+           FROM return_items ri JOIN returns r ON r.id=ri.return_id
+           LEFT JOIN order_items oi ON oi.id=ri.order_item_id
+           WHERE COALESCE(r.status,'completed')<>'cancelled'
+             AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL AND ri.quantity>0
+             AND NOT EXISTS (SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id)
+           UNION ALL
+           SELECT 'exchange',ei.exchange_id,ei.id,ei.quantity,
+             COALESCE(NULLIF(ei.created_at,''),NULLIF(e.created_at,''),e.exchange_date),oi.variant_id
+           FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+           LEFT JOIN order_items oi ON oi.id=ei.order_item_id
+           WHERE COALESCE(e.status,'completed')<>'cancelled'
+             AND ei.role='old' AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL AND ei.quantity>0
+          )
+          """
+          periods="""
+          WITH periods(label,cutoff) AS (
+           VALUES ('all','0000-00-00'),('since_2026_10_01','2026-10-01'),('since_2026_11_01','2026-11-01')
+          ), events AS (
+           SELECT r.id,COALESCE(NULLIF(substr(r.created_at,1,10),''),substr(r.return_date,1,10),'0000-00-00') created_day,
+            COALESCE(r.amount,0) refund_amount,COALESCE(r.status,'completed') status,
+            (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=r.id) item_lines,
+            EXISTS(SELECT 1 FROM exchanges e WHERE e.refund_return_id=r.id) from_exchange
+           FROM returns r
+          )
+          SELECT p.label period,COUNT(e.id) total_returns,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' THEN 1 ELSE 0 END),0) active_returns,
+           COALESCE(SUM(CASE WHEN e.status='cancelled' THEN 1 ELSE 0 END),0) cancelled_returns,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' AND e.refund_amount>0 AND e.item_lines=0 AND e.from_exchange=0 THEN 1 ELSE 0 END),0) standalone_money_only,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' AND e.refund_amount=0 AND e.item_lines>0 AND e.from_exchange=0 THEN 1 ELSE 0 END),0) standalone_goods_only,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' AND e.refund_amount>0 AND e.item_lines>0 AND e.from_exchange=0 THEN 1 ELSE 0 END),0) standalone_goods_and_money,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' AND e.from_exchange=1 THEN 1 ELSE 0 END),0) exchange_linked_returns,
+           COALESCE(SUM(CASE WHEN e.status<>'cancelled' THEN e.refund_amount ELSE 0 END),0) total_recorded_refunds
+          FROM periods p LEFT JOIN events e ON e.created_day>=p.cutoff
+          GROUP BY p.label ORDER BY p.cutoff
+          """
+          age=pending+"""
+          SELECT kind,CASE
+           WHEN julianday(created_at) IS NULL THEN 'unknown'
+           WHEN julianday('now')-julianday(created_at)<7 THEN '0-6d'
+           WHEN julianday('now')-julianday(created_at)<14 THEN '7-13d'
+           WHEN julianday('now')-julianday(created_at)<30 THEN '14-29d'
+           ELSE '30+d' END age_bucket,
+           COUNT(*) item_lines,COUNT(DISTINCT operation_id) operations,
+           COALESCE(SUM(qty),0) pieces,MIN(substr(created_at,1,10)) oldest_created_day
+          FROM pending GROUP BY kind,age_bucket ORDER BY kind,age_bucket
+          """
+          oldest=pending+"""
+          SELECT kind,operation_id,item_id,qty,substr(created_at,1,10) created_day,
+           CAST(julianday('now')-julianday(created_at) AS INTEGER) age_days
+          FROM pending ORDER BY
+           CASE WHEN julianday(created_at) IS NULL THEN 1 ELSE 0 END,julianday(created_at) ASC LIMIT 15
+          """
+          check=pending+"""
+          SELECT kind,COUNT(*) pending_item_lines_checked_after_return,COALESCE(SUM(qty),0) pieces
+          FROM pending p WHERE COALESCE(p.variant_id,0)>0 AND julianday(p.created_at) IS NOT NULL
+          AND EXISTS(SELECT 1 FROM inventory_stock_checks sc WHERE sc.variant_id=p.variant_id
+            AND sc.inventory_source IN ('warehouse','boutique')
+            AND julianday(sc.checked_at)>=julianday(p.created_at))
+          GROUP BY kind
+          """
+          outcomes="""
+          WITH received AS (
+           SELECT 'return' kind,ri.quantity qty,ri.inventory_source destination,
+            (SELECT le.status FROM inventory_lifecycle_events le
+             WHERE le.operation_type='return' AND le.operation_id=ri.return_id
+              AND le.operation_item_id=ri.id ORDER BY le.id DESC LIMIT 1) lifecycle_status
+           FROM return_items ri JOIN returns r ON r.id=ri.return_id
+           WHERE COALESCE(r.status,'completed')<>'cancelled'
+            AND ri.physical_tracking=1 AND ri.physical_received_at IS NOT NULL
+            AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id)
+           UNION ALL
+           SELECT 'exchange',ei.quantity,ei.inventory_source,
+            (SELECT le.status FROM inventory_lifecycle_events le
+             WHERE le.operation_type='exchange' AND le.operation_id=ei.exchange_id
+               AND le.operation_item_id=ei.id ORDER BY le.id DESC LIMIT 1)
+           FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+           WHERE COALESCE(e.status,'completed')<>'cancelled'
+            AND ei.role='old' AND ei.physical_tracking=1 AND ei.physical_received_at IS NOT NULL
+          )
+          SELECT kind,CASE
+           WHEN destination IS NULL OR destination NOT IN ('warehouse','boutique') THEN 'received_no_stock'
+           WHEN lifecycle_status='applied' THEN 'stock_applied'
+           WHEN lifecycle_status='pending' THEN 'stock_needs_resolution'
+           WHEN lifecycle_status='cancelled' THEN 'stock_event_cancelled'
+           ELSE 'received_other_or_missing_event' END outcome,
+           COUNT(*) item_lines,COALESCE(SUM(qty),0) pieces
+          FROM received GROUP BY kind,outcome ORDER BY kind,outcome
+          """
+          legacy="""
+          SELECT 'return' kind,COUNT(*) untracked_lines,
+           COALESCE(SUM(ri.quantity),0) pieces,
+           MIN(substr(COALESCE(ri.created_at,r.created_at,r.return_date),1,10)) oldest_day
+          FROM return_items ri JOIN returns r ON r.id=ri.return_id
+          WHERE COALESCE(r.status,'completed')<>'cancelled'
+           AND COALESCE(ri.physical_tracking,0)=0
+           AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id)
+          UNION ALL
+          SELECT 'exchange',COUNT(*),COALESCE(SUM(ei.quantity),0),
+           MIN(substr(COALESCE(ei.created_at,e.created_at,e.exchange_date),1,10))
+          FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+          WHERE COALESCE(e.status,'completed')<>'cancelled'
+           AND ei.role='old' AND COALESCE(ei.physical_tracking,0)=0
+          """
+          preflight="""
+          SELECT
+           (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN
+             ('returns','return_items','exchanges','exchange_items','inventory_stock_checks','inventory_lifecycle_events')) tables,
+           (SELECT COUNT(*) FROM pragma_table_info('return_items')
+            WHERE name IN ('quantity','physical_tracking','physical_received_at','created_at','inventory_source')) return_item_columns,
+           (SELECT COUNT(*) FROM pragma_table_info('exchange_items')
+            WHERE name IN ('quantity','role','physical_tracking','physical_received_at','created_at','inventory_source')) exchange_item_columns
+          """
+          for label,query in [
+             ('preflight',preflight),('returns_by_period',periods),('pending_by_age',age),
+             ('oldest_pending_ids_only',oldest),('pending_checked_since_created_candidates_only',check),
+             ('received_physical_outcomes',outcomes),('legacy_untracked',legacy)]:
+            sql=query.strip()
+            if not re.match(r'(?i)^(SELECT|WITH)\b',sql) or re.search(r'(?i)\b(UPDATE|DELETE|INSERT|REPLACE|DROP|ALTER|CREATE|ATTACH|DETACH|VACUUM|PRAGMA)\b',sql) or ';' in sql:
+              raise RuntimeError('Unexpected non-SELECT SQL: '+label)
+            command=['npx','--no-install','wrangler','d1','execute','orders_db_prod','--remote',
+               '--config','wrangler.jsonc','--command',sql,'--json']
+            result=subprocess.run(command,capture_output=True,text=True,timeout=90)
+            if result.returncode!=0: raise RuntimeError('Read-only query '+label+' failed: '+result.stderr[-1500:])
+            obj=json.loads(result.stdout)
+            entry=obj[0] if isinstance(obj,list) else obj
+            if not entry.get('success',True): raise RuntimeError('D1 SELECT unsuccessful: '+label)
+            rows=entry.get('results',[])
+            if label=='preflight' and (len(rows)!=1 or int(rows[0]['tables'])!=6
+                  or int(rows[0]['return_item_columns'])!=5 or int(rows[0]['exchange_item_columns'])!=6):
+              raise RuntimeError('Unknown Main D1 schema. Abort: '+str(rows))
+            print('MAIN_RETURN_READONLY_'+label.upper()+' '+json.dumps(rows,ensure_ascii=False,sort_keys=True),flush=True)
+          print('MAIN_RETURN_READONLY_AUDIT_DONE',flush=True)
+          PY
