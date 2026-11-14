@@ -654,7 +654,7 @@ assert.equal(resumed.alreadyCommitted,false)
 assert.equal(resumed.physicalStockDelta,-1)
 assert.equal(resumed.financialAmountDelta,0)
 const resumeAfterStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get()
-assert.deepEqual(resumeAfterStock,{
+assert.deepEqual({...resumeAfterStock},{
  quantity:resumeBeforeStock.quantity-1,
  reserved_quantity:resumeBeforeStock.reserved_quantity-1
 })
