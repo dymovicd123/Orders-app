@@ -471,6 +471,95 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM critical_operations WHERE reque
 const cancelledEditState=sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get()
 await assert.rejects(updateOrderCritical(DB,9855,{requestId:'v2u-old-admin-editor-block-after-cancel',comment:'No'}, {role:'admin'},'Admin'),/старую обработку запрещено/)
 assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get(),cancelledEditState)
+// A normal employee may still correct order-only metadata after Return V2.
+// The existing HTTP PATCH requires precisely metadataCorrection (no product,
+// price, payment method, reserve or cash update is mixed into this operation).
+const snapshotMetadata=(orderId)=>{
+ const o=sql.prepare(`SELECT o.order_date,o.total_amount,o.received_amount,o.return_amount,
+  o.debt_amount,o.shipping_status,o.order_status,o.updated_at,
+  COALESCE(c.phone_normalized,'') AS phone,
+  COALESCE(o.customer_name_override,c.display_name,'') AS name,
+  COALESCE(o.city,'') AS city,COALESCE(o.delivery_type,'') AS delivery,
+  COALESCE(o.comment,'') AS comment
+  FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?`).get(orderId)
+ return {order:o,expected:{
+  orderDate:o.order_date,customerPhone:o.phone,customerName:o.name,
+  city:o.city,deliveryType:o.delivery,comment:o.comment
+ },expectedState:{
+  totalAmount:o.total_amount,receivedAmount:o.received_amount,
+  debtAmount:o.debt_amount,returnAmount:o.return_amount,
+  shippingStatus:o.shipping_status,orderStatus:o.order_status
+ }}
+}
+const beforeMetadata=snapshotMetadata(9853)
+const beforeMetadataStock=sql.prepare('SELECT id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all()
+const beforeMetadataPayments=sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n
+const beforeMetadataReturns=sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9853').get().n
+const beforeMetadataEvents=sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9853').get().n
+const metadataPayload={
+ requestId:'v2u-order-metadata-only-0001',
+ metadataCorrection:{
+  expected:beforeMetadata.expected,
+  next:{...beforeMetadata.expected,city:'Алматы',comment:'Адрес доставки уточнён'},
+  expectedState:beforeMetadata.expectedState
+ }
+}
+const metadataSaved=await api('PATCH','/api/orders/9853',metadataPayload)
+assert.equal(metadataSaved.ok,true)
+assert.equal(metadataSaved.alreadySaved,false)
+assert.equal(metadataSaved.customerDebt,2000)
+assert.equal((await readVersionedReturnMoney(DB,9853)).customerDebt,2000)
+assert.equal(sql.prepare('SELECT city,comment FROM orders WHERE id=9853').get().city,'Алматы')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_metadata_edits WHERE order_id=9853').get().n,1)
+const metadataRepeated=await api('PATCH','/api/orders/9853',metadataPayload)
+assert.equal(metadataRepeated.alreadySaved,true)
+assert.equal(metadataRepeated.updatedAt,metadataSaved.updatedAt)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_metadata_edits WHERE order_id=9853').get().n,1)
+const wrongReplay=await api('PATCH','/api/orders/9853',{
+ ...metadataPayload,metadataCorrection:{
+  ...metadataPayload.metadataCorrection,
+  next:{...metadataPayload.metadataCorrection.next,city:'Астана'}
+ }
+},409)
+assert.equal(wrongReplay.code,'return_v2_metadata_conflict')
+const staleMetadata=await api('PATCH','/api/orders/9853',{
+ ...metadataPayload,requestId:'v2u-order-metadata-stale-00001',
+ metadataCorrection:{...metadataPayload.metadataCorrection,
+  next:{...metadataPayload.metadataCorrection.next,comment:'Старые реквизиты'}}
+},409)
+assert.equal(staleMetadata.code,'return_v2_metadata_conflict')
+const craftedEdit=await api('PATCH','/api/orders/9853',{
+ ...metadataPayload,requestId:'v2u-order-metadata-crafted-0001',
+ orderTotal:1
+},409)
+assert.equal(craftedEdit.code,'critical_operation_conflict',
+ 'Manager role gate rejects forged price fields even before the V2 history gate')
+const managerDate=await api('PATCH','/api/orders/9853',{
+ ...metadataPayload,requestId:'v2u-manager-date-denied-00001',
+ metadataCorrection:{expected:snapshotMetadata(9853).expected,
+  next:{...snapshotMetadata(9853).expected,orderDate:'2026-11-02'},
+  expectedState:snapshotMetadata(9853).expectedState}
+},409)
+assert.equal(managerDate.code,'return_v2_metadata_conflict')
+assert.deepEqual(sql.prepare('SELECT id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all(),beforeMetadataStock)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n,beforeMetadataPayments)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9853').get().n,beforeMetadataReturns)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9853').get().n,beforeMetadataEvents)
+assert.equal((await readVersionedReturnMoney(DB,9853)).customerDebt,2000)
+// A cancelled V2 must remain in the V2 ledger but should not lock metadata.
+const cancelledMetadata=snapshotMetadata(9855)
+const correctedCancelled=await api('PATCH','/api/orders/9855',{
+ requestId:'v2u-cancelled-metadata-00001',
+ metadataCorrection:{
+  expected:cancelledMetadata.expected,
+  next:{...cancelledMetadata.expected,deliveryType:'Самовывоз'},
+  expectedState:cancelledMetadata.expectedState
+ }
+})
+assert.equal(correctedCancelled.ok,true)
+assert.equal(sql.prepare('SELECT delivery_type FROM orders WHERE id=9855').get().delivery_type,'Самовывоз')
+assert.equal((await readVersionedReturnMoney(DB,9855)).customerDebt,0)
+
 // A verified (even cancelled) V2 history must not be mutated by legacy
 // dispatch, dispatch undo, full-shipping, retired issue or old handover.
 const shipV2Order=9855

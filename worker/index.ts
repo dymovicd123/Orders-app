@@ -2218,7 +2218,11 @@ export default {
             }
             const criticalResponse = criticalOperationErrorResponse(error);
             if (criticalResponse) return criticalResponse;
-            throw error;
+            // Version-aware metadata corrections use their own optimistic
+            // conflict class, not the legacy editor critical-operation saga.
+            const publicError=publicApiError(error);
+            return json({ok:false,...(publicError.code?{code:publicError.code}:{}),
+              message:publicError.message},{status:publicError.status});
           }
         }
       }

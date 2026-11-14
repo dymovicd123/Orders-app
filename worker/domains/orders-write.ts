@@ -18,6 +18,8 @@ import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
 import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
+import { readReturnV2LegacyMutationGate } from './return-v2-legacy-mutation-guard.ts'
+import { updateReturnV2Metadata, type VersionedMetadataCorrection } from './return-v2-metadata-correction.ts'
 
 export async function applyOrderStockWriteOff(
   db: D1Database,
@@ -1250,9 +1252,20 @@ export async function updateOrderCritical(
     throw new CriticalOperationConflictError(
       'Удаление выполняется только отдельным действием администратора с предпросмотром последствий.'
     );
-  // Every historical editor path (including saved critical retries) is
-  // incompatible with the current versioned financial projection. Block
-  // before rewrites, reserve releases, payment reversals or metadata writes.
+  // A post-Return V2 order is not locked forever: the existing narrow
+  // "Исправить реквизиты" form uses a dedicated versioned metadata transaction.
+  // It MUST NOT reuse the legacy editor's money/stock critical saga.
+  const history=await readReturnV2LegacyMutationGate(db,id);
+  if(history.v2History!=='none' && history.v2History!=='conflict'
+      && options.lifecycleAction!=='order_delete' && managerMetadataOnly){
+    return await updateReturnV2Metadata(db,{
+      orderId:id,requestId:cleanText(input.requestId),
+      correction:(raw.metadataCorrection as VersionedMetadataCorrection),
+      actorRole:cleanText(actor?.role),actorLabel:cleanText(checkedBy)
+    });
+  }
+  // Every other historical editor operation remains guarded, including
+  // price, payment, full item rewrite, and deletion.
   const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,id,
     options.lifecycleAction==='order_delete'?'order_delete':'order_edit');
   await ensureOrderItemWorkshopColumn(db);
