@@ -29,12 +29,12 @@ function money(value:unknown):number {
 async function readPrepared(db:D1Database,requestId:string) {
   const header=await db.prepare(
     `SELECT id,request_id,payload_fingerprint,order_id,baseline_total,baseline_received,
-      reduced_value,projected_total,planned_refund,planned_refund_method,status,created_at
+      reduced_value,projected_total,planned_refund,planned_refund_method,status,created_at,baseline_order_updated_at
      FROM return_v2_prepared_operations WHERE request_id=? LIMIT 1`
   ).bind(requestId).first<Record<string,unknown>>()
   if(!header)return null
   const items=await db.prepare(
-    `SELECT order_item_id,quantity,sold_unit_price,reduced_value,physical_state
+    `SELECT order_item_id,quantity,sold_unit_price,reduced_value,physical_state,baseline_order_item_quantity
      FROM return_v2_prepared_items WHERE operation_id=? ORDER BY order_item_id`
   ).bind(header.id).all<Record<string,unknown>>()
   return {header,items:items.results||[]}
@@ -74,6 +74,8 @@ export async function prepareReturnV2(db:D1Database,input:Input) {
   if(refund>0&&!method)fail('Выберите способ возврата денег.')
   if(refund===0&&method)fail('При нулевой выплате способ оплаты не нужен.')
   if(method.length>100)fail('Слишком длинное название способа оплаты.')
+  const baselineVersion=String(preview.baseline.updatedAt||'')
+  if(!baselineVersion)fail('В заказе отсутствует версия изменения.')
   const baseline=money(preview.baseline.totalAmount)
   const received=money(preview.baseline.receivedAmount)
   const reduced=money(preview.suggestedRefundAmount)
@@ -84,13 +86,13 @@ export async function prepareReturnV2(db:D1Database,input:Input) {
     db.prepare(
       `INSERT INTO return_v2_prepared_operations (
         request_id,payload_fingerprint,order_id,baseline_total,baseline_received,
-        reduced_value,projected_total,planned_refund,planned_refund_method,created_at
+        reduced_value,projected_total,planned_refund,planned_refund_method,created_at,baseline_order_updated_at
       ) VALUES (?,?,?,
         CASE WHEN EXISTS (
           SELECT 1 FROM orders o WHERE o.id=?
           AND o.pricing_mode='itemized_v1'
           AND o.order_status NOT IN ('deleted','archived') AND o.archived_at IS NULL
-          AND o.total_amount=?
+          AND o.total_amount=? AND o.updated_at=?
           AND (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi
                WHERE oi.order_id=o.id AND oi.quantity>0)=?
           AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id)
@@ -98,21 +100,21 @@ export async function prepareReturnV2(db:D1Database,input:Input) {
           AND (SELECT COALESCE(SUM(p.amount),0) FROM payments p
                WHERE p.order_id=o.id AND p.amount>0)=?
         ) THEN ? ELSE NULL END,
-        ?,?,?,?,?,?
+        ?,?,?,?,?,?,?
       )`
     ).bind(requestId,fingerprint,orderId,
-      orderId,baseline,baseline,received,baseline,
-      received,reduced,projectedTotal,refund,method||null,timestamp)
+      orderId,baseline,baselineVersion,baseline,received,baseline,
+      received,reduced,projectedTotal,refund,method||null,timestamp,baselineVersion)
   ]
   for(const item of preview.selected){
     statements.push(db.prepare(
       `INSERT INTO return_v2_prepared_items (
-        operation_id,order_item_id,quantity,sold_unit_price,reduced_value
+        operation_id,order_item_id,quantity,sold_unit_price,reduced_value,baseline_order_item_quantity
       ) VALUES (
         (SELECT id FROM return_v2_prepared_operations WHERE request_id=?),?,
         CASE WHEN EXISTS(
           SELECT 1 FROM order_items oi
-          WHERE oi.id=? AND oi.order_id=? AND oi.quantity>=?
+          WHERE oi.id=? AND oi.order_id=? AND oi.quantity>=? AND oi.quantity=?
             AND oi.unit_price=? AND oi.line_total=oi.quantity*oi.unit_price
             AND (
               (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
@@ -124,10 +126,10 @@ export async function prepareReturnV2(db:D1Database,input:Input) {
             )
             AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir
                            WHERE ir.order_item_id=oi.id AND ir.status IN ('active','unresolved'))
-        ) THEN ? ELSE NULL END,?,?
+        ) THEN ? ELSE NULL END,?,?,?
       )`
     ).bind(requestId,item.orderItemId,item.orderItemId,orderId,item.quantity,
-      item.unitSoldPrice,item.quantity,item.quantity,item.unitSoldPrice,item.cancelledValue))
+      item.orderLineQuantity,item.unitSoldPrice,item.quantity,item.quantity,item.unitSoldPrice,item.cancelledValue,item.orderLineQuantity))
   }
   try { await db.batch(statements) }
   catch(err) {
