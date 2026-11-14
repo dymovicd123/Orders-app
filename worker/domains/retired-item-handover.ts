@@ -1,4 +1,5 @@
 import { cleanText, toInt } from '../core/text.ts';
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts';
 
 /**
  * Issue one explicitly confirmed *already physically delivered* retired SKU.
@@ -21,6 +22,7 @@ export async function confirmRetiredOrderItemDelivered(
   const variantId = toInt(input.expectedVariantId, 0);
   const qty = toInt(input.expectedQuantity, 0);
   const actor = cleanText(input.actor);
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'stock_handover');
   if (!orderId || !itemId || !variantId || qty <= 0 || !actor || input.confirmedPhysicallyDelivered !== true) {
     throw new Error('Укажите позицию, количество и подтвердите, что именно эта вещь фактически передана клиенту.');
   }
@@ -58,6 +60,11 @@ export async function confirmRetiredOrderItemDelivered(
   }
   const now=new Date().toISOString();
   const writes = await db.batch([
+    ...(v2Gate.v2SchemaReady ? [db.prepare(
+      `SELECT json('V1_RETIRED_HANDOVER_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+        AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId)] : []),
     db.prepare(`
       INSERT OR IGNORE INTO retired_order_item_issues(
         order_item_id,order_id,retired_variant_id,quantity,confirmed_by,confirmed_at
