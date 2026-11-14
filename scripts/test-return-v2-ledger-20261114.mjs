@@ -135,7 +135,7 @@ const reserve=id=>sql.prepare('SELECT id,quantity,status,variant_id,inventory_so
 
 
 const old=await http('POST','/api/orders',{
- ...payload('ledger-legacy',[{...item('warehouse'),quantity:2,unitPrice:15000}]),
+ ...payload('ledger-legacy',[{...item('boutique'),quantity:2,unitPrice:15000}]),
  payments:[{paymentDate:'2026-10-30',method:'KASPI',amount:30000,paymentKind:'primary'}],
 })
 assert.equal(old.status,201)
