@@ -9,6 +9,7 @@ import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2Recei
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
 import { createVersionedReturnV2DebtPaymentPrototype } from '../worker/domains/return-v2-debt-payment-prototype.ts'
 import { cancelUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-cancel-prototype.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, readReturnV2LegacyMutationGate, legacyV1WriteExclusionSql } from '../worker/domains/return-v2-legacy-mutation-guard.ts'
 import { readOrderFinancialLedger, syncOrderFinancialLedger } from '../worker/domains/money.ts'
 
 const sql=new DatabaseSync(':memory:')
@@ -387,6 +388,33 @@ const repeatedCancel=await cancelUnifiedReturnV2Prototype(DB,mixedCancelInput)
 assert.equal(repeatedCancel.replayed,true)
 assert.deepEqual(mixedStock(),{quantity:beforeCancelStock.quantity,reserved_quantity:beforeCancelStock.reserved_quantity+1})
 await assert.rejects(cancelUnifiedReturnV2Prototype(DB,{...mixedCancelInput,reason:'Другая причина'}),/другими/)
+
+// Compatibility preflight is ISOLATED; active V1 routes do NOT call this yet.
+// Both active and cancelled V2 histories must prevent old V1 cache / product writes.
+const allLegacyActions=[
+ 'order_edit','order_delete','manual_payment','return_create','return_cancel',
+ 'exchange_create','exchange_cancel','shipping','stock_handover','order_money_sync'
+]
+const oldGate=await readReturnV2LegacyMutationGate(DB,9854)
+assert.equal(oldGate.v2History,'none')
+assert.equal(oldGate.legacyWritesAllowed,true)
+for(const action of allLegacyActions){
+ const allowed=await assertLegacyMutationAllowedAfterReturnV2(DB,9854,action)
+ assert.equal(allowed.legacyWritesAllowed,true)
+ for(const v2Order of [9551,9853,9855]){
+  await assert.rejects(assertLegacyMutationAllowedAfterReturnV2(DB,v2Order,action),/старую обработку запрещено/)
+ }
+}
+assert.equal((await readReturnV2LegacyMutationGate(DB,9551)).v2History,'unified')
+assert.equal((await readReturnV2LegacyMutationGate(DB,9855)).v2History,'unified')
+assert.equal((await readReturnV2LegacyMutationGate(DB,9855)).legacyWritesAllowed,false,
+ 'Cancellation does not remove the historical V2 contract, so old V1 writers stay guarded')
+await assert.rejects(readReturnV2LegacyMutationGate(DB,999999),/не найден/)
+await assert.rejects(assertLegacyMutationAllowedAfterReturnV2(DB,9854,'unsupported'),/Неизвестная/)
+assert.throws(()=>legacyV1WriteExclusionSql('o.id OR 1=1'),/Unsafe/)
+const sqlExclusion=legacyV1WriteExclusionSql('o.id')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders o WHERE o.id=9854 AND '+sqlExclusion).get().n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders o WHERE o.id=9855 AND '+sqlExclusion).get().n,0)
 
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
