@@ -43,6 +43,7 @@ const tests=[
  'scripts/test-stage3-return-receipt-fractional-checkpoint-20261031.mjs',
  'scripts/test-work733-partial-return-shipping-undo-20261101.mjs',
  'scripts/test-p0-financial-atomic-20261027.mjs',
+ 'scripts/test-return-financial-sandbox-v2-20261114.mjs',
  'scripts/test-finance-day-transparency.mjs',
  'scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs',
  'scripts/test-return-exchange-cancel-autonomy.mjs',
