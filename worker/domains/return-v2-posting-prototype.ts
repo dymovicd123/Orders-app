@@ -126,7 +126,15 @@ export async function postPreparedReturnV2Prototype(db:D1Database,preparedIdInpu
             WHERE pi.operation_id=p.id)=p.reduced_value
        AND NOT EXISTS(SELECT 1 FROM returns ret WHERE ret.order_id=o.id)
        AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id)
-       AND NOT EXISTS(SELECT 1 FROM return_v2_postings post WHERE post.preparation_id=p.id)`
+       AND NOT EXISTS(SELECT 1 FROM return_v2_postings post WHERE post.preparation_id=p.id)
+       AND NOT EXISTS(
+         SELECT 1 FROM critical_operations co
+         WHERE co.operation_type='order_edit' AND co.status='started'
+           AND CAST(json_extract(co.context_json,'$.orderId') AS INTEGER)=o.id)
+       AND NOT EXISTS(
+         SELECT 1 FROM admin_order_delete_sagas saga
+         WHERE saga.order_id=o.id
+           AND saga.status IN ('planned','running','review_required','ready_for_final_delete'))`
   ).bind(date,stamp,preparationId,prepared.order_id,initialTotal,initialPaid,rows.length))
   statements.push(checkChanged(db,'header'))
 
