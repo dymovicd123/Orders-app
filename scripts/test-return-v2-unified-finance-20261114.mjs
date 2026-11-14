@@ -13,6 +13,8 @@ import { assertLegacyMutationAllowedAfterReturnV2, readReturnV2LegacyMutationGat
 import { readOrderFinancialLedger, syncOrderFinancialLedger } from '../worker/domains/money.ts'
 import { updateOrderCritical } from '../worker/domains/orders-write.ts'
 import { deleteOrderSafely } from '../worker/domains/order-delete.ts'
+import { fulfillOrderReservationsV2, confirmItemStillHere, reconcileIssuedBeforeCheckpoint } from '../worker/domains/order-reservations.ts'
+import { confirmRetiredOrderItemDelivered } from '../worker/domains/retired-item-handover.ts'
 
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
@@ -469,6 +471,49 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM critical_operations WHERE reque
 const cancelledEditState=sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get()
 await assert.rejects(updateOrderCritical(DB,9855,{requestId:'v2u-old-admin-editor-block-after-cancel',comment:'No'}, {role:'admin'},'Admin'),/старую обработку запрещено/)
 assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get(),cancelledEditState)
+// A verified (even cancelled) V2 history must not be mutated by legacy
+// dispatch, dispatch undo, full-shipping, retired issue or old handover.
+const shipV2Order=9855
+const v2StockSnapshot=sql.prepare('SELECT id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all()
+const v2OrderSnapshot=sql.prepare('SELECT total_amount,received_amount,debt_amount,shipping_status FROM orders WHERE id=?').get(shipV2Order)
+const v2DispatchCount=sql.prepare('SELECT COUNT(*) n FROM order_dispatches WHERE order_id=?').get(shipV2Order).n
+const v2DispatchCorrections=sql.prepare('SELECT COUNT(*) n FROM order_dispatch_corrections').get().n
+const v2ShipPlan=await api('GET','/api/orders/9855/shipping/plan')
+const v2Ready=v2ShipPlan.lines.find(x=>x.selectable)
+assert(v2Ready,'Cancelled V2 has a remaining active reservation; ordinary shipment must not be permitted')
+const v1SelectiveBlocked=await api('POST','/api/orders/9855/shipping/dispatches',{
+ requestId:'v2u-block-old-shipment-0000001',
+ items:[{orderItemId:v2Ready.orderItemId,quantity:1}]
+},409)
+assert.equal(v1SelectiveBlocked.code,'return_v2_legacy_mutation_blocked')
+const v2DispatchItem=sql.prepare('SELECT di.id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=9855 LIMIT 1').get()
+assert(v2DispatchItem?.id)
+const v1DispatchUndoBlocked=await api('POST',`/api/orders/9855/shipping/dispatch-items/${v2DispatchItem.id}/correct`,{
+ requestId:'v2u-block-old-dispatch-undo-0001',reason:'No legacy undo'
+},409)
+assert.equal(v1DispatchUndoBlocked.code,'return_v2_legacy_mutation_blocked')
+const v1WholeShippingBlocked=await api('PATCH','/api/orders/9855/shipping',{
+ shippingStatus:'sent',shippingDate:'2026-11-15'
+},409)
+assert.equal(v1WholeShippingBlocked.code,'return_v2_legacy_mutation_blocked')
+const v1ShippingUndoBlocked=await api('POST','/api/orders/9855/shipping/correct',{
+ physicalOutcome:'not_issued'
+},409)
+assert.equal(v1ShippingUndoBlocked.code,'return_v2_legacy_mutation_blocked')
+await assert.rejects(fulfillOrderReservationsV2(DB,9855,'V2U-CANCEL-MIXED',new Date().toISOString(),{
+ orderItemIds:[v2Ready.orderItemId],stockConfirmationOperation:'handover'
+}),/старую обработку запрещено/)
+await assert.rejects(confirmItemStillHere(DB,9855,'V2U-CANCEL-MIXED',{},0,'','tester'),/старую обработку запрещено/)
+await assert.rejects(reconcileIssuedBeforeCheckpoint(DB,9855,'V2U-CANCEL-MIXED',{},0,'','tester'),/старую обработку запрещено/)
+await assert.rejects(confirmRetiredOrderItemDelivered(DB,{
+ orderId:9855,orderItemId:v2Ready.orderItemId,expectedVariantId:9535,
+ expectedQuantity:1,confirmedPhysicallyDelivered:true,actor:'tester'
+}),/старую обработку запрещено/)
+assert.deepEqual(sql.prepare('SELECT id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all(),v2StockSnapshot)
+assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount,shipping_status FROM orders WHERE id=?').get(shipV2Order),v2OrderSnapshot)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM order_dispatches WHERE order_id=?').get(shipV2Order).n,v2DispatchCount)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM order_dispatch_corrections').get().n,v2DispatchCorrections)
+
 // V2 history test gate is also read-only by itself.
 // Both active and cancelled V2 histories must prevent old V1 cache / product writes.
 const allLegacyActions=[
