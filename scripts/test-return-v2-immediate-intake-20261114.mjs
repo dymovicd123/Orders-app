@@ -172,6 +172,7 @@ assert.deepEqual(stock('warehouse'),stockBeforeCheck,'After new physical count, 
 const outstanding=sql.prepare('SELECT physical_received_at FROM return_items WHERE return_id=?').get(postBeforeCheck.returnId)
 assert.equal(outstanding.physical_received_at,null)
 const alreadyCounted=await completeUnifiedReturnV2ReceiptPrototype(DB,postBeforeCheck.postingId,{'9862':'already_counted'})
+console.log('UNIFIED_IMMEDIATE_CHECKPOINT_DIAGNOSTIC',JSON.stringify(alreadyCounted))
 assert.equal(alreadyCounted.ok,true)
 assert.equal(alreadyCounted.receiptResults[0].freshnessProtected,true)
 assert.equal(alreadyCounted.receiptResults[0].stockApplied,false)
