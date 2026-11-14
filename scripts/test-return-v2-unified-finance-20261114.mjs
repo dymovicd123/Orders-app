@@ -237,6 +237,20 @@ await syncVersionedReturnMoneyPrototype(DB,9853)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000,
  'V2 financial CAS repairs cache based on actual cash after verified mixed Return')
 // Existing active HTTP payment must REFUSE to use old debt math on a V2 order.
+// Real employee V1 routes must refuse any follow-up Return/Cancellation
+// on an already versioned order, including zero-money attempts.
+const priorReturns=sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9853').get().n
+const blockedReturn=await api('POST','/api/returns',{
+ requestId:'v2u-legacy-return-zero-0001',
+ orderId:9853,returnDate:'2026-11-14',amount:0,items:[]
+},409)
+assert.equal(blockedReturn.code,'return_v2_legacy_mutation_blocked')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9853').get().n,priorReturns)
+const blockedCancel=await api('PATCH','/api/returns/'+financePost.returnId+'/cancel',{
+ requestId:'v2u-legacy-return-cancel-01',comment:'No legacy reversal'
+},409)
+assert.equal(blockedCancel.code,'return_v2_legacy_mutation_blocked')
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(financePost.returnId).status,'completed')
 const rejectedV1Payment=await api('POST','/api/payments',{
  requestId:'v2u-old-money-writer-refuse-00001',
  orderId:9853,paymentDate:'2026-11-14',method:'KASPI',amount:3000,paymentKind:'debt_close'
