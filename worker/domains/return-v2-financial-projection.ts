@@ -45,7 +45,24 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
        AND COALESCE(e.status,'completed')<>'cancelled') AS exchanges_count,
     (SELECT COUNT(*) FROM return_v2_postings vp
        LEFT JOIN returns r ON r.id=vp.return_id
-       WHERE vp.order_id=o.id AND (r.id IS NULL OR r.order_id<>o.id OR r.status<>'completed')) AS invalid_posts,
+       WHERE vp.order_id=o.id AND (
+         r.id IS NULL OR r.order_id<>o.id
+         OR (r.status='completed' AND EXISTS(
+           SELECT 1 FROM return_v2_cancellations c WHERE c.preparation_id=vp.preparation_id))
+         OR (r.status='cancelled' AND NOT EXISTS(
+           SELECT 1 FROM return_v2_cancellations c
+           WHERE c.preparation_id=vp.preparation_id AND c.return_id=r.id AND c.order_id=o.id
+             AND c.reversed_amount=r.amount
+             AND ((r.amount=0 AND c.recovery_method IS NULL)
+               OR (r.amount>0 AND c.refund_recovered_at IS NOT NULL AND c.recovery_method IS NOT NULL
+                 AND EXISTS(SELECT 1 FROM financial_events fe
+                   WHERE fe.event_key='return-v2:cancelled:'||vp.preparation_id
+                     AND fe.order_id=o.id AND fe.source_id=r.id
+                     AND fe.event_type='refund_reversal'
+                     AND fe.related_type='order_refund'
+                     AND fe.amount_delta=r.amount AND fe.payment_method=c.recovery_method))))
+         )
+         OR r.status NOT IN ('completed','cancelled'))) AS invalid_posts,
     (SELECT COUNT(*) FROM return_v2_postings vp JOIN returns r ON r.id=vp.return_id
        WHERE vp.order_id=o.id AND r.amount>0 AND NOT EXISTS(
          SELECT 1 FROM financial_events fe
