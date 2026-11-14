@@ -167,7 +167,9 @@ export function OrderReturnV2Flow({
      setError(msg)
      // Retain this requestId. A network failure may occur after the D1
      // commit; another ID could create a second contract.
-     setUnknownResult(/fetch|network|соединен|подтвержден|Failed/i.test(msg))
+     // After a POST begins, any lost response may hide a committed Return.
+     // Lock the exact payload until idempotent replay confirms the outcome.
+     setUnknownResult(true)
    }finally{setBusy(false)}
  }
  if(!orderId||!visible)return null
@@ -242,7 +244,11 @@ export function OrderReturnV2Flow({
         </label>
         <label><span>Способ возврата денег (не выбран)</span>
           <SmartPickerInput value={refundMethod} options={paymentMethods||[]}
-             onChange={(value:string)=>{setRefundMethod(value);requestRef.current=''}}
+             disabled={busy||Boolean(committed)||unknownResult}
+             onChange={(value:string)=>{
+               if(busy||committed||unknownResult)return
+               setRefundMethod(value);requestRef.current=''
+             }}
              placeholder="Выберите способ только если выплачиваете деньги"/>
         </label>
       </div>
