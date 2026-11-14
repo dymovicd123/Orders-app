@@ -143,8 +143,10 @@ export async function postPreparedReturnV2Prototype(db:D1Database,preparedIdInpu
       `UPDATE order_items SET quantity=quantity-?,line_total=(quantity-?)*unit_price
        WHERE id=? AND order_id=? AND quantity=? AND quantity>=?
          AND unit_price=? AND line_total=quantity*unit_price
-         AND (SELECT SUM(MAX(0,di.quantity-di.cancelled_quantity)) FROM order_dispatch_items di
+         AND ((SELECT COALESCE(SUM(MAX(0,di.quantity-di.cancelled_quantity)),0) FROM order_dispatch_items di
               WHERE di.order_item_id=order_items.id)>=?
+           OR (NOT EXISTS(SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=order_items.id)
+             AND order_items.stock_writeoff_status IN ('fulfilled','written_off','negative','retired_physically_issued')))
          AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir
           WHERE ir.order_item_id=order_items.id AND ir.status IN ('active','unresolved'))
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
