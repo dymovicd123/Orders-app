@@ -684,8 +684,15 @@ await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
 // Multiple subsequent Return V2 postings must reduce only remaining,
 // *different* verified order lines. Refunds are cumulative, never paid twice.
 addOrder(9951,9961,'V2U-REPEAT-FIRST',1000)
-sql.prepare("UPDATE orders SET total_amount=3000 WHERE id=9951").run()
-const repeatNow='2026-11-01T00:00:00Z'
+// This is a newly placed test order. Its physical issue must NOT be
+// interpreted as preceding the older stocktake/checkpoint test fixtures.
+const repeatNow=new Date().toISOString()
+sql.prepare("UPDATE orders SET total_amount=3000,order_date=?,created_at=?,updated_at=? WHERE id=9951")
+ .run(repeatNow.slice(0,10),repeatNow,repeatNow)
+sql.prepare("UPDATE order_items SET created_at=?,inventory_obligation_origin_at=? WHERE order_id=9951")
+ .run(repeatNow,repeatNow)
+sql.prepare("UPDATE inventory_reservations SET created_at=?,updated_at=? WHERE order_id=9951")
+ .run(repeatNow,repeatNow)
 sql.prepare(`INSERT INTO order_items(
  id,order_id,product_id,variant_id,product_name_snapshot,
  quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,
