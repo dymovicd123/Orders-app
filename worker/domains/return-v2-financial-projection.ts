@@ -61,7 +61,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
                      AND fe.event_type='refund_reversal'
                      AND fe.related_type='order_refund'
                      AND fe.amount_delta=r.amount AND fe.payment_method=c.recovery_method))))
-         ))
+         )
          OR r.status NOT IN ('completed','cancelled'))) AS invalid_posts,
     (SELECT COUNT(*) FROM return_v2_postings vp JOIN returns r ON r.id=vp.return_id
        WHERE vp.order_id=o.id AND r.amount>0 AND NOT EXISTS(
