@@ -341,15 +341,6 @@ export async function releaseOrderReservationV2(db: D1Database, orderItemId: num
   if (status === 'released' || status === 'fulfilled') return false;
 
   const statements: D1PreparedStatement[] = [];
-  if(v2Gate.v2SchemaReady){
-    // All legacy physical issue/observation/stock writes share this D1
-    // transaction, so concurrent Return V2 invalidates the WHOLE batch.
-    statements.push(db.prepare(
-      `SELECT json('V1_HANDOVER_SHIPPING_V2_CONFLICT')
-       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
-         AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
-    ).bind(orderId))
-  }
   if (status === 'active' && toInt(reservation.variant_id, 0)) {
     statements.push(db.prepare(
       `UPDATE inventory_stock
@@ -1766,6 +1757,15 @@ export async function fulfillOrderReservationsV2(
   // serialization means only the transaction that still sees the order as unsent may change stock.
   const orderStillUnsentSql = "EXISTS (SELECT 1 FROM orders shipping_order WHERE shipping_order.id = ? AND COALESCE(shipping_order.shipping_status, 'not_sent') <> 'sent')";
   const statements: D1PreparedStatement[] = [];
+  if(v2Gate.v2SchemaReady){
+    // All legacy physical issue/observation/stock writes share this D1
+    // transaction, so concurrent Return V2 invalidates the WHOLE batch.
+    statements.push(db.prepare(
+      `SELECT json('V1_HANDOVER_SHIPPING_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+         AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId))
+  }
   if (stockConfirmationOperation === 'handover') {
     // An item may be handed over while the order stays "not_sent". The full-order
     // shipping status guard cannot protect this path against overlapping requests.
