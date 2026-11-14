@@ -98,6 +98,7 @@ assert.equal(after.lines.length,3)
 assert(after.lines.every(x=>x.quantity===0 &&x.line_total===0))
 assert.deepEqual(after.stocks,[{id:9541,quantity:3,reserved_quantity:0},{id:9542,quantity:2,reserved_quantity:0}],'Physical stock MUST remain unchanged; reserve only removed')
 assert.equal(after.res.filter(x=>x.status==='released').length,2)
+assert(after.res.filter(x=>x.status==='released').every(x=>x.quantity===1),'Full release retains historical positive reserved quantity')
 assert.equal(after.res.filter(x=>x.status==='fulfilled').length,1)
 assert.equal(after.returns.length,1)
 assert.equal(after.returns[0].amount,5000)
@@ -171,7 +172,7 @@ const zero=await postUnifiedReturnV2Prototype(DB,{
 })
 assert.equal(zero.fullTermination,true)
 assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},warehouseBefore)
-assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9862').get().status,'released')
+assert.deepEqual({...sql.prepare('SELECT quantity,status FROM inventory_reservations WHERE order_item_id=9862').get()},{quantity:1,status:'released'})
 
 // Stale order version must never create an accounting event or remove a reserve.
 sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,pricing_mode,total_amount,created_at,updated_at) VALUES (9853,'V2-UNIFIED-STALE','2026-11-01',9501,'active','warehouse','ready','not_sent','itemized_v1',1250,'2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
@@ -194,7 +195,7 @@ const faultPreview=await previewUnifiedReturnV2LineEvidence(DB,9853)
 const originalBatch=DB.batch.bind(DB)
 let faultInjected=false
 DB.batch=async statements=>{
- if(!faultInjected&&statements.some(st=>st.sql?.includes('INSERT INTO return_v2_unified_postings'))){
+ if(!faultInjected){
   faultInjected=true
   return originalBatch(statements.map((st,index)=>index===4
     ? {...st,run:async()=>{throw Error('INJECTED_UNIFIED_FAILURE_AFTER_HEADER')}}
