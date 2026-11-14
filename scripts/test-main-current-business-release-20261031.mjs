@@ -49,6 +49,7 @@ const tests=[
  'scripts/test-return-v2-contract-capacity-20261114.mjs',
  'scripts/test-return-v2-posting-prototype-20261114.mjs',
  'scripts/test-return-v2-ledger-20261114.mjs',
+ 'scripts/test-return-v2-cancellation-prototype-20261114.mjs',
  'scripts/test-finance-day-transparency.mjs',
  'scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs',
  'scripts/test-return-exchange-cancel-autonomy.mjs',
