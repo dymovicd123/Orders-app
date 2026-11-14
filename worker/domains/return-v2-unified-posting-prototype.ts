@@ -3,7 +3,8 @@
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 
-type Selection={orderItemId:number;quantity:number}
+export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
+type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
 type Input={
   requestId:string;orderId:number;expectedOrderVersion:string;
   items:Selection[];refundAmount:number;refundMethod?:string
@@ -15,7 +16,7 @@ type Res={id:number;order_item_id:number;quantity:number;status:string;
 type Stock={id:number;inventory_source:string;variant_id:number;quantity:number;reserved_quantity:number}
 type PreparedLine={orderItemId:number;quantity:number;originalQty:number;unitPrice:number;
   value:number;action:Exclude<ReturnV2LineAction,'needs_review'>;reservation:Res|null;
-  source:string;variant:number|null;oldStatus:string}
+  source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent}
 export class ReturnV2UnifiedPostingConflict extends Error {
   readonly status=409
   readonly code='return_v2_unified_posting_conflict'
@@ -42,8 +43,13 @@ function normalizedInput(input:Input){
   if(!version)reject('Сначала обновите заказ и повторите выбор.')
   if(!Array.isArray(input.items)||input.items.length<1||input.items.length>100)
     reject('Выберите хотя бы одну позицию.')
-  const items=input.items.map(x=>({orderItemId:safeInt(x.orderItemId,1),quantity:safeInt(x.quantity,1)}))
+  const items=input.items.map(x=>({
+    orderItemId:safeInt(x.orderItemId,1),quantity:safeInt(x.quantity,1),
+    receiptIntent:x.receiptIntent===undefined?'pending':x.receiptIntent,
+  }))
     .sort((a,b)=>a.orderItemId-b.orderItemId)
+  if(items.some(x=>!['pending','warehouse','boutique','no_stock'].includes(x.receiptIntent)))
+    reject('Неизвестное решение о физическом приёме товара.')
   if(new Set(items.map(x=>x.orderItemId)).size!==items.length)
     reject('Повторная позиция в списке.')
   const refund=safeInt(input.refundAmount)
@@ -80,6 +86,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reject('Выбранная позиция или количество изменились.')
     const act=line.proposedAction
     if(act==='needs_review')reject('Товар требует уточнения.')
+    if(act!=='physical_return_pending'&&requested.receiptIntent!=='pending')
+      reject('Неотправленную позицию нельзя физически принять повторно: она уже в остатке.')
     const value=requested.quantity*line.soldUnitPrice
     if(!Number.isSafeInteger(value)||!Number.isSafeInteger(totalReduction+value))
       reject('Стоимость позиций слишком велика.')
@@ -110,7 +118,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reject('Количество или цена позиции уже изменились.')
     lines.push({orderItemId:line.orderItemId,quantity:requested.quantity,
       originalQty:line.contractQuantity,unitPrice:line.soldUnitPrice,value,action:act,
-      reservation,source:actual.source_type,variant:actual.variant_id,oldStatus:actual.stock_writeoff_status})
+      reservation,source:actual.source_type,variant:actual.variant_id,
+      oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent})
   }
   const order=await db.prepare(
     `SELECT total_amount,updated_at,pricing_mode,external_id,manager_id
@@ -250,11 +259,12 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
     statements.push(db.prepare(
       `INSERT INTO return_v2_unified_lines(
         posting_id,order_item_id,action,contracted_quantity,original_line_quantity,
-        sold_unit_price,contract_reduction,reservation_id,reservation_release,stock_quantity_change)
-       SELECT id,?,?,?,?,?,?,?,?,0 FROM return_v2_unified_postings WHERE request_id=?`
+        sold_unit_price,contract_reduction,reservation_id,reservation_release,stock_quantity_change,receipt_intent)
+       SELECT id,?,?,?,?,?,?,?,?,0,? FROM return_v2_unified_postings WHERE request_id=?`
     ).bind(line.orderItemId,line.action,line.quantity,line.originalQty,line.unitPrice,
       line.value,r?.id||null,
-      line.action==='cancel_unshipped_reservation'?line.quantity:0,wanted.requestId))
+      line.action==='cancel_unshipped_reservation'?line.quantity:0,
+      line.action==='physical_return_pending'?line.receiptIntent:'not_applicable',wanted.requestId))
     statements.push(changed(db,'line_provenance'))
     if(line.action==='physical_return_pending'){
       statements.push(db.prepare(
