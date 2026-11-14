@@ -104,8 +104,26 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
          OR ret.amount<>up.cash_refund
          OR COALESCE(ret.payment_method,'')<>COALESCE(up.refund_method,'')
          OR up.initial_total<up.final_total OR up.initial_received<up.cash_refund
-         OR (ret.status='completed' AND up.final_total<>o.total_amount)
+         -- The order is the latest contract, not necessarily the initial
+         -- post. Prior active Return V2 contracts must form an exact chain.
+         OR (ret.status='completed' AND NOT EXISTS(
+              SELECT 1 FROM return_v2_unified_postings newer
+              WHERE newer.order_id=up.order_id AND newer.id>up.id)
+              AND up.final_total<>o.total_amount)
          OR (ret.status='cancelled' AND up.initial_total<>o.total_amount)
+         OR (ret.status='cancelled' AND EXISTS(
+              SELECT 1 FROM return_v2_unified_postings newer
+              WHERE newer.order_id=up.order_id AND newer.id>up.id))
+         OR EXISTS(
+              SELECT 1 FROM return_v2_unified_postings prev
+              WHERE prev.id=(SELECT MAX(older.id) FROM return_v2_unified_postings older
+                WHERE older.order_id=up.order_id AND older.id<up.id)
+                AND (prev.final_total<>up.initial_total
+                   OR EXISTS(SELECT 1 FROM returns old_ret
+                     WHERE old_ret.id=prev.return_id AND old_ret.status<>'completed')))
+         OR (up.full_termination=1 AND EXISTS(
+              SELECT 1 FROM return_v2_unified_postings newer
+              WHERE newer.order_id=up.order_id AND newer.id>up.id))
          OR (SELECT COALESCE(SUM(ul.contract_reduction),0)
               FROM return_v2_unified_lines ul
               WHERE ul.posting_id=up.id)<>up.initial_total-up.final_total

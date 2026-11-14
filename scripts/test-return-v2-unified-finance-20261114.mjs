@@ -681,6 +681,113 @@ await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
  expectedOrderVersion:resumeMoneyAfter.orderVersion
 }),/восстановленным|отправленн/)
 
+// Multiple subsequent Return V2 postings must reduce only remaining,
+// *different* verified order lines. Refunds are cumulative, never paid twice.
+// Separate SKU: earlier receipt test deliberately records a 2090
+// warehouse checkpoint for variant 9531. Never fake its release.
+sql.prepare(`INSERT INTO catalog_variants(
+ id,product_id,gender,color,material,length,size_label,category,is_active)
+ VALUES(9539,9521,'МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48','adult',1)`).run()
+addOrder(9951,9961,'V2U-REPEAT-FIRST',1000)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE id=9541').run()
+sql.prepare("UPDATE order_items SET variant_id=9539 WHERE order_id=9951").run()
+sql.prepare("UPDATE inventory_reservations SET variant_id=9539 WHERE order_id=9951").run()
+sql.prepare(`INSERT INTO inventory_stock(
+ id,inventory_source,product_id,variant_id,product_name_snapshot,
+ gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
+ quantity,reserved_quantity)
+ VALUES(9590,'warehouse',9521,9539,'V2U-REPEAT',
+ 'МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48',5,2)`).run()
+// This is a newly placed test order. Its physical issue must NOT be
+// interpreted as preceding the older stocktake/checkpoint test fixtures.
+const repeatNow=new Date().toISOString()
+sql.prepare("UPDATE orders SET total_amount=3000,order_date=?,created_at=?,updated_at=? WHERE id=9951")
+ .run(repeatNow.slice(0,10),repeatNow,repeatNow)
+sql.prepare("UPDATE order_items SET created_at=?,inventory_obligation_origin_at=? WHERE order_id=9951")
+ .run(repeatNow,repeatNow)
+sql.prepare("UPDATE inventory_reservations SET created_at=?,updated_at=? WHERE order_id=9951")
+ .run(repeatNow,repeatNow)
+sql.prepare(`INSERT INTO order_items(
+ id,order_id,product_id,variant_id,product_name_snapshot,
+ quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,
+ created_at,inventory_obligation_key,inventory_obligation_origin_at)
+ VALUES(9962,9951,9521,9539,'V2U-REPEAT-SHIPPED',
+ 1,2000,2000,0,'warehouse','reserved',?,?,?)`)
+ .run(repeatNow,'v2u-repeat-9951-second',repeatNow)
+sql.prepare(`INSERT INTO inventory_reservations(
+ order_id,order_item_id,inventory_source,product_id,variant_id,quantity,
+ status,created_at,updated_at)
+ VALUES(9951,9962,'warehouse',9521,9539,1,'active',?,?)`).run(repeatNow,repeatNow)
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(9951,'2026-11-01','KASPI',3000,'primary')").run()
+const repeatedShipping=await api('POST','/api/orders/9951/shipping/dispatches',{
+ requestId:'v2u-repeat-shipping-00001',
+ items:[{orderItemId:9962,quantity:1}]
+})
+assert.equal(repeatedShipping.shippedQuantity,1)
+const repeatFirstPreview=await previewUnifiedReturnV2LineEvidence(DB,9951)
+assert.equal(repeatFirstPreview.lines.find(x=>x.orderItemId===9961).proposedAction,'cancel_unshipped_reservation')
+assert.equal(repeatFirstPreview.lines.find(x=>x.orderItemId===9962).proposedAction,'physical_return_pending')
+const firstRepeatInput={
+ requestId:'v2u-repeat-contract-first-001',
+ orderId:9951,expectedOrderVersion:repeatFirstPreview.orderVersion,
+ items:[{orderItemId:9961,quantity:1,receiptIntent:'pending'}],
+ refundAmount:1000,refundMethod:'KASPI'
+}
+const firstRepeatPost=await postUnifiedReturnV2Prototype(DB,firstRepeatInput)
+assert.equal(firstRepeatPost.remainingSale,2000)
+const firstRepeatLedger=await readVersionedReturnMoney(DB,9951)
+assert.equal(firstRepeatLedger.currentSale,2000)
+assert.equal(firstRepeatLedger.paidOut,1000)
+assert.equal(firstRepeatLedger.customerDebt,0)
+const repeatSecondPreview=await previewUnifiedReturnV2LineEvidence(DB,9951)
+assert.equal(repeatSecondPreview.lines.length,1)
+assert.equal(repeatSecondPreview.lines[0].orderItemId,9962)
+assert.equal(repeatSecondPreview.lines[0].proposedAction,'physical_return_pending')
+const repeatStock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9590').get()})
+const repeatBeforeSecondStock=repeatStock()
+await assert.rejects(postUnifiedReturnV2Prototype(DB,{
+ requestId:'v2u-repeat-overrefund-denied-01',
+ orderId:9951,expectedOrderVersion:repeatSecondPreview.orderVersion,
+ items:[{orderItemId:9962,quantity:1,receiptIntent:'no_stock'}],
+ refundAmount:2001,refundMethod:'KASPI'
+}),/оставшиеся|превышает/)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM returns WHERE order_id=9951').get().n,1)
+const repeatSecondInput={
+ requestId:'v2u-repeat-contract-second-001',
+ orderId:9951,expectedOrderVersion:repeatSecondPreview.orderVersion,
+ items:[{orderItemId:9962,quantity:1,receiptIntent:'no_stock'}],
+ refundAmount:2000,refundMethod:'KASPI'
+}
+const repeatSecondPost=await submitUnifiedReturnV2WithReceiptPrototype(DB,repeatSecondInput)
+assert.equal(repeatSecondPost.contractPosted,true)
+assert.equal(repeatSecondPost.ok,true)
+assert.equal(repeatSecondPost.remainingSale,0)
+assert.equal(repeatSecondPost.receipt.receiptResults[0].state,'received')
+assert.equal(repeatSecondPost.receipt.receiptResults[0].stockApplied,false)
+assert.deepEqual(repeatStock(),repeatBeforeSecondStock,'A repeated physical Return accepted to no_stock must not +1 tracked inventory')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_unified_postings WHERE order_id=9951').get().n,2)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9951').get().n,2)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM financial_events WHERE order_id=9951 AND event_type='order_refund'").get().n,2)
+const repeatAfterLedger=await readVersionedReturnMoney(DB,9951)
+assert.equal(repeatAfterLedger.currentSale,0)
+assert.equal(repeatAfterLedger.paidIn,3000)
+assert.equal(repeatAfterLedger.paidOut,3000)
+assert.equal(repeatAfterLedger.netHeld,0)
+assert.equal(repeatAfterLedger.customerDebt,0)
+assert.equal(repeatAfterLedger.customerOverpay,0)
+assert.equal(sql.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=9951').get().return_amount,3000)
+const replayRepeat=await submitUnifiedReturnV2WithReceiptPrototype(DB,repeatSecondInput)
+assert.equal(replayRepeat.replayed,true)
+assert.equal(replayRepeat.receipt.receiptResults[0].state,'received')
+assert.deepEqual(repeatStock(),repeatBeforeSecondStock)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM financial_events WHERE order_id=9951 AND event_type='order_refund'").get().n,2)
+const formerTotal=sql.prepare('SELECT final_total FROM return_v2_unified_postings WHERE id=?').get(firstRepeatPost.postingId).final_total
+sql.prepare('UPDATE return_v2_unified_postings SET final_total=final_total+100 WHERE id=?').run(firstRepeatPost.postingId)
+await assert.rejects(readVersionedReturnMoney(DB,9951),/разбор|поддерживаемые/,
+ 'Changing a previous contract total must invalidate the full Return V2 chain')
+sql.prepare('UPDATE return_v2_unified_postings SET final_total=? WHERE id=?').run(formerTotal,firstRepeatPost.postingId)
+assert.equal((await readVersionedReturnMoney(DB,9951)).paidOut,3000)
+
 // V2 history test gate is also read-only by itself.
 // Both active and cancelled V2 histories must prevent old V1 cache / product writes.
 const allLegacyActions=[
