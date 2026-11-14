@@ -196,7 +196,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
     if(r){
       statements.push(db.prepare(
         `UPDATE inventory_reservations SET
-          quantity=quantity-?,
+          quantity=CASE WHEN quantity=? THEN quantity ELSE quantity-? END,
           status=CASE WHEN quantity=? THEN 'released' ELSE status END,
           released_at=CASE WHEN quantity=? THEN ? ELSE released_at END,
           updated_at=?
@@ -205,7 +205,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             AND variant_id IS ?
             AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
               WHERE di.order_item_id=inventory_reservations.order_item_id)`
-      ).bind(line.quantity,line.quantity,line.quantity,stamp,stamp,
+      ).bind(line.quantity,line.quantity,line.quantity,line.quantity,stamp,stamp,
         r.id,wanted.orderId,line.orderItemId,r.status,r.quantity,
         r.inventory_source,r.variant_id))
       statements.push(changed(db,'release_item_reservation'))
@@ -231,7 +231,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
            WHERE di.order_item_id=order_items.id)`
     const guardArgs=line.action==='physical_return_pending'
-      ? [line.originalQty,line.originalQty] : [r!.id,r!.quantity-line.quantity,
+      ? [line.originalQty,line.originalQty] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
         line.quantity===r!.quantity?'released':r!.status]
     statements.push(db.prepare(
       `UPDATE order_items SET quantity=quantity-?,line_total=(quantity-?)*unit_price,
