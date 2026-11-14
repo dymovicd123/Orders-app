@@ -20,7 +20,7 @@ function safeInt(raw:unknown,label:string,min=0):number {
 export async function previewStandaloneReturnV2(db:D1Database,input:ReturnPreviewInput){
   const orderId=safeInt(input.orderId,'ID заказа',1)
   const order=await db.prepare(
-    `SELECT id,pricing_mode,total_amount,order_status,archived_at FROM orders WHERE id=? LIMIT 1`
+    `SELECT id,pricing_mode,total_amount,order_status,archived_at,updated_at FROM orders WHERE id=? LIMIT 1`
   ).bind(orderId).first<Record<string,unknown>>()
   if(!order)throw new PreviewConflict('Заказ не найден.','return_v2_not_found',404)
   if(['archived','deleted'].includes(String(order.order_status||''))||order.archived_at)
@@ -69,7 +69,7 @@ export async function previewStandaloneReturnV2(db:D1Database,input:ReturnPrevie
   if(!Array.isArray(input.items)||!input.items.length||input.items.length>100)
     throw new PreviewConflict('Выберите возвращаемые товары.','return_v2_invalid_input',400)
   const seen=new Set<number>()
-  const selected:Array<{orderItemId:number;productName:string;quantity:number;unitSoldPrice:number;cancelledValue:number}>=[]
+  const selected:Array<{orderItemId:number;productName:string;quantity:number;orderLineQuantity:number;unitSoldPrice:number;cancelledValue:number}>=[]
   let removed=0
   for(const i of input.items){
     const itemId=safeInt(i?.orderItemId,'Позиция',1)
@@ -85,7 +85,7 @@ export async function previewStandaloneReturnV2(db:D1Database,input:ReturnPrevie
     if(!Number.isSafeInteger(removed+amount))
       throw new PreviewConflict('Сумма возврата слишком велика.','return_v2_invalid_input',400)
     removed+=amount
-    selected.push({orderItemId:itemId,productName:line.name,quantity,unitSoldPrice:line.price,cancelledValue:amount})
+    selected.push({orderItemId:itemId,productName:line.name,quantity,orderLineQuantity:line.quantity,unitSoldPrice:line.price,cancelledValue:amount})
   }
   const paidIn=safeInt(payments?.received_amount??0,'Получено денег')
   const refund=input.refundAmount===undefined?removed:safeInt(input.refundAmount,'Выплата клиенту')
@@ -96,7 +96,7 @@ export async function previewStandaloneReturnV2(db:D1Database,input:ReturnPrevie
   const signedBalance=currentSale-netHeld
   return {
     ok:true,mode:'return_v2_shadow_preview',readOnly:true,commitAllowed:false,orderId,
-    baseline:{totalAmount:total,receivedAmount:paidIn,returnAmount:0},
+    baseline:{totalAmount:total,receivedAmount:paidIn,returnAmount:0,updatedAt:String(order.updated_at||'')},
     selected,suggestedRefundAmount:removed,requestedRefundAmount:refund,
     cashAvailable,cashCovered,
     projected:{currentSale,netHeld,signedBalance,customerDebt:Math.max(0,signedBalance),customerOverpay:Math.max(0,-signedBalance)},
