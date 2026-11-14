@@ -2,6 +2,7 @@
 // NO Worker route, UI, or old Return/Exchange/financial consumer imports this module.
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
+import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
 type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
@@ -75,8 +76,11 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   if(already)return replay(already)
   const preview=await previewUnifiedReturnV2LineEvidence(db,wanted.orderId)
   if(preview.orderVersion!==wanted.version)reject('Заказ изменился после открытия формы.')
-  if(preview.lines.some(line=>line.requiresReview))
-    reject('В заказе есть неоднозначные выдачи, цены или резервы. Оформление остановлено.')
+  // A former partial Return may leave ONE ambiguous historical line. It may
+  // not prevent independently verified remaining goods from being returned.
+  // Selected lines must always be fully proven; unselected lines are read-only.
+  if(!preview.lines.length)
+    reject('В заказе не осталось позиций для возврата.')
   const byId=new Map(preview.lines.map(line=>[line.orderItemId,line]))
   let totalReduction=0
   const lines:PreparedLine[]=[]
@@ -136,9 +140,24 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       FROM payments WHERE order_id=?`
   ).bind(wanted.orderId).first<{sum:number}>()
   const received=safeInt(paid?.sum)
-  if(wanted.refund>received)reject('Выплата превышает деньги, полученные от клиента.')
-  const fullTermination=lines.length===preview.lines.length &&
-    lines.every(l=>l.quantity===l.originalQty)
+  // Every subsequent Return is based on the CURRENT remaining contract.
+  // Prior payouts are still held in the immutable financial history; do not
+  // let a second Return refund the same received cash again.
+  const priorPosting=await db.prepare(
+    'SELECT COUNT(*) AS count FROM return_v2_unified_postings WHERE order_id=?'
+  ).bind(wanted.orderId).first<{count:number}>()
+  const existingPostCount=safeInt(priorPosting?.count)
+  let priorRefund=0
+  if(existingPostCount>0){
+    const ledger=await readVersionedReturnMoney(db,wanted.orderId)
+    if(ledger.kind!=='return_v2'||ledger.currentSale!==initialTotal
+      ||ledger.paidIn!==received||ledger.orderVersion!==wanted.version)
+      reject('Предыдущие возвраты или финансовый баланс изменились. Обновите заказ.')
+    priorRefund=ledger.paidOut
+  }
+  if(wanted.refund>received-priorRefund)
+    reject('Выплата превышает фактически оставшиеся у магазина деньги.')
+  const fullTermination=finalTotal===0
   const grouped=new Map<string,{stock:Stock;release:number}>()
   for(const line of lines.filter(l=>l.action==='cancel_unshipped_reservation')){
     const r=line.reservation!
@@ -174,9 +193,25 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
              WHERE oi.order_id=o.id AND oi.quantity>0)=?
           AND (SELECT COALESCE(SUM(CASE WHEN p.amount>0 THEN p.amount ELSE 0 END),0)
              FROM payments p WHERE p.order_id=o.id)=?
-          AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id)
+          -- Only a strict chain of completed unified V2 Returns can
+          -- precede this one. A V1 Return, a cancelled V2, or an exchange is
+          -- never silently appended to the contract.
+          AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id
+            AND (COALESCE(r.status,'completed')<>'completed'
+              OR NOT EXISTS(SELECT 1 FROM return_v2_unified_postings old
+                WHERE old.order_id=o.id AND old.return_id=r.id)))
+          AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id)
+              =(SELECT COUNT(*) FROM return_v2_unified_postings old WHERE old.order_id=o.id)
+          AND NOT EXISTS(SELECT 1 FROM return_v2_postings old WHERE old.order_id=o.id)
+          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations c
+            JOIN return_v2_unified_postings old ON old.id=c.posting_id
+            WHERE old.order_id=o.id)
+          AND COALESCE((SELECT old.final_total
+            FROM return_v2_unified_postings old WHERE old.order_id=o.id
+            ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
+          AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
+            WHERE r.order_id=o.id AND r.status='completed')=?
           AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id)
-          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.order_id=o.id)
        AND NOT EXISTS(
          SELECT 1 FROM critical_operations co
          WHERE co.operation_type='order_edit' AND co.status='started'
@@ -196,7 +231,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
               AND (co.step<>'started' OR co.lease_token IS NOT NULL OR co.target_id IS NOT NULL)
           )`
     ).bind(date,wanted.refund,wanted.method||null,stamp,wanted.orderId,initialTotal,
-      wanted.version,initialTotal,received),
+      wanted.version,initialTotal,received,priorRefund),
     changed(db,'return_header'),
     db.prepare(
       `INSERT INTO return_v2_unified_postings(request_id,intent_fingerprint,order_id,
@@ -305,7 +340,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
               WHERE oi.order_id=orders.id AND oi.quantity>0)=?
          AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
               FROM payments pay WHERE pay.order_id=orders.id)=?`
-  ).bind(finalTotal,received,wanted.refund,finalTotal,received,wanted.refund,stamp,
+  ).bind(finalTotal,received,priorRefund+wanted.refund,finalTotal,received,
+    priorRefund+wanted.refund,stamp,
     wanted.orderId,initialTotal,wanted.version,finalTotal,received))
   statements.push(changed(db,'order_money'))
   if(wanted.refund>0){
