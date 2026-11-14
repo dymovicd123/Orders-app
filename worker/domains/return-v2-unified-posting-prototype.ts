@@ -120,6 +120,13 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       stock_writeoff_status:string;source_type:string;variant_id:number|null}>()
     if(!actual||actual.quantity!==line.contractQuantity||actual.unit_price!==line.soldUnitPrice)
       reject('Количество или цена позиции уже изменились.')
+    // This stage supports repeated operations on independent remaining items.
+    // A second contractual reduction on the SAME partially handled item needs
+    // separate lineage and receipt-capacity proof; it is fail-closed for now.
+    const earlier=await db.prepare(
+      'SELECT id FROM return_v2_unified_lines WHERE order_item_id=? LIMIT 1'
+    ).bind(line.orderItemId).first<{id:number}>()
+    if(earlier)reject('Эта позиция уже участвовала в Return V2. Повторный возврат той же позиции требует отдельной сверки.')
     lines.push({orderItemId:line.orderItemId,quantity:requested.quantity,
       originalQty:line.contractQuantity,unitPrice:line.soldUnitPrice,value,action:act,
       reservation,source:actual.source_type,variant:actual.variant_id,
@@ -301,6 +308,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          THEN 'reservation_released' ELSE stock_writeoff_status END
        WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
          AND stock_writeoff_status=? AND line_total=quantity*unit_price
+         AND NOT EXISTS(SELECT 1 FROM return_v2_unified_lines prev
+           WHERE prev.order_item_id=order_items.id)
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
            ON ret.id=ri.return_id WHERE ri.order_item_id=order_items.id
             AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?))
