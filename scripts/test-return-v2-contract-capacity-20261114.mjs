@@ -184,6 +184,8 @@ l=await getOne()
 assert.deepEqual([l.alreadyReturnedWithoutLineReduction,l.availableForNewReturn],[1,1])
 assert.equal(oldStock().quantity,0,'Pending Return and cancellation cannot change stock')
 
+// Reset local disposable stock between independent scenario fixtures; no live inventory involved.
+sql.prepare('UPDATE inventory_stock SET quantity=2,reserved_quantity=0 WHERE id=9041').run()
 const two=await createSent('return-v2-capacity-simulated')
 const getTwo=()=>readReturnV2ContractCapacity(db,two.orderId,two.lineId)
 const initial=await getTwo()
@@ -226,6 +228,7 @@ assert.deepEqual([v.currentOrderItemQuantity,v.alreadyReturnedWithLineReduction,
 assert.deepEqual(sql.prepare('SELECT quantity,line_total FROM order_items WHERE id=?').get(two.lineId),initialQty)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE id=?').get(futureReturnId).n,0,'Test-only simulated posting was rolled back')
 
+sql.prepare('UPDATE inventory_stock SET quantity=2,reserved_quantity=0 WHERE id=9041').run()
 const mixed=await createSent('return-v2-capacity-mixed')
 const oldOne=await http('POST','/api/returns',{
  requestId:'mixed-legacy',orderId:mixed.orderId,returnDate:'2026-11-14',amount:0,
