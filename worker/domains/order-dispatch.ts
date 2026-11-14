@@ -6,6 +6,7 @@ import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts
 import { CriticalOperationConflictError } from './critical.ts'
 import { boundedDispatchStock, DispatchStockConfirmationRequired, normalizeDispatchStockConfirmations, type DispatchStockConfirmation } from './order-dispatch-confirmation.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 type Selection = { orderItemId: number; quantity: number }
 type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; activeQuantity: number; unresolvedQuantity: number; needsConfirmation: boolean; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
@@ -48,6 +49,7 @@ export async function dispatchSelectedCompleteOrderLines(
     await identicalReplay(replay.id)
     return {ok:true,alreadyCommitted:true,dispatchId:replay.id}
   }
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
   const order = await getOrder(db,orderId)
   if (!order) throw new CriticalOperationConflictError('Заказ не найден.')
   if (['archived','deleted'].includes(cleanText(order.order_status)) || order.archived_at) fail('Заказ закрыт. Обновите список.')
@@ -234,6 +236,15 @@ export async function dispatchSelectedCompleteOrderLines(
     db.prepare(`INSERT INTO order_dispatches(order_id,request_id,dispatch_date,created_at,actor,status)
        VALUES(?,?,?,?,?,'sent')`).bind(orderId,requestId,date,stamp,cleanText(input.actor)),
   ]
+  if(v2Gate.v2SchemaReady){
+    // This assertion runs in the atomic dispatch batch. If Return V2 wins
+    // after preflight, neither the dispatch header nor physical stock commits.
+    statements.push(db.prepare(
+      `SELECT json('V1_DISPATCH_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+          AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId))
+  }
   for(const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)!
     if (item.dispatchPriorIssued) {
@@ -504,6 +515,8 @@ export async function dispatchSelectedCompleteOrderLines(
     const first=result[0]
     if(toInt(first?.meta?.changes,0)!==1)fail('Отправка уже выполняется. Обновите заказ.')
   }catch(error){
+    if(v2Gate.v2SchemaReady)
+      await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
     const msg=cleanText(error instanceof Error?error.message:error)
     if(/unique constraint failed/i.test(msg)){
       const recorded=await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=?').bind(requestId).first<{id:number;order_id:number}>()
