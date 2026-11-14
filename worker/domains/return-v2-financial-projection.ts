@@ -76,16 +76,41 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
     (SELECT COUNT(*) FROM return_v2_unified_postings up
        LEFT JOIN returns ret ON ret.id=up.return_id
        WHERE up.order_id=o.id AND (
-         ret.id IS NULL OR ret.order_id<>o.id OR ret.status<>'completed'
+         ret.id IS NULL OR ret.order_id<>o.id
+         OR ret.status NOT IN ('completed','cancelled')
+         OR (ret.status='completed' AND EXISTS(
+              SELECT 1 FROM return_v2_unified_cancellations c WHERE c.posting_id=up.id))
+         OR (ret.status='cancelled' AND NOT EXISTS(
+              SELECT 1 FROM return_v2_unified_cancellations c
+              WHERE c.posting_id=up.id AND c.return_id=ret.id AND c.order_id=o.id
+                AND c.initial_total=up.initial_total AND c.initial_received=up.initial_received
+                AND c.reversed_amount=up.cash_refund
+                AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
+                     FROM payments pay WHERE pay.order_id=o.id)=up.initial_received
+                AND ((up.cash_refund=0 AND c.refund_recovered_at IS NULL
+                         AND c.recovery_method IS NULL)
+                     OR (up.cash_refund>0 AND c.refund_recovered_at IS NOT NULL
+                         AND c.recovery_method IS NOT NULL
+                         AND EXISTS(SELECT 1 FROM financial_events fe
+                           WHERE fe.event_key='return-v2:unified:cancelled:'||up.id
+                             AND fe.order_id=o.id AND fe.source_id=ret.id
+                             AND fe.event_type='refund_reversal'
+                             AND fe.related_type='order_refund'
+                             AND fe.amount_delta=up.cash_refund
+                             AND fe.payment_method=c.recovery_method)))))
+         OR (ret.status='cancelled' AND EXISTS(
+              SELECT 1 FROM return_items ri WHERE ri.return_id=up.return_id
+                AND (ri.physical_received_at IS NOT NULL OR ri.restocked<>0)))
          OR ret.amount<>up.cash_refund
          OR COALESCE(ret.payment_method,'')<>COALESCE(up.refund_method,'')
          OR up.initial_total<up.final_total OR up.initial_received<up.cash_refund
-         OR up.final_total<>o.total_amount
+         OR (ret.status='completed' AND up.final_total<>o.total_amount)
+         OR (ret.status='cancelled' AND up.initial_total<>o.total_amount)
          OR (SELECT COALESCE(SUM(ul.contract_reduction),0)
               FROM return_v2_unified_lines ul
               WHERE ul.posting_id=up.id)<>up.initial_total-up.final_total
          OR NOT EXISTS(SELECT 1 FROM return_v2_unified_lines ul WHERE ul.posting_id=up.id)
-         OR (up.full_termination=1 AND EXISTS(
+         OR (ret.status='completed' AND up.full_termination=1 AND EXISTS(
               SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0))
          OR EXISTS(SELECT 1 FROM return_v2_unified_lines ul
              LEFT JOIN order_items oi ON oi.id=ul.order_item_id
