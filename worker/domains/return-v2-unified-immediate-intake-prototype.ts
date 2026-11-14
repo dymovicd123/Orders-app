@@ -151,8 +151,12 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
   const intended=rows.filter(r=>r.action==='physical_return_pending'&&r.receipt_intent!=='pending').length
   const completed=results.filter(r=>r.state==='received').length
   const immediateIntakesComplete=completed===intended
-  const physicalPendingQuantity=rows.filter(r=>r.action==='physical_return_pending'&&!r.physical_received_at)
-    .reduce((sum,r)=>sum+(r.return_quantity||0),0)
+  const physicalPendingQuantity=rows.filter(r=>r.action==='physical_return_pending')
+    .reduce((sum,row)=>{
+      const state=results.find(r=>r.orderItemId===row.order_item_id)?.state
+      const actuallyReceived=Boolean(row.physical_received_at)||state==='received'||state==='stock_pending'
+      return sum+(actuallyReceived?0:(row.return_quantity||0))
+    },0)
   return {
     ok:immediateIntakesComplete,contractPosted:true,
     receiptPending:!immediateIntakesComplete||physicalPendingQuantity>0,
