@@ -20,6 +20,7 @@ import type { MoneyPart, MoneyPartInput } from './return-exchange-payment-channe
 import { noStandaloneReturnSql } from './order-return-capacity.ts'
 import type { ReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
 import { applyNotIssuedReservationReduction, loadReservationSnapshot, restoreNotIssuedReservation } from './order-exchange-reservation-snapshot.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 export type ExchangeSetOldInput = {
   orderItemId?: number
@@ -273,6 +274,9 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
 
     let operationContext = parseCriticalContext<ExchangeSetOperationContext>(criticalOperation.row)
     let executionPlan = operationContext.executionPlan
+    const guardedOrderId=toInt(executionPlan?.orderId||input.orderId,0)
+    if(!guardedOrderId)throw new Error('orderId is required.')
+    const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,guardedOrderId,'exchange_create')
 
     if (!executionPlan) {
       const orderId = toInt(input.orderId, 0)
@@ -572,7 +576,14 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
       // The order-item quantity is the shared committed claim seen by Return.
       // This is resumable: the original Exchange plan keeps initial/target
       // quantities and its next step is exchange_created in the SAME batch.
-      const oldItemClaims: D1PreparedStatement[] = executionPlan.oldItems.flatMap((plan) => [
+      const oldItemClaims: D1PreparedStatement[] = [
+        // Atomic exclusion applies even to a staged Exchange with a saved plan.
+        ...(v2Gate.v2SchemaReady ? [db.prepare(
+          `SELECT json('V1_EXCHANGE_SET_V2_CONFLICT')
+           WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+            AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+        ).bind(executionPlan.orderId)] : []),
+        ...executionPlan.oldItems.flatMap((plan) => [
         db.prepare(
           `UPDATE order_items
            SET quantity = ?, line_total = unit_price * ?,
@@ -596,7 +607,8 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         // A stale claim must abort the entire header transaction; otherwise a
         // phantom Exchange and double physical old-item intake can survive.
         db.prepare(`SELECT json('EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
-      ])
+      ]),
+      ]
       try {
         exchangeId = await updateCriticalOperationTargetFromLastInsert(
         db,
@@ -625,6 +637,8 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         oldItemClaims,
       )
       } catch (error) {
+        if(v2Gate.v2SchemaReady)
+          await assertLegacyMutationAllowedAfterReturnV2(db,executionPlan.orderId,'exchange_create')
         // The fail-closed SQL assertion throws 'malformed JSON' when a
         // Return/another Exchange has already claimed an original unit.
         const message = cleanText(error instanceof Error ? error.message : error)
@@ -1064,6 +1078,7 @@ export async function cancelExchangeSetV2(
        WHERE e.id = ?`
     ).bind(exchangeId).first<Record<string, unknown>>()
     if (!exchange) throw new Error('Exchange not found.')
+    await assertLegacyMutationAllowedAfterReturnV2(db,toInt(exchange.order_id,0),'exchange_cancel')
     if (!await isExchangeSetV2(db, exchangeId)) {
       throw new CriticalOperationConflictError('Это обмен старого формата. Используйте совместимую отмену.')
     }

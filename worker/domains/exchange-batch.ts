@@ -9,6 +9,7 @@ import { buildItemizedOrderWritePlan } from './order-pricing.ts'
 import { resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder } from './orders-write.ts'
 import { createExchange, noStandaloneReturnSql } from './returns-exchanges.ts'
+import { assertLegacyMutationAllowedAfterReturnV2 } from './return-v2-legacy-mutation-guard.ts'
 
 export type ItemizedExchangeBatchPairInput = {
   oldItemId?: number;
@@ -75,6 +76,9 @@ export async function createItemizedExchangeBatch(
       finalNetPaid: number;
       pairs: ItemizedExchangeBatchExecutionPair[];
     } | undefined;
+    const guardedOrderId=toInt(executionPlan?.orderId||input.orderId,0);
+    if(!guardedOrderId)throw new Error('orderId is required.');
+    await assertLegacyMutationAllowedAfterReturnV2(db,guardedOrderId,'exchange_create');
 
     if (!executionPlan) {
       const orderId = toInt(input.orderId, 0);
