@@ -7,6 +7,7 @@ import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
 import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2ReceiptPrototype } from '../worker/domains/return-v2-unified-immediate-intake-prototype.ts'
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
+import { createVersionedReturnV2DebtPaymentPrototype } from '../worker/domains/return-v2-debt-payment-prototype.ts'
 import { readOrderFinancialLedger, syncOrderFinancialLedger } from '../worker/domains/money.ts'
 
 const sql=new DatabaseSync(':memory:')
@@ -232,7 +233,33 @@ assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().d
 await syncVersionedReturnMoneyPrototype(DB,9853)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000,
  'V2 financial CAS repairs cache based on actual cash after verified mixed Return')
-sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(9853,'2026-11-14','KASPI',3000,'debt_close')").run()
+// Simulate a concurrent change after preflight, before the atomic batch.
+const raceBefore=sql.prepare('SELECT updated_at FROM orders WHERE id=9853').get().updated_at
+const raceDb={...DB,async batch(statements){
+ sql.prepare("UPDATE orders SET updated_at='2090-01-01T00:00:00Z' WHERE id=9853").run()
+ return DB.batch(statements)
+}}
+const debtInput={
+ orderId:9853,requestId:'v2u-manual-debt-close-unique-001',
+ paymentDate:'2026-11-14',method:'kaspi',amount:3000
+}
+const beforeRacePayments=sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n
+await assert.rejects(createVersionedReturnV2DebtPaymentPrototype(raceDb,debtInput),/измени|изменились/)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n,beforeRacePayments)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM financial_events WHERE event_key='return-v2:debt-close:v2u-manual-debt-close-unique-001'").get().n,0)
+sql.prepare('UPDATE orders SET updated_at=? WHERE id=9853').run(raceBefore)
+const paidV2=await createVersionedReturnV2DebtPaymentPrototype(DB,debtInput)
+assert.equal(paidV2.replayed,false)
+assert.equal(paidV2.amount,3000)
+assert.equal(paidV2.debt,2000)
+assert.equal(paidV2.overpay,0)
+const paidAgain=await createVersionedReturnV2DebtPaymentPrototype(DB,debtInput)
+assert.equal(paidAgain.replayed,true)
+assert.equal(paidAgain.paymentId,paidV2.paymentId)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n,beforeRacePayments+1)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM financial_events WHERE event_key='return-v2:debt-close:v2u-manual-debt-close-unique-001'").get().n,1)
+await assert.rejects(createVersionedReturnV2DebtPaymentPrototype(DB,{...debtInput,amount:2000}),/идентификатор/)
+await assert.rejects(createVersionedReturnV2DebtPaymentPrototype(DB,{...debtInput,requestId:'v2u-manual-debt-close-too-large',amount:5000}),/превышает/)
 const later=await readVersionedReturnMoney(DB,9853)
 assert.equal(later.customerDebt,2000)
 assert.equal(later.netHeld,8000)
@@ -266,6 +293,11 @@ const oldFinancial=await readVersionedReturnMoney(DB,9854)
 assert.equal(oldFinancial.kind,'legacy')
 assert.equal(oldFinancial.customerOverpay,null)
 await assert.rejects(syncVersionedReturnMoneyPrototype(DB,9854),/Исторические/)
+await assert.rejects(createVersionedReturnV2DebtPaymentPrototype(DB,{
+ orderId:9854,requestId:'v2u-old-order-cannot-pay-0001',
+ paymentDate:'2026-11-14',method:'KASPI',amount:1
+}),/исторического/)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9854').get().n,0)
 
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
