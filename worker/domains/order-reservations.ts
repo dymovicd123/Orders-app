@@ -1251,6 +1251,7 @@ export async function reconcileIssuedBeforeCheckpoint(
   expectedCheckpointAt: string,
   actor: string,
 ) {
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'stock_handover');
   if (!item.reservationId || item.reservationStatus !== 'active' || !item.reviewNeeded || !item.checkpointId || !item.checkpointAt) {
     throw new Error('Эта позиция уже изменилась. Обновите заказ и проверьте её ещё раз.');
   }
@@ -1274,6 +1275,11 @@ export async function reconcileIssuedBeforeCheckpoint(
   });
 
   await db.batch([
+    ...(v2Gate.v2SchemaReady ? [db.prepare(
+      `SELECT json('V1_CHECKPOINT_V2_CONFLICT') WHERE EXISTS(
+       SELECT 1 FROM orders o WHERE o.id=?
+        AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId)] : []),
     // CAS guard: the answer is applied only to the exact physical checkpoint the user saw.
     // A concurrent reservation change or a newer physical check aborts the whole D1 batch.
     handoverReviewCasGuardStatement(db, {
@@ -1337,6 +1343,7 @@ export async function confirmItemStillHere(
   expectedCheckpointAt: string,
   actor: string,
 ) {
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'stock_handover');
   if (!item.reservationId || item.reservationStatus !== 'active' || !item.reviewNeeded || !item.checkpointId || !item.checkpointAt) {
     throw new Error('Эта позиция уже изменилась. Обновите заказ и проверьте её ещё раз.');
   }
@@ -1356,6 +1363,11 @@ export async function confirmItemStillHere(
     reviewedAt: now,
   });
   await db.batch([
+    ...(v2Gate.v2SchemaReady ? [db.prepare(
+      `SELECT json('V1_CHECKPOINT_V2_CONFLICT') WHERE EXISTS(
+       SELECT 1 FROM orders o WHERE o.id=?
+        AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId)] : []),
     handoverReviewCasGuardStatement(db, {
       orderId,
       orderItemId: item.orderItemId,
