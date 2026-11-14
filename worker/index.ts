@@ -42,6 +42,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { handleOrderSelectiveShippingRoute } from './routes/order-selective-shipping.ts'
+import { handleOrderReturnV2Route } from './routes/order-return-v2.ts'
 import { listOrderSourcePicker } from './domains/order-source-picker.ts'
 import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
@@ -2294,6 +2295,16 @@ export default {
           return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
         }
       }
+
+      // Rollout gate: no versioned Return write is callable before BOTH
+      // explicit enablement and migrated schema. Legacy Return routes stay
+      // unchanged when the new mode is disabled.
+      const versionedReturnResponse=await handleOrderReturnV2Route(
+        env.DB,request,url.pathname,
+        (env as Env & { RETURN_V2_ENABLED?: string }).RETURN_V2_ENABLED==='true',
+        cleanText(authUser?.role)
+      );
+      if(versionedReturnResponse)return versionedReturnResponse;
 
       if (url.pathname === '/api/returns' && request.method === 'GET') {
         return json(await listReturnHistory(env.DB, url));
