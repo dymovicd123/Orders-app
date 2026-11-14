@@ -8,6 +8,7 @@ import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unifie
 import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2ReceiptPrototype } from '../worker/domains/return-v2-unified-immediate-intake-prototype.ts'
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
 import { createVersionedReturnV2DebtPaymentPrototype } from '../worker/domains/return-v2-debt-payment-prototype.ts'
+import { cancelUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-cancel-prototype.ts'
 import { readOrderFinancialLedger, syncOrderFinancialLedger } from '../worker/domains/money.ts'
 
 const sql=new DatabaseSync(':memory:')
@@ -298,6 +299,94 @@ await assert.rejects(createVersionedReturnV2DebtPaymentPrototype(DB,{
  paymentDate:'2026-11-14',method:'KASPI',amount:1
 }),/исторического/)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9854').get().n,0)
+
+// Unified Return V2 cancellation is a NEW, independently guarded prototype.
+const cancelledReceiptRequest={
+ postingId:returned.postingId,requestId:'v2u-cannot-undo-received-00001',
+ reason:'Проверка уже принятого товара',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,recoveryMethod:'CASH'
+}
+await assert.rejects(cancelUnifiedReturnV2Prototype(DB,cancelledReceiptRequest),
+ /изменились|поступил|операц|приём|истори/)
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(returned.returnId).status,'completed')
+await assert.rejects(cancelUnifiedReturnV2Prototype(DB,{
+ postingId:financePost.postingId,requestId:'v2u-cannot-undo-after-payment-01',
+ reason:'Проверка последующего платежа',
+ shippedGoodsUnreceivedConfirmed:false,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,recoveryMethod:'CASH'
+}),/изменились|операц|деньги/)
+
+// A fresh mixed order with 1 shipped + 1 still reserved is cancellable
+// before actual physical intake; reserving again changes RESERVED, not PHYSICAL.
+// Use a NEW SKU: earlier fixture intentionally has a later physical stocktake.
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9535,9521,'МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48','adult',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9545,'warehouse',9521,9535,'V2U CANCEL SKU','МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48',20,2)").run()
+addOrder(9855,9865,'V2U-CANCEL-MIXED',2000,2)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-2 WHERE id=9541').run()
+sql.prepare("UPDATE order_items SET variant_id=9535,color_snapshot='СИНИЙ',size_snapshot='48' WHERE id=9865").run()
+sql.prepare('UPDATE inventory_reservations SET variant_id=9535 WHERE order_item_id=9865').run()
+const mixedStock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get()})
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(9855,'2026-11-01','KASPI',4000,'primary')").run()
+const mixedSend=await api('POST','/api/orders/9855/shipping/dispatches',{
+ requestId:'v2u-cancellation-dispatch-01',items:[{orderItemId:9865,quantity:1}]
+})
+assert.equal(mixedSend.shippedQuantity,1)
+const mixedPreview=await previewUnifiedReturnV2LineEvidence(DB,9855)
+assert.equal(mixedPreview.summary.selectedQuantity,2)
+assert.equal(mixedPreview.summary.pendingPhysicalQuantity,1)
+assert.equal(mixedPreview.summary.reservedCancellationQuantity,1)
+const mixedPost=await postUnifiedReturnV2Prototype(DB,{
+ requestId:'v2u-cancel-proven-posting-0001',orderId:9855,
+ expectedOrderVersion:mixedPreview.orderVersion,
+ items:mixedPreview.lines.map(l=>({orderItemId:l.orderItemId,quantity:l.selectedQuantity,receiptIntent:'pending'})),
+ refundAmount:1000,refundMethod:'KASPI'
+})
+assert.equal(mixedPost.remainingSale,0)
+assert.equal((await readVersionedReturnMoney(DB,9855)).customerOverpay,3000)
+const beforeCancelStock=mixedStock()
+const mixedCancelInput={
+ postingId:mixedPost.postingId,requestId:'v2u-mixed-cancellation-unique-01',
+ reason:'Клиент возобновил покупку',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,recoveryMethod:'CASH'
+}
+await assert.rejects(cancelUnifiedReturnV2Prototype(DB,{
+ ...mixedCancelInput,refundRecoveredConfirmed:false
+}),/деньги|выплачен|фактическ/)
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(mixedPost.returnId).status,'completed')
+// Demand proof of free physical capacity before re-establishing the reservation.
+sql.prepare('UPDATE inventory_stock SET quantity=reserved_quantity WHERE id=9545').run()
+await assert.rejects(cancelUnifiedReturnV2Prototype(DB,mixedCancelInput),/Резерв|зарезервирован|пересчитан/)
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(mixedPost.returnId).status,'completed')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE event_key=?').get('return-v2:unified:cancelled:'+mixedPost.postingId).n,0)
+sql.prepare('UPDATE inventory_stock SET quantity=? WHERE id=9545').run(beforeCancelStock.quantity)
+const mixedCancelled=await cancelUnifiedReturnV2Prototype(DB,mixedCancelInput)
+assert.equal(mixedCancelled.cancelled,true)
+assert.equal(mixedCancelled.replayed,false)
+assert.equal(mixedCancelled.cashRecovered,1000)
+assert.equal(mixedCancelled.physicalStockDelta,0)
+assert.equal(sql.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=9855').get().total_amount,4000)
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(mixedPost.returnId).status,'cancelled')
+assert.deepEqual(mixedStock(),{quantity:beforeCancelStock.quantity,reserved_quantity:beforeCancelStock.reserved_quantity+1},
+ 'Undoing unshipped cancellation re-reserves 1 without physical stock receipt')
+const restoredLines=sql.prepare('SELECT quantity,line_total,stock_writeoff_status FROM order_items WHERE order_id=9855 ORDER BY id').all()
+assert.equal(restoredLines.reduce((n,l)=>n+l.quantity,0),2)
+assert.equal(restoredLines.reduce((n,l)=>n+l.line_total,0),4000)
+const restorableReservation=sql.prepare("SELECT quantity,status FROM inventory_reservations WHERE order_id=9855 AND status='active'").get()
+assert.equal(restorableReservation.quantity,1)
+assert.equal((await api('GET','/api/orders/9855/shipping/plan')).selectedQuantity,1,
+ 'Only previously unsent restored reservation can ship again')
+const restoredMoney=await readVersionedReturnMoney(DB,9855)
+assert.equal(restoredMoney.customerDebt,0)
+assert.equal(restoredMoney.customerOverpay,0)
+assert.equal(restoredMoney.paidOut,0)
+assert.equal(restoredMoney.paidIn,4000)
+assert.equal(sql.prepare('SELECT amount_delta FROM financial_events WHERE event_key=?').get('return-v2:unified:cancelled:'+mixedPost.postingId).amount_delta,1000)
+const repeatedCancel=await cancelUnifiedReturnV2Prototype(DB,mixedCancelInput)
+assert.equal(repeatedCancel.replayed,true)
+assert.deepEqual(mixedStock(),{quantity:beforeCancelStock.quantity,reserved_quantity:beforeCancelStock.reserved_quantity+1})
+await assert.rejects(cancelUnifiedReturnV2Prototype(DB,{...mixedCancelInput,reason:'Другая причина'}),/другими/)
 
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
