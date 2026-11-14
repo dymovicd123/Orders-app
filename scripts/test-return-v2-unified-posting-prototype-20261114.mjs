@@ -156,7 +156,7 @@ assert.equal(follow.lines[0].selectedQuantity,1)
 await assert.rejects(postUnifiedReturnV2Prototype(DB,{
  requestId:'v2-unified-second-purchase-001',orderId:9851,expectedOrderVersion:follow.orderVersion,
  items:[{orderItemId:9861,quantity:1}],refundAmount:0
-}),/проведено|изменились|Ничего/)
+}),/уже участвовала|требует отдельной сверки/)
 assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9851').get().total_amount,1250)
 
 // Unresolved reservation: no physical/reserved cache change for an unconfirmed shortage.
