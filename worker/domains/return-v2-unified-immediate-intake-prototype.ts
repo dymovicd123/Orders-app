@@ -10,7 +10,8 @@ type PostInput=Parameters<typeof postUnifiedReturnV2Prototype>[1]
 type FreshnessDecision='already_counted'|'arrived_after_check'
 type Line={
   posting_id:number;return_id:number;order_id:number;order_item_id:number;
-  action:string;receipt_intent:string;return_item_id:number|null;
+  action:string;receipt_intent:string;contracted_quantity:number;
+  return_item_id:number|null;return_quantity:number|null;
   physical_received_at:string|null;inventory_source:string|null;
   restocked:number;return_status:string
 }
@@ -22,7 +23,8 @@ function fail(message:string):never {throw new ReturnV2ImmediateIntakeConflict(m
 async function readLines(db:D1Database,postingId:number){
   const rows=(await db.prepare(
     `SELECT up.id AS posting_id,up.return_id,up.order_id,ul.order_item_id,ul.action,
-      ul.receipt_intent,ri.id AS return_item_id,ri.physical_received_at,
+      ul.receipt_intent,ul.contracted_quantity,ri.id AS return_item_id,
+      ri.quantity AS return_quantity,ri.physical_received_at,
       ri.inventory_source,ri.restocked,
       r.status AS return_status
      FROM return_v2_unified_postings up
@@ -35,7 +37,8 @@ async function readLines(db:D1Database,postingId:number){
   if(!rows.length||rows.length>100||rows.some(row=>
     row.return_status!=='completed'||
     (row.action==='physical_return_pending' &&
-      (!row.return_item_id||!['pending','warehouse','boutique','no_stock'].includes(row.receipt_intent)))||
+      (!row.return_item_id||row.return_quantity!==row.contracted_quantity||
+        !['pending','warehouse','boutique','no_stock'].includes(row.receipt_intent)))||
     (row.action!=='physical_return_pending' &&
       (row.return_item_id!==null||row.receipt_intent!=='not_applicable'))))
     fail('Журнал состава возврата и физической приёмки не согласован.')
@@ -58,8 +61,10 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
     if(row.action!=='physical_return_pending')continue
     const intent=row.receipt_intent as ReturnV2ReceiptIntent
     if(intent==='pending'){
-      results.push({orderItemId:row.order_item_id,intent,state:'pending',
-        stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false})
+      results.push({orderItemId:row.order_item_id,intent,
+        state:row.physical_received_at?'received':'pending',
+        stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
+        message:row.physical_received_at?'Физически принят отдельным действием.':'Ожидаем физическое поступление.'})
       continue
     }
     if(row.physical_received_at){
@@ -114,14 +119,14 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
     const confirmation=freshnessDecisions[String(row.order_item_id)]
     if(confirmation&&confirmation!=='already_counted'&&confirmation!=='arrived_after_check')
       fail('Неизвестное решение по физической сверке.')
-    let received:Awaited<ReturnType<typeof receiveReturnedItem>>
+    let received:Record<string,unknown>
     try {
       received=await receiveReturnedItem(db,{
         requestId:'v2u-intake:'+row.posting_id+':'+row.return_item_id,
         operationType:'return',operationId:row.return_id,
         operationItemId:Number(row.return_item_id),
         destination:intent, ...(confirmation?{freshnessDecision:confirmation}:{})
-      })
+      }) as Record<string,unknown>
     }catch(error){
       results.push({orderItemId:row.order_item_id,intent,state:'failed',
         stockApplied:false,stockAlreadyApplied:false,freshnessProtected:false,
@@ -146,12 +151,14 @@ export async function completeUnifiedReturnV2ReceiptPrototype(
   const intended=rows.filter(r=>r.action==='physical_return_pending'&&r.receipt_intent!=='pending').length
   const completed=results.filter(r=>r.state==='received').length
   const immediateIntakesComplete=completed===intended
+  const physicalPendingQuantity=rows.filter(r=>r.action==='physical_return_pending'&&!r.physical_received_at)
+    .reduce((sum,r)=>sum+(r.return_quantity||0),0)
   return {
     ok:immediateIntakesComplete,contractPosted:true,
-    receiptPending:!immediateIntakesComplete,
+    receiptPending:!immediateIntakesComplete||physicalPendingQuantity>0,
     postingId,returnId:rows[0].return_id,orderId:rows[0].order_id,
     immediateIntakesComplete,
-    physicalPendingQuantity:rows.filter(r=>r.action==='physical_return_pending'&&r.receipt_intent==='pending').length,
+    physicalPendingQuantity,
     receiptResults:results,
     message:immediateIntakesComplete
       ?'Состояние приёмки сохранено. Физический остаток изменён только там, где подтверждена реальная приёмка.'
