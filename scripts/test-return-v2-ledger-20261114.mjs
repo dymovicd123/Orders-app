@@ -184,9 +184,10 @@ assert.equal(calculated.customerOverpay,0)
 assert.equal(calculated.signedBalance,5000)
 const oldFormula=await readOrderFinancialLedger(db,orderId)
 assert.equal(oldFormula.debtAmount,0,'Old debt math proven to diverge for V2')
-await syncOrderFinancialLedger(db,orderId)
-assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=?').get(orderId).debt_amount,0,
- 'Old sync creates incorrect debt after V2, proving explicit transition requirement')
+await assert.rejects(syncOrderFinancialLedger(db,orderId),
+ /старую обработку запрещено|Return V2/)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=?').get(orderId).debt_amount,5000,
+ 'Old sync must NOT corrupt the true V2 customer debt')
 const corrected=await syncVersionedReturnMoneyPrototype(db,orderId)
 assert.equal(corrected.customerDebt,5000)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=?').get(orderId).debt_amount,5000,
