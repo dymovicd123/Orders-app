@@ -230,11 +230,20 @@ assert.deepEqual({
 },{sale:10000,in:20000,out:15000,net:5000,debt:5000,storeOwes:0})
 assert.equal((await readOrderFinancialLedger(DB,9853)).debtAmount,0,
  'V1 sync still would erase real V2 debt')
-await syncOrderFinancialLedger(DB,9853)
-assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,0)
+await assert.rejects(syncOrderFinancialLedger(DB,9853),/старую обработку запрещено|Return V2/)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000,
+ 'Old V1 sync is blocked, not permitted to erase the Return V2 debt')
 await syncVersionedReturnMoneyPrototype(DB,9853)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000,
  'V2 financial CAS repairs cache based on actual cash after verified mixed Return')
+// Existing active HTTP payment must REFUSE to use old debt math on a V2 order.
+const rejectedV1Payment=await api('POST','/api/payments',{
+ requestId:'v2u-old-money-writer-refuse-00001',
+ orderId:9853,paymentDate:'2026-11-14',method:'KASPI',amount:3000,paymentKind:'debt_close'
+},409)
+assert.equal(rejectedV1Payment.code,'return_v2_legacy_mutation_blocked')
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9853').get().n,1)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000)
 // Simulate a concurrent change after preflight, before the atomic batch.
 const raceBefore=sql.prepare('SELECT updated_at FROM orders WHERE id=9853').get().updated_at
 const raceDb={...DB,async batch(statements){
@@ -416,5 +425,20 @@ const sqlExclusion=legacyV1WriteExclusionSql('o.id')
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders o WHERE o.id=9854 AND '+sqlExclusion).get().n,1)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders o WHERE o.id=9855 AND '+sqlExclusion).get().n,0)
 
+// Backward-compatible schema-first barrier: no V2 tables means no posted V2
+// is possible. A half-applied schema is NOT a reason to proceed.
+const oldSql=new DatabaseSync(':memory:')
+oldSql.exec('CREATE TABLE orders(id INTEGER PRIMARY KEY)')
+oldSql.exec('INSERT INTO orders(id) VALUES(11)')
+const oldDb={prepare:q=>({
+ bind(...a){return {first:async()=>oldSql.prepare(q).get(...a)??null}},
+ first:async()=>oldSql.prepare(q).get()??null,
+})}
+const preMigrations=await readReturnV2LegacyMutationGate(oldDb,11)
+assert.equal(preMigrations.legacyWritesAllowed,true)
+assert.equal(preMigrations.v2SchemaReady,false)
+oldSql.exec('CREATE TABLE return_v2_postings(order_id INTEGER)')
+await assert.rejects(readReturnV2LegacyMutationGate(oldDb,11),/не полностью/)
+oldSql.close()
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
