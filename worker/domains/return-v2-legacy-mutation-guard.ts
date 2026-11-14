@@ -13,7 +13,7 @@ export class ReturnV2LegacyMutationBlocked extends Error{
 type Row={id:number;physical_v2:number;unified_v2:number}
 export type ReturnV2LegacyMutationGate={
   orderId:number;v2History:'none'|'physical'|'unified'|'conflict';
-  legacyWritesAllowed:boolean;reason:string
+  legacyWritesAllowed:boolean;v2SchemaReady:boolean;reason:string
 }
 function reject(message:string):never{throw new ReturnV2LegacyMutationBlocked(message)}
 export async function readReturnV2LegacyMutationGate(
@@ -21,6 +21,20 @@ export async function readReturnV2LegacyMutationGate(
 ):Promise<ReturnV2LegacyMutationGate>{
  if(!Number.isSafeInteger(orderId)||orderId<1)
   reject('Некорректный заказ.')
+ // Old remote Branch2 D1 has not yet received experimental V2 tables.
+ // A fully old schema cannot contain any posted V2, and must preserve V1.
+ // A PARTIAL schema is corruption: stop the write rather than guess.
+ const schema=await db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master
+  WHERE type='table' AND name IN ('return_v2_postings','return_v2_unified_postings')`)
+  .first<{n:number}>()
+ if(schema?.n===0){
+  const order=await db.prepare('SELECT id FROM orders WHERE id=? LIMIT 1')
+   .bind(orderId).first<{id:number}>()
+  if(!order)reject('Заказ не найден.')
+  return {orderId,v2History:'none',legacyWritesAllowed:true,v2SchemaReady:false,
+   reason:'Старая схема без Return V2; исходная обработка разрешена.'}
+ }
+ if(schema?.n!==2)reject('Схема Return V2 установлена не полностью. Запись запрещена.')
  const row=await db.prepare(`SELECT o.id,
   (SELECT COUNT(*) FROM return_v2_postings vp WHERE vp.order_id=o.id) AS physical_v2,
   (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=o.id) AS unified_v2
@@ -33,7 +47,7 @@ export async function readReturnV2LegacyMutationGate(
    :row.physical_v2>0?'physical'
    :row.unified_v2>0?'unified':'none'
  const legacyWritesAllowed=v2History==='none'
- return {orderId,v2History,legacyWritesAllowed,
+ return {orderId,v2History,legacyWritesAllowed,v2SchemaReady:true,
    reason:legacyWritesAllowed?'Старый обработчик разрешён: истории Return V2 нет.'
      :'Заказ содержит историю Return V2. Старые операции могут нарушить деньги, позиции или склад.'}
 }
