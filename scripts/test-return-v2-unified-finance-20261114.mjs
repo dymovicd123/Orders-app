@@ -532,7 +532,8 @@ const craftedEdit=await api('PATCH','/api/orders/9853',{
  ...metadataPayload,requestId:'v2u-order-metadata-crafted-0001',
  orderTotal:1
 },409)
-assert.equal(craftedEdit.code,'return_v2_legacy_mutation_blocked')
+assert.equal(craftedEdit.code,'critical_operation_conflict',
+ 'Manager role gate rejects forged price fields even before the V2 history gate')
 const managerDate=await api('PATCH','/api/orders/9853',{
  ...metadataPayload,requestId:'v2u-manager-date-denied-00001',
  metadataCorrection:{expected:snapshotMetadata(9853).expected,
