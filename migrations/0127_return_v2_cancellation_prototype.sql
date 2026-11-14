@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS return_v2_cancellations (
   order_id INTEGER NOT NULL REFERENCES orders(id),
   cancelled_at TEXT NOT NULL,
   reason TEXT NOT NULL,
+  goods_with_customer_confirmed INTEGER NOT NULL CHECK(goods_with_customer_confirmed = 1),
+  refund_recovered_at TEXT,
+  recovery_method TEXT,
   reversed_amount INTEGER NOT NULL CHECK (reversed_amount >= 0),
   original_contract_total INTEGER NOT NULL CHECK (original_contract_total >= 0),
   original_paid_in INTEGER NOT NULL CHECK (original_paid_in >= 0)
