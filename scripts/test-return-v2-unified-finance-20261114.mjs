@@ -15,6 +15,7 @@ import { updateOrderCritical } from '../worker/domains/orders-write.ts'
 import { deleteOrderSafely } from '../worker/domains/order-delete.ts'
 import { fulfillOrderReservationsV2, confirmItemStillHere, reconcileIssuedBeforeCheckpoint } from '../worker/domains/order-reservations.ts'
 import { confirmRetiredOrderItemDelivered } from '../worker/domains/retired-item-handover.ts'
+import { dispatchRestoredReturnV2ReservationPrototype } from '../worker/domains/return-v2-resumed-shipment-prototype.ts'
 
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
@@ -602,6 +603,83 @@ assert.deepEqual(sql.prepare('SELECT id,quantity,reserved_quantity FROM inventor
 assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount,shipping_status FROM orders WHERE id=?').get(shipV2Order),v2OrderSnapshot)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM order_dispatches WHERE order_id=?').get(shipV2Order).n,v2DispatchCount)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM order_dispatch_corrections').get().n,v2DispatchCorrections)
+
+// A real second shipment after a *cancelled* mixed Return V2 is permitted
+// only for the EXACT unshipped reservation restored by the cancellation.
+// It must use the normal dispatch stock/movement journal without V1 money.
+const resumeBeforeStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get()
+const resumeMoneyBefore=await readVersionedReturnMoney(DB,9855)
+const resumeBeforePayments=sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9855').get().n
+const resumeBeforeEvents=sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9855').get().n
+const resumeBeforeMovement=sql.prepare("SELECT COUNT(*) n FROM inventory_movements WHERE reference_type='order_dispatch'").get().n
+const readyItem=sql.prepare(`SELECT ul.order_item_id AS id,ul.original_line_quantity AS qty
+ FROM return_v2_unified_lines ul WHERE ul.posting_id=?
+ AND ul.action='cancel_unshipped_reservation' LIMIT 1`).get(mixedPost.postingId)
+assert.equal(readyItem.id,v2Ready.orderItemId)
+assert.equal(readyItem.qty,1)
+const resumedInput={
+ requestId:'v2u-resume-restored-shipment-00001',
+ postingId:mixedPost.postingId,orderId:9855,
+ orderItemId:readyItem.id,quantity:readyItem.qty,
+ expectedOrderVersion:resumeMoneyBefore.orderVersion,
+ actor:'Verified warehouse operator',dispatchDate:'2026-11-15'
+}
+const fakeSelection={...resumedInput,requestId:'v2u-resume-shipped-line-forged-001',
+ orderItemId:9865}
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,fakeSelection),
+ /не является восстановленным|восстановленным|отправленн/)
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
+ ...resumedInput,requestId:'v2u-resume-stale-order-version-01',
+ expectedOrderVersion:'1990-01-01T00:00:00Z'
+}),/версия|изменились/)
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
+ ...resumedInput,requestId:'v2u-resume-wrong-posting-0001',
+ postingId:mixedPost.postingId+5000
+}),/не является восстановленным/)
+const resumeVersion=sql.prepare('SELECT updated_at FROM orders WHERE id=9855').get().updated_at
+// Model a competing metadata/finance update right before D1 commit.
+const resumeRaceDb={...DB,async batch(statements){
+ sql.prepare("UPDATE orders SET updated_at='2090-01-01T00:00:00Z' WHERE id=9855").run()
+ return DB.batch(statements)
+}}
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(resumeRaceDb,{
+ ...resumedInput,requestId:'v2u-resume-injected-race-0001'
+}),/изменилась|изменилось|конфликт|версия/)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM return_v2_resumed_dispatches WHERE order_id=9855").get().n,0)
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get(),resumeBeforeStock)
+sql.prepare('UPDATE orders SET updated_at=? WHERE id=9855').run(resumeVersion)
+const resumed=await dispatchRestoredReturnV2ReservationPrototype(DB,resumedInput)
+assert.equal(resumed.ok,true)
+assert.equal(resumed.alreadyCommitted,false)
+assert.equal(resumed.physicalStockDelta,-1)
+assert.equal(resumed.financialAmountDelta,0)
+const resumeAfterStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get()
+assert.deepEqual(resumeAfterStock,{
+ quantity:resumeBeforeStock.quantity-1,
+ reserved_quantity:resumeBeforeStock.reserved_quantity-1
+})
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM return_v2_resumed_dispatches WHERE order_id=9855").get().n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM order_dispatch_items WHERE dispatch_id=?').get(resumed.dispatchId).n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM inventory_movements WHERE reference_type='order_dispatch'").get().n,resumeBeforeMovement+1)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments WHERE order_id=9855').get().n,resumeBeforePayments)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9855').get().n,resumeBeforeEvents)
+assert.equal(sql.prepare("SELECT status FROM returns WHERE id=?").get(mixedPost.returnId).status,'cancelled')
+const resumeMoneyAfter=await readVersionedReturnMoney(DB,9855)
+assert.equal(resumeMoneyAfter.customerDebt,resumeMoneyBefore.customerDebt)
+assert.equal(resumeMoneyAfter.currentSale,resumeMoneyBefore.currentSale)
+assert.equal(resumeMoneyAfter.paidIn,resumeMoneyBefore.paidIn)
+assert.equal(resumeMoneyAfter.paidOut,resumeMoneyBefore.paidOut)
+const resumedAgain=await dispatchRestoredReturnV2ReservationPrototype(DB,resumedInput)
+assert.equal(resumedAgain.alreadyCommitted,true)
+assert.equal(resumedAgain.dispatchId,resumed.dispatchId)
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9545').get(),resumeAfterStock)
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
+ ...resumedInput,quantity:2
+}),/не совпадает/)
+await assert.rejects(dispatchRestoredReturnV2ReservationPrototype(DB,{
+ ...resumedInput,requestId:'v2u-resume-already-shipped-0001',
+ expectedOrderVersion:resumeMoneyAfter.orderVersion
+}),/восстановленным|отправленн/)
 
 // V2 history test gate is also read-only by itself.
 // Both active and cancelled V2 histories must prevent old V1 cache / product writes.
