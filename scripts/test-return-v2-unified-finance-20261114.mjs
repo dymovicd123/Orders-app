@@ -251,6 +251,18 @@ const blockedCancel=await api('PATCH','/api/returns/'+financePost.returnId+'/can
 },409)
 assert.equal(blockedCancel.code,'return_v2_legacy_mutation_blocked')
 assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(financePost.returnId).status,'completed')
+// All three historical Exchange entrypoints must refuse a versioned order
+// BEFORE an old Return/physical receipt or financial correction can start.
+for(const [path,requestId] of [
+ ['/api/exchanges','v2u-old-single-exchange-refuse-0001'],
+ ['/api/exchanges/set','v2u-old-set-exchange-refuse-000001'],
+ ['/api/exchanges/batch','v2u-old-batch-exchange-refuse-01'],
+]){
+ const denied=await api('POST',path,{requestId,orderId:9853},409)
+ assert.equal(denied.code,'return_v2_legacy_mutation_blocked',path)
+}
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM exchanges WHERE order_id=9853').get().n,0)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9853').get().debt_amount,5000)
 const rejectedV1Payment=await api('POST','/api/payments',{
  requestId:'v2u-old-money-writer-refuse-00001',
  orderId:9853,paymentDate:'2026-11-14',method:'KASPI',amount:3000,paymentKind:'debt_close'
