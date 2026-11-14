@@ -11,6 +11,8 @@ import { createVersionedReturnV2DebtPaymentPrototype } from '../worker/domains/r
 import { cancelUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-cancel-prototype.ts'
 import { assertLegacyMutationAllowedAfterReturnV2, readReturnV2LegacyMutationGate, legacyV1WriteExclusionSql } from '../worker/domains/return-v2-legacy-mutation-guard.ts'
 import { readOrderFinancialLedger, syncOrderFinancialLedger } from '../worker/domains/money.ts'
+import { updateOrderCritical } from '../worker/domains/orders-write.ts'
+import { deleteOrderSafely } from '../worker/domains/order-delete.ts'
 
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
@@ -388,6 +390,18 @@ sql.prepare(`INSERT INTO critical_operations(
  '2026-11-14T00:00:00Z','2026-11-14T00:00:00Z')`)
  .run(JSON.stringify({orderId:9855,plan:{orderId:9855}}))
 const pendingBefore=sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9855').get().n
+// A staged legacy editor must not be overtaken by a versioned Return.
+sql.prepare(`INSERT INTO critical_operations(
+ request_id,operation_type,request_fingerprint,status,step,context_json,
+ lease_token,lease_until_ms,created_at,updated_at)
+ VALUES('v2u-inflight-order-edit','order_edit','test-edit-fingerprint',
+ 'started','validated',?,'edit-lease',9999999999999,
+ '2026-11-14T00:00:00Z','2026-11-14T00:00:00Z')`)
+ .run(JSON.stringify({orderId:9855}))
+await assert.rejects(postUnifiedReturnV2Prototype(DB,mixedPostingInput),
+ /изменились|проверка|резерв|оплата/)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9855').get().n,pendingBefore)
+sql.prepare("DELETE FROM critical_operations WHERE request_id='v2u-inflight-order-edit'").run()
 await assert.rejects(postUnifiedReturnV2Prototype(DB,mixedPostingInput),/изменились|проверка|резерв|оплата/)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9855').get().n,pendingBefore,
  'An in-flight V1 payment cannot be outpaced by Return V2 contract posting')
@@ -439,7 +453,23 @@ assert.equal(repeatedCancel.replayed,true)
 assert.deepEqual(mixedStock(),{quantity:beforeCancelStock.quantity,reserved_quantity:beforeCancelStock.reserved_quantity+1})
 await assert.rejects(cancelUnifiedReturnV2Prototype(DB,{...mixedCancelInput,reason:'Другая причина'}),/другими/)
 
-// Compatibility preflight is ISOLATED; active V1 routes do NOT call this yet.
+// Real legacy editor and Delete entrypoints MUST reject even an admin request
+// before touching stock, payments, old cached debt or audit history.
+const editSnapshot=sql.prepare('SELECT total_amount,received_amount,debt_amount,updated_at FROM orders WHERE id=9853').get()
+const editStockBefore=sql.prepare('SELECT SUM(quantity) AS qty,SUM(reserved_quantity) AS reserved FROM inventory_stock').get()
+await assert.rejects(updateOrderCritical(DB,9853,{
+ requestId:'v2u-old-admin-editor-block-0001',comment:'Old edit must not write'
+},{role:'admin'},'Admin'),/старую обработку запрещено/)
+await assert.rejects(deleteOrderSafely(DB,9853,{
+ requestId:'v2u-old-admin-delete-block-0001',comment:'No delete'
+}),/старую обработку запрещено/)
+assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount,updated_at FROM orders WHERE id=9853').get(),editSnapshot)
+assert.deepEqual(sql.prepare('SELECT SUM(quantity) AS qty,SUM(reserved_quantity) AS reserved FROM inventory_stock').get(),editStockBefore)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM critical_operations WHERE request_id IN ('v2u-old-admin-editor-block-0001','v2u-old-admin-delete-block-0001')").get().n,0)
+const cancelledEditState=sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get()
+await assert.rejects(updateOrderCritical(DB,9855,{requestId:'v2u-old-admin-editor-block-after-cancel',comment:'No'}, {role:'admin'},'Admin'),/старую обработку запрещено/)
+assert.deepEqual(sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=9855').get(),cancelledEditState)
+// V2 history test gate is also read-only by itself.
 // Both active and cancelled V2 histories must prevent old V1 cache / product writes.
 const allLegacyActions=[
  'order_edit','order_delete','manual_payment','return_create','return_cancel',
