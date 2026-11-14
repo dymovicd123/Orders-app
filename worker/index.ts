@@ -31,6 +31,7 @@ import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelI
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './domains/return-v2-legacy-mutation-guard.ts'
 import { previewStandaloneReturnV2 } from './domains/return-v2-shadow-preview.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
@@ -1863,6 +1864,11 @@ export default {
       const orderShippingCorrectionMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/correct$/);
       if (orderShippingCorrectionMatch && request.method === 'POST') {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
+        try { await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping') }
+        catch(error) {
+          const issue=publicApiError(error);
+          return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+        }
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
           if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки».'},{status:409});
@@ -1900,6 +1906,12 @@ export default {
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
+        let oldShipGate;
+        try { oldShipGate=await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping'); }
+        catch(error){
+          const issue=publicApiError(error);
+          return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+        }
         if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся товары через «Отправить товары».'},{status:409});
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
         const existing = await env.DB.prepare(
@@ -2060,7 +2072,15 @@ export default {
             `UPDATE orders
              SET shipping_status = 'sent', shipping_date = ?, updated_at = ?
              WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`
+             +(oldShipGate.v2SchemaReady?' AND '+legacyV1WriteExclusionSql('orders.id'):'')
           ).bind(nextShippingDate, timestamp, id).run();
+          if(oldShipGate.v2SchemaReady&&toInt(shippingUpdate.meta?.changes,0)===0){
+            try { await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping'); }
+            catch(error){
+              const issue=publicApiError(error);
+              return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+            }
+          }
           shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
         }
         // Shipping/physical handover is already committed. Finance is a separate,
