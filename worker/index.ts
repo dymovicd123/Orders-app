@@ -31,6 +31,7 @@ import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelI
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
+import { previewStandaloneReturnV2 } from './domains/return-v2-shadow-preview.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
 import { confirmRetiredOrderItemDelivered } from './domains/retired-item-handover.ts'
@@ -2274,6 +2275,20 @@ export default {
         return json(await listReturnHistory(env.DB, url));
       }
 
+      // Experimental Branch2-only read-only contract: not connected to Return creation.
+      if (url.pathname === '/api/returns/preview-v2' && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          const input = await readJson<{ orderId?: unknown; expectedTotalAmount?: unknown; refundAmount?: unknown; items?: Array<{ orderItemId?: unknown; quantity?: unknown }> }>(request);
+          const preview = await previewStandaloneReturnV2(env.DB, input);
+          return json(preview, { headers: { 'Cache-Control': 'no-store' } });
+        } catch (error) {
+          const info = publicApiError(error);
+          return json({ ok: false, code: info.code || 'return_v2_preview_error', message: info.message },
+            { status: info.status, headers: { 'Cache-Control': 'no-store' } });
+        }
+      }
       if (url.pathname === '/api/returns' && request.method === 'POST') {
         const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }> }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
