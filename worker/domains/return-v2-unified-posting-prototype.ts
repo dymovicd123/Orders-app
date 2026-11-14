@@ -298,8 +298,10 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
     const now=await getPosted(db,wanted.requestId)
     if(now)return replay(now)
     const msg=error instanceof Error?error.message:String(error)
-    if(/RETURN_V2_UNIFIED_CONFLICT|malformed JSON|constraint failed|UNIQUE|FOREIGN KEY/i.test(msg))
-      reject('Заказ, цена, отправка, резерв или оплата изменились. Ничего не проведено.')
+    if(/RETURN_V2_UNIFIED_CONFLICT|malformed JSON|constraint failed|UNIQUE|FOREIGN KEY/i.test(msg)) {
+      const stage=msg.match(/RETURN_V2_UNIFIED_CONFLICT_([a-z_]+)/)?.[1]||'sql_integrity'
+      reject('Заказ, цена, отправка, резерв или оплата изменились (проверка: '+stage+'). Ничего не проведено.')
+    }
     throw error
   }
   const created=await getPosted(db,wanted.requestId)
