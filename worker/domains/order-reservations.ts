@@ -9,6 +9,7 @@ import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './ca
 import { admitOrderReservationAtomically } from './reservation-admission.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 // Keep existing imports stable; canonical SKU resolution lives in one cohesive module.
 export * from './order-catalog-identity.ts';
@@ -340,6 +341,15 @@ export async function releaseOrderReservationV2(db: D1Database, orderItemId: num
   if (status === 'released' || status === 'fulfilled') return false;
 
   const statements: D1PreparedStatement[] = [];
+  if(v2Gate.v2SchemaReady){
+    // All legacy physical issue/observation/stock writes share this D1
+    // transaction, so concurrent Return V2 invalidates the WHOLE batch.
+    statements.push(db.prepare(
+      `SELECT json('V1_HANDOVER_SHIPPING_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+         AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId))
+  }
   if (status === 'active' && toInt(reservation.variant_id, 0)) {
     statements.push(db.prepare(
       `UPDATE inventory_stock
@@ -1460,6 +1470,8 @@ export async function fulfillOrderReservationsV2(
   timestamp: string,
   options: ShipmentFulfillmentOptions = {},
 ) {
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,
+    options.stockConfirmationOperation==='handover'?'stock_handover':'shipping');
   const scopedOrderItemIds = Array.from(new Set((options.orderItemIds || []).map((value) => toInt(value, 0)).filter((value) => value > 0)));
   const stockConfirmationOperation = options.stockConfirmationOperation === 'handover' ? 'handover' : 'shipping';
   if (stockConfirmationOperation === 'handover' && scopedOrderItemIds.length !== 1) {
@@ -1541,9 +1553,13 @@ export async function fulfillOrderReservationsV2(
     // the same commit API so a retry cannot create a split brain between the order and inventory.
     let shippingCommitted = false;
     if (options.shippingDate) {
+      const exclusion=v2Gate.v2SchemaReady
+        ? ' AND '+legacyV1WriteExclusionSql('orders.id') : '';
       const shippingUpdate = await db.prepare(
-        `UPDATE orders SET shipping_status = 'sent', shipping_date = ?, updated_at = ? WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`
+        `UPDATE orders SET shipping_status = 'sent', shipping_date = ?, updated_at = ? WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`+exclusion
       ).bind(options.shippingDate, timestamp, orderId).run();
+      if(v2Gate.v2SchemaReady && toInt(shippingUpdate.meta?.changes,0)===0)
+        await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping');
       shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
     }
     return { fulfilled: 0, unresolved: 0, observationsApplied: 0, shippingCommitted };
@@ -1976,7 +1992,14 @@ export async function fulfillOrderReservationsV2(
     ).bind(options.shippingDate, timestamp, orderId));
   }
 
-  const results = statements.length ? await db.batch(statements) : [];
+  let results: D1Result<unknown>[];
+  try{
+    results = statements.length ? await db.batch(statements) : [];
+  }catch(error){
+    if(v2Gate.v2SchemaReady)
+      await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping');
+    throw error;
+  }
   const shippingCommitted = shippingStatementIndex >= 0 && toInt(results[shippingStatementIndex]?.meta?.changes, 0) > 0;
   return {
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
