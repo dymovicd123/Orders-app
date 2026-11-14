@@ -1,6 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
+import { OrderReturnV2Flow } from './OrderReturnV2Flow'
 import '../../styles/194-return-smart-ux.css'
 type SectionContext = Record<string, any>
 
@@ -61,6 +62,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
       : 'Без возврата в остатки'
 
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
+  const [v2VisibleOrderId,setV2VisibleOrderId]=useState(-1)
   const returnReceiptNeedsRecovery = (item: any) => Boolean(
     item.physicalTracking
     && item.physicalReceivedAt
@@ -265,7 +267,18 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                 </section>
               ) : null}
     
-              <section className="mini-panel debt-form-panel" ref={returnFormRef}>
+              <div ref={returnFormRef} className="return-form-v2-bridge">
+                <OrderReturnV2Flow
+                  order={returnSelectedOrder}
+                  formatMoney={formatMoney}
+                  SmartPickerInput={SmartPickerInput}
+                  paymentMethods={suggestionValues.paymentMethods}
+                  onAvailability={(id,visible)=>setV2VisibleOrderId(visible?id:-1)}
+                  onSaved={()=>void loadReturnHistory()}
+                />
+              <section className="mini-panel debt-form-panel"
+                style={returnSelectedOrder && Number(returnSelectedOrder.id)===v2VisibleOrderId
+                  ? {display:'none'} : undefined}>
                 <div className="mini-panel-head">
                   <h3>Форма возврата</h3>
                   <div className="mini-panel-actions">
@@ -580,7 +593,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 )}
               </section>
-    
+              </div>
+
               <section className="mini-panel debt-history-panel history-cards-panel">
                 <div className="mini-panel-head history-section-head">
                   <div>

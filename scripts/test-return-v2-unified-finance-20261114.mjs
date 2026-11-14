@@ -830,5 +830,71 @@ assert.equal(preMigrations.v2SchemaReady,false)
 oldSql.exec('CREATE TABLE return_v2_postings(order_id INTEGER)')
 await assert.rejects(readReturnV2LegacyMutationGate(oldDb,11),/не полностью/)
 oldSql.close()
+// Integrated, authenticated HTTP Return V2 must remain OFF by default;
+// it is callable only on a fully migrated schema and with explicit rollout.
+const v2Endpoint='/api/orders/9953/returns/v2'
+async function callV2Http(method,path,body,expected=200,authenticated=true){
+ const response=await worker.fetch(new Request('https://test-only.invalid'+path,{
+  method,headers:{
+   ...(authenticated?{Cookie:'orders_session='+token}:{}),
+   ...(body?{'Content-Type':'application/json'}:{})
+  },...(body?{body:JSON.stringify(body)}:{})
+ }),{DB,RETURN_V2_ENABLED:'true'})
+ const data=await response.json()
+ assert.equal(response.status,expected,method+' '+path+' '+JSON.stringify(data))
+ return data
+}
+addOrder(9953,9963,'V2U-API-ONE-UNSENT',1300)
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(9953,'2026-11-15','KASPI',1300,'primary')").run()
+const featureOff=await api('GET',v2Endpoint+'/preview')
+assert.equal(featureOff.enabled,false)
+const postWhileOff=await api('POST',v2Endpoint,{
+ requestId:'v2u-disabled-new-operation-01'
+},409)
+assert.equal(postWhileOff.code,'return_v2_disabled')
+const featureUnauth=await callV2Http('GET',v2Endpoint+'/preview',undefined,401,false)
+assert.equal(featureUnauth.ok,false)
+const apiPreview=await callV2Http('GET',v2Endpoint+'/preview')
+assert.equal(apiPreview.enabled,true)
+assert.equal(apiPreview.eligible,true)
+assert.deepEqual(apiPreview.defaultLineIds,[9963])
+assert.equal(apiPreview.evidence.lines[0].proposedAction,'cancel_unshipped_reservation')
+assert.equal(apiPreview.evidence.lines[0].selectedQuantity,1)
+assert.equal(apiPreview.finance.currentSale,1300)
+assert.equal(apiPreview.finance.netHeld,1300)
+const apiPhysicalBefore={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()}
+const apiReturnRequest={
+ requestId:'v2u-authenticated-real-api-0001',
+ expectedOrderVersion:apiPreview.evidence.orderVersion,
+ items:[{orderItemId:9963,quantity:1,receiptIntent:'pending'}],
+ refundAmount:1300,refundMethod:'KASPI'
+}
+const apiCommitted=await callV2Http('POST',v2Endpoint,apiReturnRequest,201)
+assert.equal(apiCommitted.contractPosted,true)
+assert.equal(apiCommitted.receipt.immediateIntakesComplete,true)
+assert.equal(apiCommitted.remainingSale,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9953').get().n,1)
+assert.equal(sql.prepare('SELECT total_amount,return_amount FROM orders WHERE id=9953').get().total_amount,0)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},{
+ quantity:apiPhysicalBefore.quantity,
+ reserved_quantity:apiPhysicalBefore.reserved_quantity-1
+})
+const apiPreviewAfter=await callV2Http('GET',v2Endpoint+'/preview')
+assert.equal(apiPreviewAfter.eligible,false)
+assert.equal(apiPreviewAfter.exclusive,true)
+const apiIdempotent=await callV2Http('POST',v2Endpoint,apiReturnRequest,200)
+assert.equal(apiIdempotent.replayed,true)
+assert.equal(apiIdempotent.returnId,apiCommitted.returnId)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9953').get().n,1)
+const badReuse=await callV2Http('POST',v2Endpoint,{...apiReturnRequest,refundAmount:0,refundMethod:''},409)
+assert.equal(badReuse.code,'return_v2_unified_posting_conflict')
+const afterApiFinance=await readVersionedReturnMoney(DB,9953)
+assert.equal(afterApiFinance.currentSale,0)
+assert.equal(afterApiFinance.paidOut,1300)
+assert.equal(afterApiFinance.netHeld,0)
+const receiptReplay=await callV2Http('POST',v2Endpoint+'/'+apiCommitted.postingId+'/receipt',{})
+assert.equal(receiptReplay.immediateIntakesComplete,true)
+const foreignReceipt=await callV2Http('POST','/api/orders/9951/returns/v2/'+apiCommitted.postingId+'/receipt',{},404)
+assert.equal(foreignReceipt.code,'return_v2_wrong_receipt')
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
