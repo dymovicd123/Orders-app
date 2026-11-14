@@ -1,6 +1,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { priorIssueEvidenceSql } from './order-prior-issued-origin.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 const fail = (message:string):never => { throw new CriticalOperationConflictError(message) }
 
@@ -21,6 +22,7 @@ export async function cancelExactOrderDispatchItem(
     if(replay.dispatch_item_id!==dispatchItemId)fail('Это действие уже использовано для другой вещи.')
     return {ok:true,alreadyCorrected:true,dispatchItemId}
   }
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
   const line=await db.prepare(
     `SELECT di.*,d.order_id,d.created_at AS dispatch_created_at,d.status AS dispatch_status,
             o.order_status,o.archived_at,oi.stock_writeoff_status,oi.quantity AS order_item_quantity
@@ -143,6 +145,13 @@ export async function cancelExactOrderDispatchItem(
   const reactivateReservation=restorePhysical && accountedQuantity===quantity && Boolean(stock)
     && stock!.quantity + accountedQuantity >= stock!.reserved_quantity + quantity
   const statements:D1PreparedStatement[]=[]
+  if(v2Gate.v2SchemaReady){
+    statements.push(db.prepare(
+      `SELECT json('V1_DISPATCH_CANCEL_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+         AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId))
+  }
   statements.push(db.prepare(
     `INSERT INTO inventory_model_meta(key,value,updated_at)
      SELECT 'human_inventory_v2','__dispatch_cancel_conflict__',?
@@ -232,6 +241,8 @@ export async function cancelExactOrderDispatchItem(
       .bind(stamp,orderId),
   )
   try{await db.batch(statements)}catch(error){
+    if(v2Gate.v2SchemaReady)
+      await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
     const reason=cleanText(error instanceof Error?error.message:error)
     if(/unique constraint failed/i.test(reason)){
       const found=await db.prepare('SELECT dispatch_item_id FROM order_dispatch_corrections WHERE request_id=?').bind(requestId).first<{dispatch_item_id:number}>()
