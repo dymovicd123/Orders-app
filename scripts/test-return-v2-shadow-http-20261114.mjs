@@ -144,8 +144,19 @@ const core=()=>({
  exchanges:count('exchanges','order_id=?',[orderId]),
  moneyEvents:count('financial_events','order_id=?',[orderId]),
 })
-const before=core()
 const input={orderId,expectedTotalAmount:60000,items:[{orderItemId:line.id,quantity:1}]}
+const beforeDispatch=core()
+const notIssued=await http('POST','/api/returns/preview-v2',input)
+assert.equal(notIssued.status,409,'Unissued goods are not a physical Return')
+assert.equal(notIssued.data.code,'return_v2_unissued')
+assert.deepEqual(core(),beforeDispatch,'Not-issued preview cannot mutate stock or reservations')
+const initialDispatch=await http('PATCH','/api/orders/'+orderId+'/shipping',{
+ requestId:'v2-shadow-ship',shippingStatus:'sent',shippingDate:'2026-10-31'
+})
+assert.equal(initialDispatch.status,200,'Existing shipping failed: '+JSON.stringify(initialDispatch))
+assert.equal(oldStock().quantity,0)
+assert.equal(reserve(line.id).status,'fulfilled')
+const before=core()
 const preview=await http('POST','/api/returns/preview-v2',input)
 assert.equal(preview.status,200,'Read-only preview: '+JSON.stringify(preview))
 assert.equal(preview.data.mode,'return_v2_shadow_preview')
