@@ -176,7 +176,17 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
              FROM payments p WHERE p.order_id=o.id)=?
           AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id)
           AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id)
-          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.order_id=o.id)`
+          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.order_id=o.id)
+          -- Old critical payment stages can leave a real payment before its
+          -- financial event/cache is finished. Posting V2 during that window
+          -- would orphan the old event, so refuse the Return atomically.
+          AND NOT EXISTS(
+            SELECT 1 FROM critical_operations co
+            WHERE co.operation_type='order_payment_create' AND co.status='started'
+              AND (CAST(json_extract(co.context_json,'$.orderId') AS INTEGER)=o.id
+                OR CAST(json_extract(co.context_json,'$.plan.orderId') AS INTEGER)=o.id)
+              AND (co.step<>'started' OR co.lease_token IS NOT NULL OR co.target_id IS NOT NULL)
+          )`
     ).bind(date,wanted.refund,wanted.method||null,stamp,wanted.orderId,initialTotal,
       wanted.version,initialTotal,received),
     changed(db,'return_header'),

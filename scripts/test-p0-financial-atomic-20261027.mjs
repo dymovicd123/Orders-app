@@ -22,7 +22,11 @@ function sqlFrom(source, start, guard) {
     from=end+1
   }
 }
+// This fixture has intentionally no Return V2 tables: instantiate the
+// optional production schema-aware clause as empty, like the real old-schema path.
 const paymentSql=sqlFrom(moneySource,'INSERT INTO payments (order_id, payment_date, method, amount, payment_kind, comment, created_at)','CASE WHEN EXISTS')
+  .replace('\${v2Exclusion}','')
+assert(!paymentSql.includes('\${'),'The extracted V1 SQL must be executable on an old schema')
 const refundSql=sqlFrom(returnsSource,'INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)','CASE WHEN ? = 0 OR EXISTS')
 assert.match(paymentSql,/CASE WHEN EXISTS/)
 assert.match(refundSql,/CASE WHEN \? = 0 OR EXISTS/)
