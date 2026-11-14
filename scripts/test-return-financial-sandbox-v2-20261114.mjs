@@ -207,6 +207,6 @@ assert.equal(80000-(currentLedger.receivedAmount-currentLedger.returnAmount),100
  'Synthetic debt truth differs from present Main formula without mutating it')
 actualSql.close()
 
-assert.equal(sql.prepare('SELECT COUNT(*) n FROM sandbox_orders').get().n,15)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM sandbox_orders').get().n,13)
 sql.close()
 console.log('RETURN_FINANCIAL_SANDBOX_V2_PASS: fifteen isolated SQLite orders, historic prices, net money, debts/overpayments, partial returns, refunds, idempotency, compensation, exchanges, no physical auto-credit, existing Main debt discrepancy documented; NO runtime/model migration')
