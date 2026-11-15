@@ -1614,5 +1614,66 @@ assert.deepEqual(legacyStock(),legacyStockBeforeV2)
 assert.equal((await readVersionedReturnMoney(DB,10200)).customerDebt,900)
 
 
+// Historical sent order: legacy warehouse issue was recorded as fulfilled
+// before dispatch rows existed. One of two units was already returned by V1.
+// Return V2 must normalize the first unit and cancel ONLY the remaining unit.
+addOrder(10330,10331,'V2U-LEGACY-SENT-PARTIAL-RETURN',1000,2)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-2 WHERE id=9541').run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+2 WHERE id=10251').run()
+sql.prepare('UPDATE order_items SET variant_id=10250,stock_writeoff_status=? WHERE id=10331').run('fulfilled')
+sql.prepare('UPDATE inventory_reservations SET variant_id=10250,status=?,fulfilled_at=? WHERE order_item_id=10331')
+ .run('fulfilled',legacyNow)
+sql.prepare("UPDATE inventory_stock SET quantity=quantity-2,reserved_quantity=reserved_quantity-2 WHERE id=10251").run()
+sql.prepare("UPDATE orders SET shipping_status='sent' WHERE id=10330").run()
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10330,'2026-11-01','KASPI',2000,'primary')").run()
+sql.prepare(`INSERT INTO returns(id,order_id,return_date,amount,payment_method,status,created_at)
+ VALUES (10332,10330,'2026-11-02',1000,'KASPI','completed',?)`).run(legacyNow)
+sql.prepare(`INSERT INTO return_items(id,return_id,order_item_id,product_name_snapshot,
+ quantity,amount,inventory_source,restocked,physical_tracking,contract_quantity_applied,created_at)
+ VALUES (10333,10332,10331,'V2U-LEGACY-SENT-PARTIAL-RETURN',1,0,NULL,0,1,0,?)`).run(legacyNow)
+const oldLegacyPhysical=legacyStock()
+const partiallyReturned=await callV2Http('GET','/api/orders/10330/returns/v2/preview')
+assert.equal(partiallyReturned.eligible,true)
+assert.equal(partiallyReturned.finance.currentSale,1000)
+assert.equal(partiallyReturned.finance.paidOut,1000)
+assert.equal(partiallyReturned.evidence.lines[0].availableQuantity,1)
+assert.equal(partiallyReturned.evidence.lines[0].proposedAction,'physical_return_pending')
+assert.equal(partiallyReturned.evidence.lines[0].reasonCode,'legacy_sent_fulfilled_without_dispatch')
+const partialPosted=await callV2Http('POST','/api/orders/10330/returns/v2',{
+ requestId:'v2u-legacy-sent-partial-new-return-0001',
+ expectedOrderVersion:partiallyReturned.evidence.orderVersion,
+ items:[{orderItemId:10331,quantity:1,receiptIntent:'pending'}],
+ refundAmount:1000,refundMethod:'KASPI'
+},201)
+assert.equal(partialPosted.remainingSale,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10331').get().quantity,0)
+assert.equal(sql.prepare('SELECT quantity FROM return_items WHERE return_id=?').get(partialPosted.returnId).quantity,1)
+assert.equal(sql.prepare('SELECT COUNT(*) AS count FROM return_v2_legacy_baseline_items WHERE order_item_id=10331').get().count,1)
+assert.equal(sql.prepare('SELECT return_amount,debt_amount FROM orders WHERE id=10330').get().return_amount,2000)
+assert.deepEqual(legacyStock(),oldLegacyPhysical,
+ 'No phantom physical +1 for either old or new return')
+const undoOldSent=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:partialPosted.postingId,
+ requestId:'v2u-legacy-sent-partial-undo-0001',
+ reason:'Отмена нового возврата при сохранении старого',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:true,recoveryMethod:'KASPI'
+})
+assert.equal(undoOldSent.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10331').get().quantity,1)
+assert.equal(sql.prepare('SELECT total_amount,return_amount,debt_amount FROM orders WHERE id=10330').get().total_amount,1000)
+assert.equal(sql.prepare('SELECT return_amount FROM orders WHERE id=10330').get().return_amount,1000)
+assert.deepEqual(legacyStock(),oldLegacyPhysical)
+assert.equal((await readVersionedReturnMoney(DB,10330)).customerDebt,0)
+
+// The same fulfilled reserve without the sent-order proof is NOT enough.
+addOrder(10340,10341,'V2U-ISSUED-BUT-UNSENT-BLOCKED',1000)
+sql.prepare("UPDATE order_items SET stock_writeoff_status='fulfilled' WHERE id=10341").run()
+sql.prepare("UPDATE inventory_reservations SET status='fulfilled',fulfilled_at=? WHERE order_item_id=10341").run(legacyNow)
+const noHeaderSend=await callV2Http('GET','/api/orders/10340/returns/v2/preview')
+assert.equal(noHeaderSend.eligible,false)
+assert.equal(noHeaderSend.evidence.lines[0].reasonCode,'issued_before_shipping_unconfirmed')
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
