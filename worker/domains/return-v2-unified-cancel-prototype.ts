@@ -4,6 +4,7 @@
 // Restores unshipped reservations ONLY when exact free physical capacity remains.
 // Cash recovery is recorded ONLY after explicit confirmation of actual receipt.
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {noUnreversedDispatchSql} from './return-v2-dispatch-correction-proof.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export class ReturnV2UnifiedCancelConflict extends Error{
@@ -306,8 +307,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
        SET quantity=?,status=?,released_at=NULL,updated_at=?
        WHERE id=? AND order_id=? AND order_item_id=? AND quantity=?
          AND status=? AND updated_at=?
-         AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
-           WHERE di.order_item_id=inventory_reservations.order_item_id)`)
+         AND ${noUnreversedDispatchSql('inventory_reservations.order_item_id')}`)
        .bind(l.original_line_quantity,targetStatus,stamp,l.reservation_id,
          p.order_id,l.order_item_id,l.reservation_quantity,
          l.reservation_status,p.posted_at))

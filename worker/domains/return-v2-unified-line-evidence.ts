@@ -52,7 +52,7 @@ type ReservationRow = {
 type DispatchRow = {
   order_item_id:number;quantity:number;cancelled_quantity:number
   source_type:string;variant_id:number|null;movement_id:number|null
-  movement_valid:number
+  movement_valid:number;correction_valid:number
 }
 
 export class ReturnV2LineEvidenceConflict extends Error {
@@ -110,7 +110,12 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
            AND m.reference_type='order_dispatch'
            AND m.inventory_source=di.source_type
            AND m.variant_id=di.variant_id
-       ) THEN 1 ELSE 0 END AS movement_valid
+       ) THEN 1 ELSE 0 END AS movement_valid,
+       CASE WHEN EXISTS(
+         SELECT 1 FROM order_dispatch_corrections dc
+         WHERE dc.dispatch_item_id=di.id AND dc.quantity=di.quantity
+           AND dc.stock_restored=1
+       ) THEN 1 ELSE 0 END AS correction_valid
        FROM order_dispatch_items di
        JOIN order_dispatches d ON d.id=di.dispatch_id
        WHERE d.order_id=? ORDER BY di.order_item_id,di.id`
@@ -178,6 +183,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
     const tasks=workshopTasks.get(id)||[]
+    const dispatchFullyReversed=ds.length>0&&ds.every(d=>
+      amount(d.quantity)!==null&&d.quantity>0
+      &&d.cancelled_quantity===d.quantity
+      &&Number(d.movement_valid)===1&&Number(d.correction_valid)===1)
     let action:ReturnV2LineAction='needs_review'
     let reasonCode='unknown_state'
     let message='Нет однозначного основания для складского действия. Не изменяйте остаток автоматически.'
@@ -195,6 +204,12 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     }else if(badNumbers||badSource||oldReturned>0){
       reasonCode='legacy_quantity_or_source_conflict'
       message='Состав, старые возвраты или складская идентичность требуют проверки.'
+    }else if(dispatchFullyReversed&&dispatched===0&&!isWorkshop
+      &&nonCurrent.length===0&&fulfilledQty===0&&active.length===1
+      &&unresolvedQty===0&&activeQty===contractQuantity&&stockStatus==='reserved'){
+      action='cancel_unshipped_reservation'
+      reasonCode='corrected_dispatch_restored_reservation'
+      message='Отправка отменена, вещь возвращена в складской учёт и резерв восстановлен. При отмене покупки снимаем резерв без нового прихода.'
     }else if(ds.length && ds.some(d=>d.cancelled_quantity>0)){
       reasonCode='corrected_dispatch_requires_review'
       message='Есть отменённая отправка. Проверьте, где товар и что уже учтено.'
