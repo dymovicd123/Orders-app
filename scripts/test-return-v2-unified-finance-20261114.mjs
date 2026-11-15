@@ -1532,7 +1532,7 @@ assert.equal(unprovenReship.evidence.lines[0].reasonCode,'corrected_dispatch_req
 sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(10250,9521,'МУЖ','БОРДОВЫЙ','СТАНДАРТ','СТАНДАРТ','50','adult',1)").run()
 sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(10251,'warehouse',9521,10250,'V2U-LEGACY-BASELINE-TEST','МУЖ','БОРДОВЫЙ','СТАНДАРТ','СТАНДАРТ','50',10,0)").run()
 addCorrectedFixture(10200,10201,'LEGACY-RETURNED-BEFORE-V2',1000)
-sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE id=10251').run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE id=10051').run()
 sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10251').run()
 sql.prepare('UPDATE order_items SET variant_id=10250 WHERE id=10201').run()
 sql.prepare('UPDATE inventory_reservations SET variant_id=10250 WHERE order_item_id=10201').run()
@@ -1550,7 +1550,7 @@ sql.prepare(`INSERT INTO order_items
 sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10251').run()
 sql.prepare(`INSERT INTO inventory_reservations
  (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
- VALUES (10200,10202,'warehouse',9521,10050,1,'active',?,?)`).run(legacyNow,legacyNow)
+ VALUES (10200,10202,'warehouse',9521,10250,1,'active',?,?)`).run(legacyNow,legacyNow)
 sql.prepare("UPDATE orders SET total_amount=2050,shipping_status='not_sent' WHERE id=10200").run()
 sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10200,'2026-11-01','KASPI',300,'primary')").run()
 sql.prepare(`INSERT INTO returns
