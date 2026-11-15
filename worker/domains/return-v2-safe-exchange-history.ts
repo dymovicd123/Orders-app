@@ -36,7 +36,32 @@ export function unsafeActiveExchangeSql(orderIdSql:string):string {
                 ei.order_item_id IS NULL
                 OR ei.quantity<=0
                 OR oi.id IS NULL OR oi.order_id<>e.order_id
-                OR (ei.role='old' AND oi.quantity<>0)
+                OR (ei.role='old' AND oi.quantity<>0 AND NOT (
+                  oi.quantity>0
+                  AND EXISTS(SELECT 1 FROM orders original_order
+                    WHERE original_order.id=e.order_id AND original_order.shipping_status='sent')
+                  AND (SELECT COUNT(*) FROM inventory_reservations ir
+                    WHERE ir.order_item_id=oi.id AND ir.status='fulfilled')=1
+                  AND (SELECT COALESCE(SUM(ir.quantity),0) FROM inventory_reservations ir
+                    WHERE ir.order_item_id=oi.id AND ir.status='fulfilled')=
+                      oi.quantity
+                      +(SELECT COALESCE(SUM(old_ei.quantity),0)
+                        FROM exchange_items old_ei JOIN exchanges old_exchange
+                          ON old_exchange.id=old_ei.exchange_id
+                        WHERE old_ei.order_item_id=oi.id AND old_ei.role='old'
+                          AND old_exchange.order_id=e.order_id
+                          AND COALESCE(old_exchange.status,'completed')='completed')
+                      +(SELECT COALESCE(SUM(ul.contracted_quantity),0)
+                        FROM return_v2_unified_lines ul
+                        JOIN return_v2_unified_postings up ON up.id=ul.posting_id
+                        JOIN returns ret ON ret.id=up.return_id
+                        WHERE ul.order_item_id=oi.id
+                          AND ul.action='physical_return_pending'
+                          AND ret.status='completed')
+                      +(SELECT COALESCE(SUM(lb.quantity),0)
+                        FROM return_v2_legacy_baseline_items lb
+                        WHERE lb.order_item_id=oi.id)
+                ))
                 OR (ei.role='new' AND oi.quantity<0)
               ))
             AND NOT EXISTS(SELECT 1 FROM exchange_items ei
