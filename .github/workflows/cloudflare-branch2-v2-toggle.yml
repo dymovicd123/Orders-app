@@ -318,6 +318,45 @@ jobs:
           python3 .github/scripts/branch2_v2_stage_guard.py \
             --stage stage --expected-index 9
 
+      - name: Identify latest vs actively serving Branch2 Worker versions (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          root='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2'
+          def get(path):
+              request=urllib.request.Request(root+path,headers={
+                  'Authorization':'Bearer '+token,'Accept':'application/json'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  body=json.load(response)
+              if not body.get('success'):
+                  raise SystemExit('STOP: Cannot inspect Branch2 Worker versions/deployments.')
+              return body.get('result')
+          versions=get('/versions?per_page=5')
+          deployments=get('/deployments?per_page=5')
+          items=versions if isinstance(versions,list) else versions.get('versions',[])
+          deploys=deployments if isinstance(deployments,list) else deployments.get('deployments',[])
+          if not items or not deploys:
+              raise SystemExit('STOP: Empty Branch2 versions/deployments; cannot establish current live version.')
+          recent=[{'id':v.get('id'),'number':v.get('number')} for v in items[:5]]
+          active=[{'version_id':v.get('version_id'),'percentage':v.get('percentage')}
+                  for v in (deploys[0].get('versions') or [])]
+          print('BRANCH2 LATEST VERSION:',recent[0])
+          print('BRANCH2 ACTIVE DEPLOYMENT:',active)
+          print('BRANCH2 RECENT VERSIONS:',recent)
+          latest_id=recent[0]['id']
+          if not any(v['version_id']==latest_id and v['percentage']==100 for v in active):
+              print('::warning::Most recent Branch2 Worker version is NOT serving 100% traffic.')
+              print('This can explain Cloudflare API 10215 on secrets; DO NOT retry secret update.')
+          else:
+              print('Latest Branch2 Worker version appears to be fully deployed.')
+          print('No Main Worker API, code writes, D1 writes, or feature changes.')
+          PY
+
       - name: Independently confirm current test Worker binding and enabled flag (READ ONLY)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
