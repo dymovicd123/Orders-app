@@ -1,0 +1,32 @@
+name: Branch2 Return V2 Exchange SQL candidate full regression (one-time)
+on:
+  push:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: >-
+      startsWith(github.event.head_commit.message, 'Branch2: test isolated exchange SQL 20261115')
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Checkout exact candidate without touching Main
+        uses: actions/checkout@v4
+        with:
+          ref: 975463652df0c2201a63b57b414119570c8a9bf7
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify Branch2-only target and original schema
+        run: |
+          node scripts/test-branch2-environment.mjs
+      - name: Regression, quality, production build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run verify:return-v2-branch2
+          npm run release:check
+          npm run build
