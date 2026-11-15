@@ -98,7 +98,7 @@ def check_local_target(stage):
     # Validate both tracked environment identities *before* any mutating CLI.
     # This code is checked out from main but runs Wrangler exclusively with
     # the separately checked-out Branch2 configuration and exact D1 ID.
-    main_config_path = Path("wrangler.jsonc")
+    main_config_path = Path(__file__).resolve().parents[2] / "wrangler.jsonc"
     if not main_config_path.is_file():
         fail("Production identity file unavailable; cannot prove D1 separation.")
     main_config = main_config_path.read_text(encoding="utf-8")
