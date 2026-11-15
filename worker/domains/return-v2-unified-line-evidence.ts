@@ -185,6 +185,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
     const tasks=workshopTasks.get(id)||[]
+    const legacySentIssued=!isWorkshop&&String(order.shipping_status)==='sent'
+      &&ds.length===0&&fulfilled.length===1&&fulfilledQty===contractQuantity
+      &&activeQty===0&&unresolvedQty===0&&nonCurrent.length===0
+      &&stockStatus==='fulfilled'&&['warehouse','boutique'].includes(source)
     const dispatchFullyReversed=ds.length>0&&ds.every(d=>
       amount(d.quantity)!==null&&d.quantity>0
       &&d.cancelled_quantity===d.quantity
@@ -203,7 +207,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     if(rootProblems.length){
       reasonCode=rootProblems[0]
       message='Заказ или цены требуют проверки перед изменением продажи.'
-    }else if(badNumbers||badSource||oldReturned>0){
+    }else if(badNumbers||badSource||(oldReturned>0&&!legacySentIssued)){
       reasonCode='legacy_quantity_or_source_conflict'
       message='Состав, старые возвраты или складская идентичность требуют проверки.'
     }else if(dispatchFullyReversed&&dispatched===0&&!isWorkshop
@@ -234,8 +238,14 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         message='Отправка есть, но складская выдача или резерв ей не соответствуют.'
       }
     }else if(dispatched===0&&ds.length===0&&!isWorkshop&&fulfilledQty>0){
-      reasonCode='issued_before_shipping_unconfirmed'
-      message='Склад уже списал товар, но отправка клиенту не подтверждена. Не начислять приход.'
+      if(legacySentIssued){
+        action='physical_return_pending'
+        reasonCode='legacy_sent_fulfilled_without_dispatch'
+        message='Старый заказ отмечен отправленным, складская выдача подтверждена. Покупка отменяется, физический приход не начисляется до приёмки.'
+      }else{
+        reasonCode='issued_before_shipping_unconfirmed'
+        message='Склад уже списал товар, но отправка клиенту не подтверждена. Не начислять приход.'
+      }
     }else if(dispatched===0&&ds.length===0&&!isWorkshop
       &&String(order.shipping_status)==='sent'){
       reasonCode='legacy_order_sent_without_line_proof'
