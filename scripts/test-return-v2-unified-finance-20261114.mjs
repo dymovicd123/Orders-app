@@ -896,5 +896,103 @@ const receiptReplay=await callV2Http('POST',v2Endpoint+'/'+apiCommitted.postingI
 assert.equal(receiptReplay.immediateIntakesComplete,true)
 const foreignReceipt=await callV2Http('POST','/api/orders/9951/returns/v2/'+apiCommitted.postingId+'/receipt',{},404)
 assert.equal(foreignReceipt.code,'return_v2_wrong_receipt')
+
+// Exactly the same cancelled-unshipped line may now be reduced twice, but
+// only while its original active reservation and price prove each reduction.
+addOrder(9954,9964,'V2U-API-SAME-ITEM',1250,2)
+const sameItemHttpPreview=await callV2Http('GET','/api/orders/9954/returns/v2/preview')
+assert.equal(sameItemHttpPreview.evidence.lines[0].availableQuantity,2)
+const sameItemStockStart={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()}
+const sameItemFirst=await callV2Http('POST','/api/orders/9954/returns/v2',{
+ requestId:'v2u-api-same-reserve-first-0001',
+ expectedOrderVersion:sameItemHttpPreview.evidence.orderVersion,
+ items:[{orderItemId:9964,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(sameItemFirst.remainingSale,1250)
+assert.equal(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get().reserved_quantity,
+ sameItemStockStart.reserved_quantity-1)
+const sameItemRemaining=await callV2Http('GET','/api/orders/9954/returns/v2/preview')
+assert.equal(sameItemRemaining.eligible,true)
+assert.equal(sameItemRemaining.evidence.lines[0].availableQuantity,1)
+assert.equal(sameItemRemaining.evidence.lines[0].proposedAction,'cancel_unshipped_reservation')
+const sameItemSecondRequest={
+ requestId:'v2u-api-same-reserve-second-0001',
+ expectedOrderVersion:sameItemRemaining.evidence.orderVersion,
+ items:[{orderItemId:9964,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+}
+const sameItemSecond=await callV2Http('POST','/api/orders/9954/returns/v2',sameItemSecondRequest,201)
+assert.equal(sameItemSecond.remainingSale,0)
+assert.equal(sameItemSecond.fullTermination,true)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},{
+ quantity:sameItemStockStart.quantity,
+ reserved_quantity:sameItemStockStart.reserved_quantity-2
+})
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9954').get().n,2)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=9964').get().n,0)
+assert.equal((await readVersionedReturnMoney(DB,9954)).paidOut,0)
+const sameItemReplay=await callV2Http('POST','/api/orders/9954/returns/v2',sameItemSecondRequest,200)
+assert.equal(sameItemReplay.replayed,true)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9954').get().n,2)
+
+// A previously PHYSICALLY received Return MUST NOT be undone using the
+// simple cancellation route, even with all client-side confirmations.
+const impossibleCancel=await callV2Http('POST',
+ `/api/orders/9551/returns/v2/${returned.postingId}/cancel`,{
+ requestId:'v2u-http-forbid-received-cancel-001',
+ reason:'Склад уже принимал товар',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,recoveryMethod:'KASPI'
+},409)
+assert.equal(impossibleCancel.code,'return_v2_unified_cancel_conflict')
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(returned.returnId).status,'completed')
+
+// Before actual physical intake, a single full Return may be cancelled
+// with explicit proof of inventory availability and cash received back.
+const apiCancelablePreview=await callV2Http('GET',v2Endpoint+'/preview')
+assert.equal(apiCancelablePreview.cancellation.postingId,apiCommitted.postingId)
+assert.equal(apiCancelablePreview.cancellation.available,true)
+assert.equal(apiCancelablePreview.cancellation.hasUnsent,true)
+assert.equal(apiCancelablePreview.cancellation.hasSent,false)
+const cancelEndpoint=v2Endpoint+'/'+apiCommitted.postingId+'/cancel'
+const cancelInput={
+ requestId:'v2u-http-cancel-unreceived-00001',
+ reason:'Клиент отменил возврат и решил купить вновь',
+ shippedGoodsUnreceivedConfirmed:false,
+ reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,
+ recoveryMethod:'KASPI'
+}
+const noProof=await callV2Http('POST',cancelEndpoint,{
+ ...cancelInput,refundRecoveredConfirmed:false
+},409)
+assert.equal(noProof.code,'return_v2_unified_cancel_conflict')
+const preUndo={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()}
+const cancelResult=await callV2Http('POST',cancelEndpoint,cancelInput)
+assert.equal(cancelResult.ok,true)
+assert.equal(cancelResult.cancelled,true)
+assert.equal(cancelResult.replayed,false)
+assert.equal(cancelResult.cashRecovered,1300)
+assert.equal(cancelResult.physicalStockDelta,0)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},{
+ quantity:preUndo.quantity,reserved_quantity:preUndo.reserved_quantity+1
+})
+assert.equal(sql.prepare('SELECT status FROM returns WHERE id=?').get(apiCommitted.returnId).status,'cancelled')
+assert.equal((await readVersionedReturnMoney(DB,9953)).paidOut,0)
+assert.equal((await readVersionedReturnMoney(DB,9953)).currentSale,1300)
+const cancelledAgain=await callV2Http('POST',cancelEndpoint,cancelInput)
+assert.equal(cancelledAgain.replayed,true)
+const changedCancel=await callV2Http('POST',cancelEndpoint,{
+ ...cancelInput,reason:'Подменили причину'
+},409)
+assert.equal(changedCancel.code,'return_v2_unified_cancel_conflict')
+const wrongCancelOrder=await callV2Http('POST',
+ '/api/orders/9954/returns/v2/'+apiCommitted.postingId+'/cancel',cancelInput,404)
+assert.equal(wrongCancelOrder.code,'return_v2_wrong_cancel')
+const afterUndoPreview=await callV2Http('GET',v2Endpoint+'/preview')
+assert.equal(afterUndoPreview.exclusive,true)
+assert.equal(afterUndoPreview.cancellation.available,false)
+assert.equal(afterUndoPreview.eligible,false)
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
