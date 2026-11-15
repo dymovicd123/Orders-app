@@ -35,6 +35,13 @@ jobs:
           ("items","SELECT oi.order_id,oi.id,oi.quantity,oi.unit_price,oi.line_total,oi.stock_writeoff_status,oi.is_workshop,\n oi.source_type,\n (SELECT COUNT(*) FROM inventory_reservations r WHERE r.order_item_id=oi.id AND r.status='active') AS active_res,\n (SELECT COUNT(*) FROM inventory_reservations r WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled_res,\n (SELECT COUNT(*) FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.quantity>di.cancelled_quantity) AS dispatched\n FROM order_items oi WHERE oi.order_id IN (2196,2197,2198,2199,2205) ORDER BY oi.order_id,oi.id"),
           ("cash","SELECT o.id AS order_id,\n (SELECT COALESCE(SUM(p.amount),0) FROM payments p WHERE p.order_id=o.id AND p.amount>0) paid,\n (SELECT COALESCE(SUM(r.amount),0) FROM returns r WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled') refunded,\n (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0) line_sum\n FROM orders o WHERE o.id IN (2196,2197,2198,2199,2205)")
           ]
+          queries.append(("exchange_items", """
+          SELECT ei.exchange_id,ei.id,ei.role,ei.order_item_id,ei.quantity,
+            oi.quantity AS current_qty,oi.unit_price,oi.line_total,oi.stock_writeoff_status
+          FROM exchange_items ei LEFT JOIN order_items oi ON oi.id=ei.order_item_id
+          WHERE ei.exchange_id IN (95,96,97)
+          ORDER BY ei.exchange_id,ei.role,ei.id
+          """))
           for name,sql in queries:
               if not sql.lstrip().upper().startswith('SELECT '):
                   raise SystemExit('STOP nonread query')
