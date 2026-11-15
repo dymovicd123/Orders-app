@@ -6,9 +6,11 @@ are database metadata GET or a SELECT of SQLite schema-capability counters.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -16,6 +18,9 @@ import urllib.request
 EXPECTED_WORKER = "orders-app-branch2"
 EXPECTED_DB = "orders_db_branch2_mirror_20261027"
 EXPECTED_DB_ID = "0904a573-21ff-44d8-93b0-c9200f771702"
+EXPECTED_MAIN_WORKER = "orders-app"
+EXPECTED_MAIN_DB = "orders_db_prod"
+EXPECTED_MAIN_DB_ID = "17e68a41-1d58-4a36-8a63-47c3e32443c4"
 WORKFLOW_NAME = "Cloudflare Branch2 - Backup and Prepare Return V2"
 TABLES = (
     "return_v2_prepared_operations",
@@ -50,6 +55,19 @@ MIGRATIONS = (
     "0130_return_v2_unified_cancel_prototype.sql",
     "0131_return_v2_metadata_edits.sql",
     "0132_return_v2_resumed_dispatch_prototype.sql",
+)
+# Approved immutable Git blob digests for the exact ADDITIVE migration bytes.
+# If Branch2 changes these SQL files, stop and request a new source review.
+MIGRATION_BLOBS = (
+    "7e1c0e671c06665c46e28f27810c4aee73a9e948",
+    "4f42fac3c7b13ff3a0e9d48cba530ff87535ca1a",
+    "3395090a24f7a82f6d149a6f43ede4e8d7b8d5f6",
+    "8257c815c90e1611b91e31ca8f387fcf5d45220f",
+    "dd2cc5e2cb6a4c9d202d5528b8982ad52a12b7c8",
+    "e8cacf2eedb89344582e214a90175c13b96f0e42",
+    "6d8c8282efe6a3205dd3041083e42bf4006b94af",
+    "ff804aabdcf3087cfff06045e38f7130a9f032e4",
+    "9f7c75d56df907f448c6c1a64d5e0ae8482cc5f0",
 )
 # Expected cumulatively, using the *exact* migration source definitions.
 CHECKPOINTS = (
@@ -91,6 +109,25 @@ def http_json(url, token, body=None):
 
 
 def check_local_target(stage):
+    # Validate both tracked environment identities *before* any mutating CLI.
+    # This code is checked out from main but runs Wrangler exclusively with
+    # the separately checked-out Branch2 configuration and exact D1 ID.
+    main_config_path = Path(__file__).resolve().parents[2] / "wrangler.jsonc"
+    if not main_config_path.is_file():
+        fail("Production identity file unavailable; cannot prove D1 separation.")
+    main_config = main_config_path.read_text(encoding="utf-8")
+    def main_value(field):
+        found = re.findall(r'"' + re.escape(field) + r'"\s*:\s*"([^"]+)"', main_config)
+        if len(found) != 1:
+            fail("Could not unambiguously read Main " + field + ".")
+        return found[0]
+    if (main_value("name") != EXPECTED_MAIN_WORKER
+            or main_value("database_name") != EXPECTED_MAIN_DB
+            or main_value("database_id") != EXPECTED_MAIN_DB_ID):
+        fail("Main environment identity unexpectedly changed; aborting safely.")
+    if EXPECTED_DB_ID == EXPECTED_MAIN_DB_ID or EXPECTED_DB == EXPECTED_MAIN_DB:
+        fail("Branch2 and Main databases are not distinct.")
+
     config_file = stage / "wrangler.jsonc"
     if not config_file.is_file():
         fail("Expected branch2 wrangler.jsonc is missing.")
@@ -104,9 +141,17 @@ def check_local_target(stage):
         fail("Unexpected D1 database name/ID; refusing any remote operations.")
     if str(config.get("vars", {}).get("RETURN_V2_ENABLED", "")).lower() == "true":
         fail("Return V2 is already ON in Wrangler config. STOP and investigate.")
-    for migration in MIGRATIONS:
-        if not (stage / "migrations" / migration).is_file():
+    for migration, approved_blob in zip(MIGRATIONS, MIGRATION_BLOBS):
+        path = stage / "migrations" / migration
+        if not path.is_file():
             fail("Missing migration: " + migration)
+        content = path.read_bytes()
+        blob = hashlib.sha1(
+            b"blob " + str(len(content)).encode("ascii") + b"\0" + content
+        ).hexdigest()
+        if blob != approved_blob:
+            fail("Migration SQL differs from approved Branch2 bytes: " + migration)
+    print("PASS: separate Main/Branch2 identities and 9 approved SQL files.")
     return True
 
 
