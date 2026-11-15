@@ -91,7 +91,7 @@ async function preview(db:D1Database,orderId:number){
     (SELECT COUNT(*) FROM return_v2_unified_lines ul
       WHERE ul.posting_id=up.id AND ul.action='physical_return_pending') AS shipped_count,
     (SELECT COUNT(*) FROM return_v2_unified_lines ul
-      WHERE ul.posting_id=up.id AND ul.action<>'physical_return_pending') AS reserved_count,
+      WHERE ul.posting_id=up.id AND ul.action IN ('cancel_unshipped_reservation','cancel_unresolved_reservation')) AS reserved_count,
     (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=up.return_id
       AND (ri.physical_received_at IS NOT NULL OR ri.restocked<>0)) AS received_count,
     (SELECT COUNT(*) FROM inventory_lifecycle_events le
