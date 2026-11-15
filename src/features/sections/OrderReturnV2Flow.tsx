@@ -1,4 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
+import {OrderReturnV2Cancellation} from './OrderReturnV2Cancellation'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
@@ -11,6 +12,8 @@ type Preview={
  evidence:{orderVersion:string;lines:Line[]};
  finance:{currentSale:number;paidIn:number;paidOut:number;netHeld:number;
    maxRefund:number;customerDebt:number;customerOverpay:number};
+ cancellation?:{postingId:number;returnId:number;refundAmount:number;
+   hasSent:boolean;hasUnsent:boolean;available:boolean;reason:string}|null
 }
 type Props={
  order:{id:number;external_id:string}|null;
@@ -259,6 +262,12 @@ export function OrderReturnV2Flow({
         <div><span>Либо переплата клиенту</span><strong>{formatMoney(projectedOverpay)} ₸</strong></div>
       </div>
    </div>:null}
+   {preview?.cancellation?<OrderReturnV2Cancellation
+     key={`${orderId}:${preview.cancellation.postingId}`}
+     orderId={orderId} cancellation={preview.cancellation}
+     formatMoney={formatMoney} SmartPickerInput={SmartPickerInput}
+     paymentMethods={paymentMethods} onSaved={onSaved}
+   />:null}
    {error?<div className="history-note is-danger" role="alert"><strong>{error}</strong>
      {unknownResult?<span>Не создавайте новый запрос. Повторите прежнее сохранение с теми же параметрами.</span>:null}
    </div>:null}
