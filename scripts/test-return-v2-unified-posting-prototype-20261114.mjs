@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
+import {readVersionedReturnMoney} from '../worker/domains/return-v2-financial-projection.ts'
 
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
@@ -150,14 +151,56 @@ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE return_id
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9851 AND event_type=?').get('order_refund').n,0)
 assert.equal((await api('GET','/api/orders/9851/shipping/plan')).selectedQuantity,1,'Uncanceled reserved piece remains sendable')
 
-// The prototype intentionally blocks a second contractual operation until all V2 consumers migrate.
+// The remainder of an UNSHIPPED, same-reservation line is now allowed to
+// be cancelled again, without either physical +1 or a second release of
+// a unit already removed from reserved_quantity.
 const follow=await previewUnifiedReturnV2LineEvidence(DB,9851)
 assert.equal(follow.lines[0].selectedQuantity,1)
-await assert.rejects(postUnifiedReturnV2Prototype(DB,{
- requestId:'v2-unified-second-purchase-001',orderId:9851,expectedOrderVersion:follow.orderVersion,
+assert.equal(follow.lines[0].proposedAction,'cancel_unshipped_reservation')
+const nextInput={
+ requestId:'v2-unified-second-purchase-001',orderId:9851,
+ expectedOrderVersion:follow.orderVersion,
  items:[{orderItemId:9861,quantity:1}],refundAmount:0
-}),/уже участвовала|требует отдельной сверки/)
-assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9851').get().total_amount,1250)
+}
+const beforeSameLine={
+ stock:{...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},
+ returns:sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9851').get().n
+}
+const raceDb={
+ ...DB,
+ async batch(statements){
+  sql.prepare('UPDATE return_v2_unified_lines SET reservation_release=0 WHERE posting_id=?')
+   .run(partial.postingId)
+  return DB.batch(statements)
+ }
+}
+await assert.rejects(postUnifiedReturnV2Prototype(raceDb,{
+ ...nextInput,requestId:'v2-unified-same-item-atomic-race-001'
+}),/Ничего не проведено|изменились|проверка/)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9851').get().n,beforeSameLine.returns)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()},beforeSameLine.stock)
+sql.prepare('UPDATE return_v2_unified_lines SET reservation_release=contracted_quantity WHERE posting_id=?')
+ .run(partial.postingId)
+const next=await postUnifiedReturnV2Prototype(DB,nextInput)
+assert.equal(next.remainingSale,0)
+assert.equal(next.fullTermination,true)
+assert.equal(next.cashRefund,0)
+assert.equal(sql.prepare('SELECT total_amount,return_amount,debt_amount FROM orders WHERE id=9851').get().total_amount,0)
+assert.equal(sql.prepare('SELECT quantity,line_total FROM order_items WHERE id=9861').get().quantity,0)
+assert.deepEqual({...sql.prepare('SELECT quantity,status FROM inventory_reservations WHERE order_item_id=9861').get()},{quantity:1,status:'released'})
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9541').get().quantity,beforeSameLine.stock.quantity)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9541').get().reserved_quantity,beforeSameLine.stock.reserved_quantity-1)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9851').get().n,2)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=9861').get().n,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=9851 AND event_type=\'order_refund\'').get().n,0)
+const duplicateNext=await postUnifiedReturnV2Prototype(DB,nextInput)
+assert.equal(duplicateNext.replayed,true)
+assert.equal(duplicateNext.returnId,next.returnId)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9851').get().n,2)
+const sameLineMoney=await readVersionedReturnMoney(DB,9851)
+assert.equal(sameLineMoney.currentSale,0)
+assert.equal(sameLineMoney.customerDebt,0)
+
 
 // Unresolved reservation: no physical/reserved cache change for an unconfirmed shortage.
 sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,pricing_mode,total_amount,created_at,updated_at) VALUES (9852,'V2-UNIFIED-UNRESOLVED','2026-11-01',9501,'active','warehouse','ready','not_sent','itemized_v1',1800,'2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
