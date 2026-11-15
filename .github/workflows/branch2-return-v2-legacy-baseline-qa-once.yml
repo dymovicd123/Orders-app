@@ -51,6 +51,26 @@ jobs:
             async first(){return (await read(sql,params))[0]||null},
           });
           const db={prepare(sql){return stmt(sql)}};
+          const {returnV2SchemaReadiness}=await import('./worker/routes/order-return-v2.ts');
+          const {previewUnifiedReturnV2LineEvidence}=await import('./worker/domains/return-v2-unified-line-evidence.ts');
+          const {readVersionedReturnMoney}=await import('./worker/domains/return-v2-financial-projection.ts');
+          const {readOldReturnBaseline}=await import('./worker/domains/return-v2-legacy-contract-baseline.ts');
+          const stages=[
+            ['schema',()=>returnV2SchemaReadiness(db)],
+            ['lines2200',()=>previewUnifiedReturnV2LineEvidence(db,2200)],
+            ['ledger2200',()=>readVersionedReturnMoney(db,2200)],
+            ['baseline2200',()=>readOldReturnBaseline(db,2200)],
+            ['baseline2197',()=>readOldReturnBaseline(db,2197)],
+          ];
+          for(const [name,fn] of stages){
+            try{const result=await fn();console.log('DIAG_READ_STAGE: '+JSON.stringify({
+                name,ok:true,kind:result?.kind||null,ready:result?.ready??null,
+                baselineLines:result?.lines?.length??null,
+            }));}
+            catch(e){console.log('DIAG_READ_STAGE: '+JSON.stringify({
+               name,ok:false,error:String(e?.message||e),stack:String(e?.stack||'').slice(0,1000)
+            }));}
+          }
           const ids=[2196,2197,2198,2199,2200,2201,2204,2205,2206];
           for(const id of ids){
             const pathname='/api/orders/'+id+'/returns/v2/preview';
