@@ -77,7 +77,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
         const target=returnFormRef.current as HTMLElement|null
         if(!target||!target.getClientRects().length)return
         target.scrollIntoView({behavior:'smooth',block:'start'})
-        target.querySelector<HTMLElement>('[data-return-form-title]')?.focus({preventScroll:true})
+        const heading=target.querySelector<HTMLElement>('[data-return-form-title]')
+        if(heading)heading.focus({preventScroll:true})
+        else target.focus({preventScroll:true})
       })
     })
     return ()=>{cancelAnimationFrame(firstFrame);cancelAnimationFrame(secondFrame)}
@@ -290,7 +292,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
               ) : null}
     
               <div id="return-workspace-form" role="tabpanel" ref={returnFormRef} className="return-form-v2-bridge"
-                 style={activeView==='form'?undefined:{display:'none'}}>
+                 tabIndex={-1} style={activeView==='form'?undefined:{display:'none'}}>
                 <OrderReturnV2Flow
                   key={selectedId}
                   order={returnSelectedOrder}
