@@ -44,7 +44,9 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
     (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
        AND COALESCE(r.status,'completed')<>'cancelled'
        AND NOT EXISTS(SELECT 1 FROM return_v2_postings vp WHERE vp.return_id=r.id)
-       AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.return_id=r.id)) AS other_returns,
+       AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.return_id=r.id)
+       AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lb
+          WHERE lb.return_id=r.id AND lb.order_id=o.id)) AS other_returns,
     (SELECT CASE WHEN ${unsafeActiveExchangeSql('o.id')} THEN 1 ELSE 0 END) AS exchanges_count,
     (SELECT COUNT(*) FROM return_v2_postings vp
        LEFT JOIN returns r ON r.id=vp.return_id
@@ -128,6 +130,29 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
               FROM return_v2_unified_lines ul
               WHERE ul.posting_id=up.id)<>up.initial_total-up.final_total
          OR NOT EXISTS(SELECT 1 FROM return_v2_unified_lines ul WHERE ul.posting_id=up.id)
+         OR EXISTS(SELECT 1 FROM return_v2_legacy_baselines lb WHERE lb.posting_id=up.id
+            AND (lb.order_id<>up.order_id OR lb.normalized_sale<>up.initial_total
+              OR lb.reduction<>(SELECT COALESCE(SUM(li.reduction),0)
+                FROM return_v2_legacy_baseline_items li WHERE li.posting_id=up.id)
+              OR EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
+                LEFT JOIN returns old_ret ON old_ret.id=lr.return_id
+                WHERE lr.posting_id=up.id AND (
+                  lr.order_id<>up.order_id OR old_ret.id IS NULL
+                  OR old_ret.order_id<>up.order_id OR old_ret.status<>'completed'
+                  OR old_ret.amount<>lr.original_cash_refund))
+              OR EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items li
+                LEFT JOIN return_items old_ri ON old_ri.id=li.return_item_id
+                LEFT JOIN order_items oi ON oi.id=li.order_item_id
+                WHERE li.posting_id=up.id AND (
+                  old_ri.id IS NULL OR old_ri.order_item_id<>li.order_item_id
+                  OR old_ri.quantity<>li.quantity
+                  OR COALESCE(old_ri.contract_quantity_applied,0)<>0
+                  OR oi.id IS NULL OR oi.order_id<>up.order_id
+                  OR oi.unit_price<>li.sold_unit_price
+                  OR li.reduction<>li.quantity*li.sold_unit_price
+                  OR NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
+                    WHERE lr.return_id=old_ri.return_id AND lr.posting_id=up.id)))
+            ))
          OR EXISTS(SELECT 1 FROM return_v2_unified_action_overrides ao
             LEFT JOIN return_v2_unified_lines ul
               ON ul.posting_id=ao.posting_id AND ul.order_item_id=ao.order_item_id
