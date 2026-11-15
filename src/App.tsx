@@ -1712,13 +1712,6 @@ function App() {
   }, [returnSelectedOrder?.id])
 
   useEffect(() => {
-    if (!returnSelectedOrderId || !returnFormRef.current) return
-    requestAnimationFrame(() => {
-      returnFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }, [returnSelectedOrderId])
-
-  useEffect(() => {
     if (!exchangeSelectedOrderId || !exchangeFormRef.current) return
     requestAnimationFrame(() => {
       exchangeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
