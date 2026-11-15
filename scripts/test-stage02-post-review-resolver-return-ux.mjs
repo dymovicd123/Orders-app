@@ -105,7 +105,19 @@ assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prom
 
 const returnSection = read('src/features/sections/OrderReturnsSection.tsx')
 const exchangeSection = read('src/features/sections/OrderExchangeSection.tsx')
-assert.ok(returnSection.includes("item.isWorkshop ? 'no_stock' : 'warehouse'"), 'Return intake queue loses Workshop no-stock default')
+const returnIntakeDefault = returnSection.match(/const defaultReturnDestination[\\s\\S]*?(?=const selectedReturnLines)/)?.[0] || ''
+assert.ok(returnIntakeDefault.includes("item.sourceType === 'workshop' || item.isWorkshop")
+  && returnIntakeDefault.includes("'no_stock'")
+  && returnSection.includes('value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}')
+  && returnSection.includes('destination: receiptDestinations[receiptKey] || defaultReturnDestination(item)'),
+  'Return intake must use the Workshop no-stock default for both displayed value and saved destination')
+const returnV2Flow = read('src/features/sections/OrderReturnV2Flow.tsx')
+assert.ok(returnV2Flow.includes('onSaved(saved)') && returnSection.includes('closeReturnForm(false)')
+  && returnSection.includes("setActiveView(posted.receipt?.receiptPending?'intake':'history')"),
+  'Return V2 must close its form and route to intake or history after a confirmed posting')
+assert.ok(returnSection.includes("target.scrollIntoView({behavior:'smooth',block:'start'})")
+  && !app.includes('returnFormRef.current?.scrollIntoView'),
+  'Return form focus must wait until the visible section is mounted')
 assert.ok(exchangeSection.includes("receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')"),
   'Active Exchange intake queue must default Workshop returns to no_stock')
 assert.ok(exchangeSection.includes("receiptDestinations[\`exchange:\${entry.id}:\${entry.oldOperationItemId}\`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')"),
