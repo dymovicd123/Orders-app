@@ -128,7 +128,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       if(result.length!==1||result[0].status!=='fulfilled'
         ||result[0].quantity!==line.fulfilledQuantity
         ||(isLegacy?line.dispatchedQuantity!==0
-          :line.dispatchedQuantity!==line.contractQuantity))
+          :line.dispatchedQuantity!==line.contractQuantity+line.postedV2PhysicalQuantity))
         reject('Выдача позиции перестала соответствовать журналу отправок.')
     }else{
       if(result.length!==1||result[0].status!==(act==='cancel_unshipped_reservation'?'active':'unresolved')
@@ -158,6 +158,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         (SELECT COALESCE(SUM(later.contracted_quantity),0)
          FROM return_v2_unified_lines later
          JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+         JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
          WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id)
          AS reduction_from_this_post
        FROM return_v2_unified_lines prev
@@ -170,16 +171,22 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       stock_quantity_change:number;order_id:number;return_status:string;
       reduction_from_this_post:number
     }>()).results||[]
-    if(earlier.length&&(act!=='cancel_unshipped_reservation'
-      ||!reservation || earlier.some(prev=>
-        prev.order_id!==wanted.orderId||prev.return_status!=='completed'
-        ||prev.action!=='cancel_unshipped_reservation'
+    const activeEarlier=earlier.filter(prev=>prev.return_status==='completed')
+    if(earlier.some(prev=>prev.return_status!=='completed'&&prev.return_status!=='cancelled')
+      ||activeEarlier.some(prev=>
+        prev.order_id!==wanted.orderId
         ||prev.sold_unit_price!==line.soldUnitPrice
-        ||prev.reservation_id!==reservation.id
-        ||prev.reservation_release!==prev.contracted_quantity
         ||prev.stock_quantity_change!==0
-        ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post)))
-      reject('Эта позиция уже участвовала в другом возврате. Для повторной отмены нужен точный остаток того же резерва.')
+        ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post
+        ||(act==='cancel_unshipped_reservation'
+          ?(!reservation||prev.action!=='cancel_unshipped_reservation'
+            ||prev.reservation_id!==reservation.id
+            ||prev.reservation_release!==prev.contracted_quantity)
+          :(act==='physical_return_pending'
+            ?(prev.action!=='physical_return_pending'
+              ||prev.reservation_id!==null||prev.reservation_release!==0)
+            :true))))
+      reject('Предыдущие операции с этой позицией не согласованы. Обновите данные и проверьте историю.')
 
     const effectiveQty=line.contractQuantity-(baselineQtyByItem.get(line.orderItemId)||0)
     if(effectiveQty<requested.quantity||effectiveQty<=0)
