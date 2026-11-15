@@ -1490,6 +1490,7 @@ export type WorkshopTaskRecord = {
   dueDate: string
   dueTime: string
   status: 'active' | 'ready' | 'done' | 'cancelled' | string
+  customerRefused?: boolean
   orderDate: string
   managerId: number
   managerName: string
