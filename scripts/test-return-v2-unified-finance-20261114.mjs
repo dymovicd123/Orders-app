@@ -1797,8 +1797,19 @@ const qaFresh=(orderId,itemId)=>{
  sql.prepare('UPDATE inventory_reservations SET created_at=?,updated_at=? WHERE order_item_id=?')
    .run(at,at,itemId)
 }
-sql.prepare('UPDATE inventory_stock SET quantity=quantity+40 WHERE id=9541').run()
+sql.prepare(`INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active)
+ VALUES(10501,9521,'МУЖ','QA P1','СТАНДАРТ','СТАНДАРТ','60','adult',1)`).run()
+sql.prepare(`INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,
+ product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity)
+ VALUES(10502,'warehouse',9521,10501,'QA P1 WAREHOUSE','МУЖ','QA P1','СТАНДАРТ','СТАНДАРТ','60',20,0)`).run()
+const qaMoveShipmentSku=(itemId,qty)=>{
+ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-? WHERE id=9541').run(qty)
+ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+? WHERE id=10502').run(qty)
+ sql.prepare('UPDATE order_items SET variant_id=10501 WHERE id=?').run(itemId)
+ sql.prepare('UPDATE inventory_reservations SET variant_id=10501 WHERE order_item_id=?').run(itemId)
+}
 addOrder(10510,10511,'QA-V2-TWO-SHIPPED',500,2)
+qaMoveShipmentSku(10511,2)
 qaFresh(10510,10511)
 sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10510,'2026-11-15','CASH',1000,'primary')").run()
 const qaShipA=await api('POST','/api/orders/10510/shipping/dispatches',{
@@ -1835,6 +1846,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM returns WHERE order_id=10510
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=10511').get().n,2)
 
 addOrder(10520,10521,'QA-V2-RETRY-AFTER-CANCEL',500,2)
+qaMoveShipmentSku(10521,2)
 qaFresh(10520,10521)
 sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10520,'2026-11-15','CASH',1000,'primary')").run()
 assert.equal((await api('POST','/api/orders/10520/shipping/dispatches',{
