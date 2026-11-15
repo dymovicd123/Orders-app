@@ -285,7 +285,6 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
           AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
             WHERE r.order_id=o.id AND r.status='completed')=?
-          AND NOT ${unsafeActiveExchangeSql('o.id')}
        AND NOT EXISTS(
          SELECT 1 FROM critical_operations co
          WHERE co.operation_type='order_edit' AND co.status='started'
