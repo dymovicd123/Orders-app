@@ -14,7 +14,7 @@ jobs:
       - name: Checkout exact candidate without touching Main
         uses: actions/checkout@v4
         with:
-          ref: 975463652df0c2201a63b57b414119570c8a9bf7
+          ref: 126890e563eb0fbbaa0e7b112cae313c32926ffb
           persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@v4
