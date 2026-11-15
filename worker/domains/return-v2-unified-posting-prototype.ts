@@ -284,12 +284,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
           AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
             AND COALESCE(r.status,'completed')='completed')=?
           AND NOT EXISTS(SELECT 1 FROM return_v2_postings old WHERE old.order_id=o.id)
-          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations c
-            JOIN return_v2_unified_postings old ON old.id=c.posting_id
-            WHERE old.order_id=o.id)
-          AND COALESCE((SELECT old.final_total
-            FROM return_v2_unified_postings old WHERE old.order_id=o.id
-            ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
+          AND COALESCE((SELECT CASE
+              WHEN r.status='completed' THEN old.final_total
+              WHEN r.status='cancelled' AND EXISTS(
+                SELECT 1 FROM return_v2_unified_cancellations c WHERE c.posting_id=old.id)
+                THEN old.initial_total
+              ELSE -1 END
+            FROM return_v2_unified_postings old
+            JOIN returns r ON r.id=old.return_id
+            WHERE old.order_id=o.id ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
           AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
             WHERE r.order_id=o.id AND r.status='completed')=?
        AND NOT EXISTS(
