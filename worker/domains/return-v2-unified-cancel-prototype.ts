@@ -37,7 +37,7 @@ type Line={
  original_line_quantity:number;sold_unit_price:number;contract_reduction:number;
  reservation_id:number|null;reservation_release:number;receipt_intent:string;
  current_quantity:number;current_unit_price:number;current_line_total:number;
- current_status:string;source_type:string;variant_id:number|null;
+ current_status:string;source_type:string;variant_id:number|null;is_workshop:number;
  reservation_quantity:number|null;reservation_status:string|null;
  reservation_source:string|null;reservation_variant:number|null;
  reservation_updated_at:string|null;reservation_released_at:string|null;
@@ -132,7 +132,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    ul.reservation_id,ul.reservation_release,ul.receipt_intent,
    oi.quantity AS current_quantity,oi.unit_price AS current_unit_price,
    oi.line_total AS current_line_total,oi.stock_writeoff_status AS current_status,
-   oi.source_type,oi.variant_id,
+   oi.source_type,oi.variant_id,oi.is_workshop,
    ir.quantity AS reservation_quantity,ir.status AS reservation_status,
    ir.inventory_source AS reservation_source,ir.variant_id AS reservation_variant,
    ir.updated_at AS reservation_updated_at,ir.released_at AS reservation_released_at,
@@ -154,7 +154,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
  if(!lines.length||lines.length>100||new Set(lines.map(x=>x.order_item_id)).size!==lines.length)
    fail('Состав возврата требует сверки.')
  const shipped=lines.some(x=>x.action==='physical_return_pending')
- const reserved=lines.some(x=>x.action!=='physical_return_pending')
+ const reserved=lines.some(x=>x.action==='cancel_unshipped_reservation'||x.action==='cancel_unresolved_reservation')
  if((shipped&&!w.shipped)||(!shipped&&w.shipped))
    fail('Подтверждение физически отправленных товаров не соответствует операции.')
  if((reserved&&!w.reservations)||(!reserved&&w.reservations))
@@ -181,6 +181,11 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
        l.physical_received_at!==null||l.physical_restocked!==0||
        l.lifecycle_count!==0)
        fail('Отправленный товар уже поступил, списан или физическая история неоднозначна.')
+   }else if(l.action==='cancel_workshop_obligation'){
+     if(l.is_workshop!==1||l.reservation_id!==null||l.reservation_release!==0||
+       l.physical_id!==null||l.receipt_intent!=='not_applicable'||
+       l.lifecycle_count!==0||l.new_dispatches!==0)
+       fail('Отмена цеховой позиции не должна менять производство, резерв или физический товар.')
    }else if(l.action==='cancel_unshipped_reservation'||
             l.action==='cancel_unresolved_reservation'){
      const active=l.action==='cancel_unshipped_reservation'
@@ -284,7 +289,8 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
  for(const l of pendingLines){
    const qty=l.contracted_quantity,full=qty===l.original_line_quantity
    const isPhysical=l.action==='physical_return_pending'
-   if(!isPhysical){
+   const isWorkshop=l.action==='cancel_workshop_obligation'
+   if(!isPhysical&&!isWorkshop){
      const active=l.action==='cancel_unshipped_reservation'
      const targetStatus=active?'active':'unresolved'
      statements.push(db.prepare(`UPDATE inventory_reservations
@@ -298,9 +304,9 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
          l.reservation_status,p.posted_at))
      statements.push(checked(db,'restore_reservation_row'))
    }
-   const expectedStatus=isPhysical?l.current_status:
+   const expectedStatus=isPhysical||isWorkshop?l.current_status:
      (full?'reservation_released':l.action==='cancel_unshipped_reservation'?'reserved':'pending_reservation')
-   const restoredStatus=isPhysical?l.current_status:
+   const restoredStatus=isPhysical||isWorkshop?l.current_status:
      (l.action==='cancel_unshipped_reservation'?'reserved':'pending_reservation')
    statements.push(db.prepare(`UPDATE order_items SET quantity=quantity+?,
       line_total=(quantity+?)*unit_price,stock_writeoff_status=?
