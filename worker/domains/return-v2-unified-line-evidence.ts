@@ -6,6 +6,7 @@ export type ReturnV2LineAction =
   | 'physical_return_pending'
   | 'cancel_unshipped_reservation'
   | 'cancel_unresolved_reservation'
+  | 'cancel_workshop_obligation'
   | 'needs_review'
 
 export type ReturnV2LineEvidence = {
@@ -65,6 +66,7 @@ function labelFor(action:ReturnV2LineAction) {
   if(action==='physical_return_pending')return 'Отправлен — ожидаем физический возврат'
   if(action==='cancel_unshipped_reservation')return 'Не отправлен — отмена и снятие резерва'
   if(action==='cancel_unresolved_reservation')return 'Не отправлен — отмена неразрешённого резерва'
+  if(action==='cancel_workshop_obligation')return 'Цех — отмена покупки без отмены производства'
   return 'Требуется уточнение складской истории'
 }
 
@@ -76,7 +78,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       created_at,updated_at,archived_at FROM orders WHERE id=? LIMIT 1`
   ).bind(rawOrderId).first<OrderRow>()
   if(!order)throw new ReturnV2LineEvidenceConflict('Заказ не найден.')
-  const [itemResults,reservationResults,dispatchResults,history]=await Promise.all([
+  const [itemResults,reservationResults,dispatchResults,history,workshopTaskResults]=await Promise.all([
     db.prepare(`SELECT oi.id,oi.product_name_snapshot,oi.quantity,oi.unit_price,oi.line_total,
        oi.stock_writeoff_status,oi.source_type,oi.is_workshop,oi.variant_id,
        EXISTS(
@@ -114,10 +116,19 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
        (SELECT COUNT(*) FROM returns WHERE order_id=?) AS returns_count,
        (SELECT COUNT(*) FROM exchanges WHERE order_id=?) AS exchanges_count`
     ).bind(rawOrderId,rawOrderId).first<{returns_count:number;exchanges_count:number}>(),
+    db.prepare(`SELECT order_item_id,status,quantity FROM workshop_tasks
+      WHERE order_id=? AND order_item_id IS NOT NULL ORDER BY order_item_id,id`)
+      .bind(rawOrderId).all<{order_item_id:number;status:string;quantity:number}>(),
   ])
   const items=itemResults.results||[]
   const reservations=new Map<number,ReservationRow[]>()
   const dispatches=new Map<number,DispatchRow[]>()
+  const workshopTasks=new Map<number,Array<{status:string;quantity:number}>>()
+  for(const task of workshopTaskResults.results||[]){
+    const id=Number(task.order_item_id)
+    if(!workshopTasks.has(id))workshopTasks.set(id,[])
+    workshopTasks.get(id)!.push(task)
+  }
   for(const r of reservationResults.results||[]){
     const id=Number(r.order_item_id)
     if(!reservations.has(id))reservations.set(id,[])
@@ -163,6 +174,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const isWorkshop=Number(item.is_workshop)===1
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
+    const tasks=workshopTasks.get(id)||[]
     let action:ReturnV2LineAction='needs_review'
     let reasonCode='unknown_state'
     let message='Нет однозначного основания для складского действия. Не изменяйте остаток автоматически.'
@@ -218,6 +230,14 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       action='cancel_unresolved_reservation'
       reasonCode='unresolved_reservation_not_dispatched'
       message='Физического списания нет. Закрыть неразрешённый резерв без изменения остатка.'
+    }else if(isWorkshop&&dispatched===0&&ds.length===0&&rs.length===0
+      &&tasks.length>0&&tasks.every(t=>['active','invoice','ready','done'].includes(t.status)
+        &&amount(t.quantity)!==null&&t.quantity>0)){
+      action='cancel_workshop_obligation'
+      reasonCode='workshop_task_kept_after_customer_cancellation'
+      message=tasks.some(t=>t.status==='ready'||t.status==='done')
+        ?'Клиент отказался. Готовое изделие остаётся за цехом до отдельной передачи. Оплата цеху сохраняется.'
+        :'Клиент отказался. Задание и обязательство перед цехом остаются; покупка будет отменена.'
     }else if(isWorkshop&&dispatched===0) {
       reasonCode='workshop_unsent_needs_review'
       message='Не отправлен из Цеха. Нужно учесть реальное состояние работы/готовности.'

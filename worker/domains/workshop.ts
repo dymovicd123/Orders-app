@@ -385,6 +385,7 @@ export const workshopStandaloneReturnOrdersCte = `standalone_return_orders AS (
   SELECT wr.id AS return_id, wr.order_id
   FROM returns wr
   WHERE COALESCE(wr.status, 'completed') <> 'cancelled'
+    AND COALESCE(wr.comment, '') <> 'Return V2 unified isolated'
     AND NOT EXISTS (
       SELECT 1
       FROM exchanges we

@@ -48,10 +48,11 @@ function evaluate(row){
  assert(row && typeof row==='object','D1 did not return a schema row.')
  const tableCount=Number(row.table_count)
  const columnCount=Number(row.column_count)
+ const workshopActionCount=Number(row.workshop_action_count)
  assert(Number.isSafeInteger(tableCount)&&Number.isSafeInteger(columnCount),
    'D1 returned non-integer schema capability counts.')
  return {ready:tableCount===expected.expectedTables &&
-   columnCount===expected.expectedColumns,
+   columnCount===expected.expectedColumns && workshopActionCount===1,
    foundTables:tableCount,foundColumns:columnCount,...expected}
 }
 const sql=returnV2SchemaReadinessSql()

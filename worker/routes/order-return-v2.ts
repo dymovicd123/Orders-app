@@ -41,14 +41,18 @@ export function returnV2SchemaReadinessSql(){
  return `SELECT
    (SELECT COUNT(*) FROM sqlite_master
      WHERE type='table' AND name IN (${tables})) AS table_count,
-   (${columns}) AS column_count`
+   (${columns}) AS column_count,
+   (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+      AND name='return_v2_unified_lines'
+      AND instr(sql,'cancel_workshop_obligation')>0) AS workshop_action_count`
 }
 export async function returnV2SchemaReadiness(db:D1Database){
  const result=await db.prepare(returnV2SchemaReadinessSql())
-   .first<{table_count:number;column_count:number}>()
+   .first<{table_count:number;column_count:number;workshop_action_count:number}>()
  return {
    ready:toInt(result?.table_count,0)===RETURN_V2_REQUIRED_TABLES.length
-     &&toInt(result?.column_count,0)===RETURN_V2_REQUIRED_COLUMNS.length,
+     &&toInt(result?.column_count,0)===RETURN_V2_REQUIRED_COLUMNS.length
+     &&toInt(result?.workshop_action_count,0)===1,
    foundTables:toInt(result?.table_count,0),
    expectedTables:RETURN_V2_REQUIRED_TABLES.length,
    foundColumns:toInt(result?.column_count,0),
@@ -87,7 +91,7 @@ async function preview(db:D1Database,orderId:number){
     (SELECT COUNT(*) FROM return_v2_unified_lines ul
       WHERE ul.posting_id=up.id AND ul.action='physical_return_pending') AS shipped_count,
     (SELECT COUNT(*) FROM return_v2_unified_lines ul
-      WHERE ul.posting_id=up.id AND ul.action<>'physical_return_pending') AS reserved_count,
+      WHERE ul.posting_id=up.id AND ul.action IN ('cancel_unshipped_reservation','cancel_unresolved_reservation')) AS reserved_count,
     (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=up.return_id
       AND (ri.physical_received_at IS NOT NULL OR ri.restocked<>0)) AS received_count,
     (SELECT COUNT(*) FROM inventory_lifecycle_events le
