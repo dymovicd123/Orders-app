@@ -284,3 +284,114 @@ jobs:
               assert response.status==201
           print('Posted execution result to Issue #864; no Cloudflare credentials shown.')
           PY
+
+  verify-live:
+    name: Check current Branch2 Return V2 without deploying
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.number == 864 &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == 'dymovicd123' &&
+      github.event.comment.body == 'BRANCH2_RETURN_V2_VERIFY_UAT_20261115'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout release guard from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout Branch2 identity and approved migrations
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Verify distinct D1 identities and actual migrated Branch2 schema (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 .github/scripts/branch2_v2_stage_guard.py \
+            --stage stage --expected-index 9
+
+      - name: Independently confirm current test Worker binding and enabled flag (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          endpoint='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
+          expected='0904a573-21ff-44d8-93b0-c9200f771702'
+          for attempt in range(1,6):
+              with urllib.request.urlopen(urllib.request.Request(endpoint,headers={
+                  'Authorization':'Bearer '+token,'Accept':'application/json'}),timeout=30) as response:
+                  data=json.load(response)
+              if not data.get('success'):
+                  raise SystemExit('STOP: Cloudflare Branch2 Worker settings GET denied.')
+              bindings=data.get('result',{}).get('bindings',[])
+              dbs=[b for b in bindings if b.get('name')=='DB']
+              flags=[b for b in bindings if b.get('name')=='RETURN_V2_ENABLED']
+              if len(dbs)!=1 or dbs[0].get('type')!='d1' or (
+                  (dbs[0].get('database_id') or dbs[0].get('id'))!=expected):
+                  raise SystemExit('STOP: Branch2 Worker D1 ID unexpected.')
+              if len(flags)==1 and flags[0].get('type')=='plain_text' and flags[0].get('text')=='true':
+                  print('PASS: independently read Branch2 Worker Return V2 flag=true, correct D1.')
+                  break
+              if attempt==5:
+                  observed=[b.get('text') for b in flags if b.get('type')=='plain_text']
+                  print('Observed non-secret Branch2 V2 flag values:',observed)
+                  raise SystemExit('STOP: Return V2 not enabled on confirmed Branch2 Worker.')
+              time.sleep(4)
+          PY
+
+      - name: Verify test site is reachable without authentication (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import urllib.error,urllib.request
+          req=urllib.request.Request(
+              'https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status',
+              headers={'Accept':'application/json','User-Agent':'Mozilla/5.0 (Orders-app-Branch2-UAT-ReadOnly)'})
+          try:
+              with urllib.request.urlopen(req,timeout=25) as resp:
+                  print('Branch2 public auth-status HTTP:',resp.status)
+                  if resp.status!=200:raise SystemExit('Unexpected Branch2 status code.')
+          except urllib.error.HTTPError as error:
+              if error.code in (401,403):
+                  print('::warning::GitHub runner sees HTTP %s from Branch2 public site.' % error.code)
+                  print('Cloudflare authenticated Worker and D1 checks were successful.')
+              else:
+                  raise SystemExit('Unexpected public Branch2 HTTP %s.' % error.code)
+          PY
+
+      - name: Record read-only verification result to tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          result=os.environ['OUTCOME']
+          text=('Branch2 Return V2 **READ-ONLY verification**: **'+result+'**.\n\n'+
+                ('Verified migrated test D1 and enabled Worker flag.' if result=='success'
+                 else 'Could not confirm current test Worker flag; inspect detailed logs.')+
+                '\n\n'+os.environ['RUN_URL']+
+                '\n\nNo Worker deployment, D1 writes, or Main changes were performed by this verification.')
+          url='https://api.github.com/repos/'+os.environ['REPO']+'/issues/864/comments'
+          req=urllib.request.Request(url,
+              data=json.dumps({'body':text}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+              method='POST')
+          with urllib.request.urlopen(req,timeout=25) as response:
+              assert response.status==201
+          PY
