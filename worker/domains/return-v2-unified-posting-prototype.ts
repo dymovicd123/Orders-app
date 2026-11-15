@@ -5,7 +5,7 @@ import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './r
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
 import {readOldReturnBaseline} from './return-v2-legacy-contract-baseline.ts'
 import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql,noUnprovenCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
-import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {guardExchangeHistoryInBatch} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
 type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
@@ -252,6 +252,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   const stamp=new Date().toISOString(),date=stamp.slice(0,10)
   const legacyIdsJson=JSON.stringify(baseline.returns.map(x=>x.id))
   const statements:D1PreparedStatement[]=[
+    guardExchangeHistoryInBatch(db,wanted.orderId),
     db.prepare(
       `INSERT INTO returns(order_id,manager_id,return_date,amount,payment_method,
            status,comment,created_at)
@@ -284,7 +285,6 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
           AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
             WHERE r.order_id=o.id AND r.status='completed')=?
-          AND NOT ${unsafeActiveExchangeSql('o.id')}
        AND NOT EXISTS(
          SELECT 1 FROM critical_operations co
          WHERE co.operation_type='order_edit' AND co.status='started'

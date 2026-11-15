@@ -3,7 +3,7 @@
 // Legacy orders retain their unmodified current accounting until explicitly migrated.
 import { readOrderFinancialLedger } from './money.ts'
 import { toInt } from '../core/text.ts'
-import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {hasUnsafeActiveExchange} from './return-v2-safe-exchange-history.ts'
 import {RETURN_V2_UNIFIED_INTEGRITY_QUERIES} from './return-v2-unified-integrity-sql.ts'
 
 export class ReturnV2LedgerConflict extends Error {
@@ -48,7 +48,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
        AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.return_id=r.id)
        AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lb
           WHERE lb.return_id=r.id AND lb.order_id=o.id)) AS other_returns,
-    (SELECT CASE WHEN ${unsafeActiveExchangeSql('o.id')} THEN 1 ELSE 0 END) AS exchanges_count,
+    0 AS exchanges_count,
     (SELECT COUNT(*) FROM return_v2_postings vp
        LEFT JOIN returns r ON r.id=vp.return_id
        WHERE vp.order_id=o.id AND (
@@ -98,6 +98,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
   // No reinterpretation of old cash-only returns, discounts, or historical debt.
   return {kind:'legacy',orderId,...ledger,customerOverpay:null}
  }
+ const unsafeExchange=await hasUnsafeActiveExchange(db,orderId)
  let invalidUnified=0
  for(const query of RETURN_V2_UNIFIED_INTEGRITY_QUERIES){
    const result=await db.prepare(query).bind(orderId).first<{invalid_count:number}>()
@@ -108,7 +109,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
  if(row.pricing_mode!=='itemized_v1'||(v2Count>0&&unifiedCount>0)
    ||invalidUnified>0||toInt(row.missing_unified_events,0)
    ||toInt(row.other_returns,0)
-   ||toInt(row.exchanges_count,0)||toInt(row.invalid_posts,0)
+   ||unsafeExchange||toInt(row.invalid_posts,0)
    ||toInt(row.missing_events,0)) {
    fail('После Return V2 появились операции или записи, не поддерживаемые новой моделью. Требуется разбор.')
  }

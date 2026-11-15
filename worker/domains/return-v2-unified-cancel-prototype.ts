@@ -5,7 +5,7 @@
 // Cash recovery is recorded ONLY after explicit confirmation of actual receipt.
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
 import {noUnreversedDispatchSql} from './return-v2-dispatch-correction-proof.ts'
-import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {hasUnsafeActiveExchange,guardExchangeHistoryInBatch} from './return-v2-safe-exchange-history.ts'
 
 export class ReturnV2UnifiedCancelConflict extends Error{
  readonly status=409
@@ -105,7 +105,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
       AND COALESCE(r2.status,'completed')='completed'
       AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
         WHERE lr.order_id=up.order_id AND lr.return_id=r2.id)) AS return_count,
-    (SELECT CASE WHEN ${unsafeActiveExchangeSql('up.order_id')} THEN 1 ELSE 0 END) AS exchange_count,
+    0 AS exchange_count,
     (SELECT COUNT(*) FROM payments pay WHERE pay.order_id=up.order_id
       AND julianday(pay.created_at)>julianday(up.posted_at)) AS later_payments,
     (SELECT COUNT(*) FROM financial_events fe WHERE fe.order_id=up.order_id
@@ -115,6 +115,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    JOIN orders o ON o.id=up.order_id WHERE up.id=? LIMIT 1`)
     .bind(w.postingId).first<Posting>()
  if(!p)fail('Проведённый смешанный возврат не найден.')
+ const unsafeExchange=await hasUnsafeActiveExchange(db,p.order_id)
  const ledger=await readVersionedReturnMoney(db,p.order_id)
  if(ledger.kind!=='return_v2')fail('Финансовая история возврата не подтверждена.')
  const orig=number(p.initial_total,'исходная стоимость'),final=number(p.final_total,'остаточная стоимость')
@@ -127,7 +128,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    String(p.return_method||'')!==String(p.refund_method||'')||
    p.current_pricing!=='itemized_v1'||p.current_total!==final||
    p.current_version!==p.posted_at||p.received_cash!==paid||
-   p.return_count!==1||p.exchange_count!==0||p.later_payments!==0||
+   p.return_count!==1||unsafeExchange||p.later_payments!==0||
    p.later_money_events!==0||p.archived_at!==null||
    ['archived','deleted'].includes(p.order_status)||orig<final||
    ledger.currentSale!==final||ledger.paidIn!==paid||ledger.paidOut!==refund+previousRefund)
@@ -252,6 +253,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
  }
  const stamp=new Date().toISOString(),date=stamp.slice(0,10)
  const statements:D1PreparedStatement[]=[
+   guardExchangeHistoryInBatch(db,p.order_id),
    db.prepare(`UPDATE returns SET status='cancelled',cancelled_at=?,cancellation_comment=?
      WHERE id=? AND order_id=? AND status='completed' AND amount=?
        AND payment_method IS ?
@@ -265,7 +267,6 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
              AND COALESCE(r.status,'completed')='completed'
              AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
                WHERE lr.order_id=o.id AND lr.return_id=r.id))=1
-           AND NOT ${unsafeActiveExchangeSql('o.id')}
            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations uc WHERE uc.posting_id=up.id)
            AND NOT EXISTS(SELECT 1 FROM financial_events fe WHERE fe.order_id=o.id
               AND fe.event_at>up.posted_at

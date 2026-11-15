@@ -50,3 +50,18 @@ export function unsafeActiveExchangeSql(orderIdSql:string):string {
         )
       ))`
 }
+
+export async function hasUnsafeActiveExchange(db:D1Database,orderId:number):Promise<boolean>{
+  if(!Number.isSafeInteger(orderId)||orderId<=0)throw new Error('Invalid order for exchange history.')
+  const found=await db.prepare(`SELECT CASE WHEN ${unsafeActiveExchangeSql('?')}
+     THEN 1 ELSE 0 END AS unsafe_exchange`).bind(orderId)
+    .first<{unsafe_exchange:number}>()
+  if(!found||![0,1].includes(Number(found.unsafe_exchange)))
+    throw new Error('Exchange history could not be verified.')
+  return Number(found.unsafe_exchange)===1
+}
+
+export function guardExchangeHistoryInBatch(db:D1Database,orderId:number):D1PreparedStatement{
+  return db.prepare(`SELECT json('RETURN_V2_UNSAFE_EXCHANGE')
+     WHERE ${unsafeActiveExchangeSql('?')}`).bind(orderId)
+}

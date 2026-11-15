@@ -1768,5 +1768,23 @@ assert.deepEqual(sql.prepare('SELECT id,quantity FROM order_items WHERE order_id
 assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10451').get(),exchangeStockBefore)
 
 
+// The exact Exchange Set proof also runs alone in Cloudflare D1, with an
+// identical fail-closed guard inside the atomic posting/cancellation batch.
+const {hasUnsafeActiveExchange,guardExchangeHistoryInBatch}=
+  await import('../worker/domains/return-v2-safe-exchange-history.ts')
+assert.equal(await hasUnsafeActiveExchange(DB,10010),false)
+assert.equal(await hasUnsafeActiveExchange(DB,10020),true)
+const unsafeExchangeOrderBefore=sql.prepare(
+ 'SELECT total_amount,updated_at FROM orders WHERE id=10020').get()
+await assert.rejects(DB.batch([
+ guardExchangeHistoryInBatch(DB,10020),
+ DB.prepare('UPDATE orders SET total_amount=0 WHERE id=10020')
+]),/malformed JSON|RETURN_V2_UNSAFE_EXCHANGE|SQLITE_ERROR/i)
+assert.deepEqual(sql.prepare(
+ 'SELECT total_amount,updated_at FROM orders WHERE id=10020').get(),
+ unsafeExchangeOrderBefore)
+await DB.batch([guardExchangeHistoryInBatch(DB,10010)])
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
