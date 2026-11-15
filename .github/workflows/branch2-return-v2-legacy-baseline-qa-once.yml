@@ -35,7 +35,7 @@ jobs:
           if(!meta.success||meta.result?.name!=='orders_db_branch2_mirror_20261027')
             throw new Error('STOP: wrong D1; no queries sent');
           const read=async(sql,params=[])=>{
-            if(!/^\\s*SELECT\\b/i.test(sql))throw new Error('Non-SELECT rejected');
+            if(!/^\s*SELECT\b/i.test(sql))throw new Error('Non-SELECT rejected');
             const res=await fetch(base+'/query',{method:'POST',headers,
               body:JSON.stringify({sql,params})});
             if(!res.ok)throw new Error('D1 query HTTP '+res.status);
