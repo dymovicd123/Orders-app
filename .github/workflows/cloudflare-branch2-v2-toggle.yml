@@ -338,7 +338,8 @@ jobs:
               return body.get('result')
           versions=get('/versions?per_page=5')
           deployments=get('/deployments?per_page=5')
-          items=versions if isinstance(versions,list) else versions.get('versions',[])
+          # Cloudflare List Versions returns result.items, not result.versions.
+          items=versions if isinstance(versions,list) else versions.get('items',[])
           deploys=deployments if isinstance(deployments,list) else deployments.get('deployments',[])
           if not items or not deploys:
               raise SystemExit('STOP: Empty Branch2 versions/deployments; cannot establish current live version.')
