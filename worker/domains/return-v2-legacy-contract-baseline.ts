@@ -17,7 +17,7 @@ export class ReturnV2HistoricalBaselineConflict extends Error {
   readonly status=409
   readonly code='return_v2_historical_baseline_conflict'
 }
-const fail=(msg:string):never=>{throw new ReturnV2HistoricalBaselineConflict(msg)}
+function fail(msg:string):never{throw new ReturnV2HistoricalBaselineConflict(msg)}
 function n(x:unknown,label:string,min=0):number{
  if(!Number.isSafeInteger(x)||Number(x)<min)fail(label+' не подтверждён.')
  return Number(x)
