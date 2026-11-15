@@ -351,6 +351,33 @@ jobs:
           print('BRANCH2 LATEST VERSION:',recent[0])
           print('BRANCH2 ACTIVE DEPLOYMENT:',active)
           print('BRANCH2 RECENT VERSIONS:',recent)
+          # GET each version independently: script settings may reflect an
+          # undeployed draft, not the version serving requests.
+          def report_version(label,version_id):
+              version=get('/versions/'+version_id)
+              resources=version.get('resources') or {}
+              bindings=resources.get('bindings') or {}
+              matches=[]
+              if isinstance(bindings,list):
+                  matches=[b for b in bindings if isinstance(b,dict)
+                           and b.get('name')=='RETURN_V2_ENABLED']
+              elif isinstance(bindings,dict):
+                  var=bindings.get('RETURN_V2_ENABLED')
+                  if isinstance(var,dict):matches.append(var)
+                  for value in bindings.values():
+                      if isinstance(value,list):
+                          matches.extend(b for b in value if isinstance(b,dict)
+                                         and b.get('name')=='RETURN_V2_ENABLED')
+                      elif isinstance(value,dict) and value.get('name')=='RETURN_V2_ENABLED':
+                          matches.append(value)
+              unique={(b.get('type'),b.get('text') if b.get('type')=='plain_text' else None)
+                      for b in matches}
+              print(label,'VERSION',version_id,
+                    'flag metadata:',list(unique) if unique else 'NOT PRESENT',
+                    'binding response shape:',type(bindings).__name__)
+          for active_version in active:
+              report_version('ACTIVE',active_version['version_id'])
+          report_version('LATEST',recent[0]['id'])
           latest_id=recent[0]['id']
           if not any(v['version_id']==latest_id and v['percentage']==100 for v in active):
               print('::warning::Most recent Branch2 Worker version is NOT serving 100% traffic.')
