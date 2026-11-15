@@ -36,6 +36,7 @@ export function OrderReturnV2Cancellation({
    setError('');setFinished(false)
  },[key])
  const locked=busy||uncertain||finished
+ const saveLocked=busy||finished
  const edit=(callback:()=>void)=>{
    if(locked)return
    requestId.current=''
@@ -43,7 +44,7 @@ export function OrderReturnV2Cancellation({
    callback()
  }
  async function save(){
-   if(locked||!cancellation.available)return
+   if(saveLocked||!cancellation.available)return
    if(!reason.trim()||reason.trim().length>300){
      setError('Укажите причину отмены до 300 символов.');return
    }
@@ -75,8 +76,9 @@ export function OrderReturnV2Cancellation({
      setFinished(true);setOpen(false);onSaved()
    }catch(e){
      setError(e instanceof Error?e.message:'Результат операции неизвестен.')
-     // Lost successful reply must never generate a different cancellation ID.
-     if(!knownResponse)setUncertain(true)
+     // A lost response may have committed; retry with the SAME immutable ID.
+     // A known 409 explicitly rejects the operation and permits correction.
+     setUncertain(!knownResponse)
    }finally{setBusy(false)}
  }
  return <div className="mini-item order-payment-card">
@@ -121,8 +123,8 @@ export function OrderReturnV2Cancellation({
         {error?<div className="history-note is-danger" role="alert">{error}</div>:null}
         {uncertain?<p className="field-hint">Ответ сервера не получен. Не создавайте новую отмену. Обновите историю и проверьте результат прежде чем повторять действие.</p>:null}
         <button type="button" className="secondary compact"
-          disabled={locked||!reason.trim()} onClick={()=>void save()}>
-          {busy?'Проверка и отмена…':'Подтвердить отмену возврата'}
+          disabled={saveLocked||!reason.trim()} onClick={()=>void save()}>
+          {busy?'Проверка и отмена…':uncertain?'Проверить прежнюю отмену':'Подтвердить отмену возврата'}
         </button>
       </div>:null}
       {!open&&error?<div className="history-note is-danger" role="alert">{error}</div>:null}
