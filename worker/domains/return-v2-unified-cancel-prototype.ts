@@ -101,7 +101,10 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
     o.order_status,o.archived_at,
     (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
       FROM payments pay WHERE pay.order_id=up.order_id) AS received_cash,
-    (SELECT COUNT(*) FROM returns r2 WHERE r2.order_id=up.order_id) AS return_count,
+    (SELECT COUNT(*) FROM returns r2 WHERE r2.order_id=up.order_id
+      AND COALESCE(r2.status,'completed')='completed'
+      AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
+        WHERE lr.order_id=up.order_id AND lr.return_id=r2.id)) AS return_count,
     (SELECT CASE WHEN ${unsafeActiveExchangeSql('up.order_id')} THEN 1 ELSE 0 END) AS exchange_count,
     (SELECT COUNT(*) FROM payments pay WHERE pay.order_id=up.order_id
       AND julianday(pay.created_at)>julianday(up.posted_at)) AS later_payments,
@@ -116,6 +119,10 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
  if(ledger.kind!=='return_v2')fail('Финансовая история возврата не подтверждена.')
  const orig=number(p.initial_total,'исходная стоимость'),final=number(p.final_total,'остаточная стоимость')
  const paid=number(p.initial_received,'полученные оплаты'),refund=number(p.cash_refund,'выплата')
+ const legacy=await db.prepare(`SELECT COALESCE(SUM(lr.original_cash_refund),0) AS amount
+    FROM return_v2_legacy_baseline_returns lr WHERE lr.order_id=?`)
+    .bind(p.order_id).first<{amount:number}>()
+ const previousRefund=number(legacy?.amount,'Прежние выплаты')
  if(p.return_status!=='completed'||p.return_amount!==refund||
    String(p.return_method||'')!==String(p.refund_method||'')||
    p.current_pricing!=='itemized_v1'||p.current_total!==final||
@@ -123,7 +130,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    p.return_count!==1||p.exchange_count!==0||p.later_payments!==0||
    p.later_money_events!==0||p.archived_at!==null||
    ['archived','deleted'].includes(p.order_status)||orig<final||
-   ledger.currentSale!==final||ledger.paidIn!==paid||ledger.paidOut!==refund)
+   ledger.currentSale!==final||ledger.paidIn!==paid||ledger.paidOut!==refund+previousRefund)
    fail('Заказ, деньги или другая операция уже изменились. Автоматическая отмена запрещена.')
  if(refund>0&&(!w.refunded||!w.method))
    fail('Сначала подтвердите фактический возврат выплаченных денег магазину и способ поступления.')
@@ -254,7 +261,10 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
            AND o.pricing_mode='itemized_v1' AND o.total_amount=? AND o.updated_at=up.posted_at
            AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
                 FROM payments pay WHERE pay.order_id=o.id)=?
-           AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id)=1
+           AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
+             AND COALESCE(r.status,'completed')='completed'
+             AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
+               WHERE lr.order_id=o.id AND lr.return_id=r.id))=1
            AND NOT ${unsafeActiveExchangeSql('o.id')}
            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations uc WHERE uc.posting_id=up.id)
            AND NOT EXISTS(SELECT 1 FROM financial_events fe WHERE fe.order_id=o.id
@@ -331,17 +341,20 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    statements.push(checked(db,'restore_contract_line'))
  }
  statements.push(db.prepare(`UPDATE orders SET total_amount=?,received_amount=?,
-     return_amount=0,debt_amount=MAX(0,?-?),updated_at=?
+     return_amount=?,debt_amount=MAX(0,?-(?-?)),updated_at=?
     WHERE id=? AND total_amount=? AND updated_at=?
       AND (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi
        WHERE oi.order_id=orders.id AND oi.quantity>0)=?
       AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
        FROM payments pay WHERE pay.order_id=orders.id)=?
       AND NOT EXISTS(SELECT 1 FROM returns ret WHERE ret.order_id=orders.id
-       AND ret.status<>'cancelled')
+       AND COALESCE(ret.status,'completed')='completed'
+       AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
+         WHERE lr.order_id=orders.id AND lr.return_id=ret.id))
       AND EXISTS(SELECT 1 FROM return_v2_unified_cancellations uc
        WHERE uc.posting_id=? AND uc.return_id=? AND uc.order_id=orders.id)`)
-     .bind(orig,paid,orig,paid,stamp,p.order_id,final,p.posted_at,orig,paid,p.id,p.return_id))
+     .bind(orig,paid,previousRefund,orig,paid,previousRefund,stamp,p.order_id,
+        final,p.posted_at,orig,paid,p.id,p.return_id))
  statements.push(checked(db,'restore_order_total'))
  if(refund>0){
    statements.push(db.prepare(`INSERT INTO financial_events(event_key,order_id,external_order_id,

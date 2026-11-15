@@ -94,6 +94,8 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         WHERE ri.order_item_id=oi.id AND ret.order_id=oi.order_id
           AND COALESCE(ret.status,'completed')<>'cancelled'
           AND COALESCE(ri.contract_quantity_applied,0)=0
+          AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items lb
+            WHERE lb.return_item_id=ri.id)
           AND NOT EXISTS(SELECT 1 FROM exchanges e
             WHERE e.refund_return_id=ret.id AND COALESCE(e.status,'completed')<>'cancelled')
        ),0) AS old_returned_quantity

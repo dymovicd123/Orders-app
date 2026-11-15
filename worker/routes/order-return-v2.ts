@@ -7,6 +7,7 @@ import {previewUnifiedReturnV2LineEvidence} from '../domains/return-v2-unified-l
 import {submitUnifiedReturnV2WithReceiptPrototype,
   completeUnifiedReturnV2ReceiptPrototype} from '../domains/return-v2-unified-immediate-intake-prototype.ts'
 import {readVersionedReturnMoney} from '../domains/return-v2-financial-projection.ts'
+import {readOldReturnBaseline} from '../domains/return-v2-legacy-contract-baseline.ts'
 import {unsafeActiveExchangeSql} from '../domains/return-v2-safe-exchange-history.ts'
 import {cancelUnifiedReturnV2Prototype} from '../domains/return-v2-unified-cancel-prototype.ts'
 
@@ -18,7 +19,9 @@ export const RETURN_V2_REQUIRED_TABLES=[
   'return_v2_postings','return_v2_cancellations',
   'return_v2_unified_postings','return_v2_unified_lines',
   'return_v2_unified_cancellations','return_v2_metadata_edits',
-  'return_v2_resumed_dispatches'
+  'return_v2_resumed_dispatches',
+  'return_v2_legacy_baselines','return_v2_legacy_baseline_returns',
+  'return_v2_legacy_baseline_items'
 ] as const
 export const RETURN_V2_REQUIRED_COLUMNS=[
   ['return_items','contract_quantity_applied'],
@@ -71,11 +74,12 @@ function response(data:unknown,status=200){
  return json(data,{status,headers:{'Cache-Control':'no-store'}})
 }
 async function preview(db:D1Database,orderId:number){
- const [lineEvidence,financial,history]=await Promise.all([
+ const [lineEvidence,financial,history,baseline]=await Promise.all([
    previewUnifiedReturnV2LineEvidence(db,orderId),
    readVersionedReturnMoney(db,orderId),
    db.prepare(`SELECT
-     (SELECT COUNT(*) FROM returns r WHERE r.order_id=?) AS returns_count,
+     (SELECT COUNT(*) FROM returns r WHERE r.order_id=?
+       AND COALESCE(r.status,'completed')='completed') AS returns_count,
      (SELECT CASE WHEN ${unsafeActiveExchangeSql('?')} THEN 1 ELSE 0 END) AS exchanges_count,
      (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS unified_count,
      (SELECT COUNT(*) FROM return_v2_postings vp WHERE vp.order_id=?) AS old_v2_count,
@@ -86,6 +90,7 @@ async function preview(db:D1Database,orderId:number){
       returns_count:number;exchanges_count:number;unified_count:number;
       old_v2_count:number;cancel_count:number
      }>(),
+   readOldReturnBaseline(db,orderId),
  ])
  const recent=await db.prepare(`SELECT up.id AS posting_id,up.return_id,up.posted_at,
     up.cash_refund,ret.status AS return_status,
@@ -113,6 +118,7 @@ async function preview(db:D1Database,orderId:number){
    ||toInt(history?.exchanges_count,0)>0
    ||toInt(history?.cancel_count,0)>0
    ||toInt(history?.returns_count,0)!==toInt(history?.unified_count,0)
+     +baseline.alreadyBaselined+baseline.returns.length
  const provenLines=lineEvidence.lines.filter(l=>!l.requiresReview&&l.availableQuantity>0)
  const eligible=!hasUnsupported&&provenLines.length>0
  const paidIn=financial.kind==='return_v2'
@@ -125,10 +131,10 @@ async function preview(db:D1Database,orderId:number){
    ?financial.netHeld
    :Math.max(0,paidIn-paidOut)
  const currentSale=financial.kind==='return_v2'
-   ?financial.currentSale:financial.totalAmount
+   ?financial.currentSale:Math.max(0,financial.totalAmount-baseline.reduction)
  const cancellationAvailable=Boolean(recent
    &&toInt(history?.unified_count,0)===1
-   &&toInt(history?.returns_count,0)===1
+   &&toInt(history?.returns_count,0)===1+baseline.alreadyBaselined
    &&!hasUnsupported
    &&recent.return_status==='completed'
    &&recent.received_count===0&&recent.lifecycle_count===0
@@ -149,11 +155,13 @@ async function preview(db:D1Database,orderId:number){
          :'После возврата уже была другая операция или изменение. Отмена требует отдельной проверки.'
    }:null,
    reason:hasUnsupported
-      ?'У заказа есть старая операция, обмен или отменённый Return V2. Сначала требуется проверка истории.'
+      ?'История заказа содержит операции, которые пока нельзя автоматически согласовать.'
       :provenLines.length===0
        ?'Нет позиций с подтверждённой отправкой или резервом. Проверьте их статусы.'
        :null,
    evidence:lineEvidence,
+   previousReturnAdjustment:baseline.needsBaseline?{saleReduction:baseline.reduction,
+     refundAlreadyAccounted:baseline.previousRefund}:null,
    finance:{currentSale,paidIn,paidOut,netHeld,
       customerDebt:Math.max(0,currentSale-netHeld),
       customerOverpay:Math.max(0,netHeld-currentSale),
