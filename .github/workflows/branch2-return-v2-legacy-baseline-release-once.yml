@@ -99,7 +99,7 @@ jobs:
           import hashlib,json,os,urllib.request
           name='0135_return_v2_legacy_contract_baseline.sql'
           data=(Path('migrations')/name).read_bytes()
-          digest=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\\0'+data).hexdigest()
+          digest=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
           if digest!='32b60118de9a38fc0ea1e019e0e788f04d8a5d4e':
               raise SystemExit('STOP: unreviewed 0135 migration bytes')
           account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
