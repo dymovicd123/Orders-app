@@ -42,6 +42,25 @@ jobs:
           WHERE ei.exchange_id IN (95,96,97)
           ORDER BY ei.exchange_id,ei.role,ei.id
           """))
+          queries.append(("dispatch_history", """
+          SELECT d.order_id,di.order_item_id,di.id AS dispatch_item,di.quantity,
+            di.cancelled_quantity,di.source_type,di.movement_id,
+            dc.id AS correction_id,dc.quantity AS correction_qty,dc.stock_restored,
+            (SELECT COUNT(*) FROM inventory_movements m WHERE m.id=di.movement_id
+              AND m.movement_type='sale' AND m.reference_type='order_dispatch') AS valid_movement
+          FROM order_dispatch_items di
+          JOIN order_dispatches d ON d.id=di.dispatch_id
+          LEFT JOIN order_dispatch_corrections dc ON dc.dispatch_item_id=di.id
+          WHERE d.order_id IN (2196,2197,2198,2199,2205)
+          ORDER BY d.order_id,di.order_item_id,di.id
+          """))
+          queries.append(("reservations", """
+          SELECT r.order_id,r.order_item_id,r.id,r.quantity,r.status,r.inventory_source,
+            r.variant_id,r.fulfilled_at,r.released_at
+          FROM inventory_reservations r
+          WHERE r.order_id IN (2196,2197,2198,2199,2205)
+          ORDER BY r.order_id,r.order_item_id,r.id
+          """))
           for name,sql in queries:
               if not sql.lstrip().upper().startswith('SELECT '):
                   raise SystemExit('STOP nonread query')
