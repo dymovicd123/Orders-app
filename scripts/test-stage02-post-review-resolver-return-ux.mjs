@@ -105,7 +105,7 @@ assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prom
 
 const returnSection = read('src/features/sections/OrderReturnsSection.tsx')
 const exchangeSection = read('src/features/sections/OrderExchangeSection.tsx')
-const returnIntakeDefault = returnSection.match(/const defaultReturnDestination[\\s\\S]*?(?=const selectedReturnLines)/)?.[0] || ''
+const returnIntakeDefault = returnSection.split('const defaultReturnDestination')[1]?.split('const selectedReturnLines')[0] || ''
 assert.ok(returnIntakeDefault.includes("item.sourceType === 'workshop' || item.isWorkshop")
   && returnIntakeDefault.includes("'no_stock'")
   && returnSection.includes('value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}')
