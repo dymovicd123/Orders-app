@@ -1,7 +1,7 @@
 // Stage 1 of the unified Return/Cancel flow. Read-only, not routed to employee UI.
 // A chosen line means "remove from the purchase", never "physically received".
 import { priorIssueEvidenceSql } from './order-prior-issued-origin.ts'
-import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {hasUnsafeActiveExchange} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2LineAction =
   | 'physical_return_pending'
@@ -82,7 +82,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       created_at,updated_at,archived_at FROM orders WHERE id=? LIMIT 1`
   ).bind(rawOrderId).first<OrderRow>()
   if(!order)throw new ReturnV2LineEvidenceConflict('Заказ не найден.')
-  const [itemResults,reservationResults,dispatchResults,history,workshopTaskResults]=await Promise.all([
+  const [itemResults,reservationResults,dispatchResults,workshopTaskResults,unsafeExchange]=await Promise.all([
     db.prepare(`SELECT oi.id,oi.product_name_snapshot,oi.quantity,oi.unit_price,oi.line_total,
        oi.stock_writeoff_status,oi.source_type,oi.is_workshop,oi.variant_id,
        EXISTS(
@@ -136,13 +136,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
        JOIN order_dispatches d ON d.id=di.dispatch_id
        WHERE d.order_id=? ORDER BY di.order_item_id,di.id`
     ).bind(rawOrderId).all<DispatchRow>(),
-    db.prepare(`SELECT
-       (SELECT COUNT(*) FROM returns WHERE order_id=?) AS returns_count,
-       (SELECT CASE WHEN ${unsafeActiveExchangeSql('?')} THEN 1 ELSE 0 END) AS exchanges_count`
-    ).bind(rawOrderId,rawOrderId).first<{returns_count:number;exchanges_count:number}>(),
     db.prepare(`SELECT order_item_id,status,quantity FROM workshop_tasks
       WHERE order_id=? AND order_item_id IS NOT NULL ORDER BY order_item_id,id`)
       .bind(rawOrderId).all<{order_item_id:number;status:string;quantity:number}>(),
+    hasUnsafeActiveExchange(db,rawOrderId),
   ])
   const items=itemResults.results||[]
   const reservations=new Map<number,ReservationRow[]>()
@@ -167,7 +164,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
   if(order.pricing_mode!=='itemized_v1')rootProblems.push('legacy_price_unverified')
   if(['archived','deleted'].includes(String(order.order_status||'').toLowerCase())||order.archived_at)
     rootProblems.push('order_closed')
-  if(Number(history?.exchanges_count||0)>0)rootProblems.push('exchange_history_requires_migration')
+  if(unsafeExchange)rootProblems.push('exchange_history_requires_migration')
   let lineTotal=0
   for(const item of items){
     const q=amount(item.quantity),unit=amount(item.unit_price),sum=amount(item.line_total)
