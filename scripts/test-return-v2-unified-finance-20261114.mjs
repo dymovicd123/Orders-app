@@ -1299,5 +1299,75 @@ await assert.rejects(postUnifiedReturnV2Prototype(DB,{
 assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=10020').get().total_amount,2000)
 
 
+// Verified reversal of a real dispatched warehouse item must let the manager
+// cancel its remaining customer obligation without repeating physical +1.
+// A missing correction proof leaves the same position blocked.
+addOrder(10030,10031,'V2U-RESTORED-DISPATCH',1200)
+const restoredBefore=stock('warehouse')
+await api('POST','/api/orders/10030/shipping/dispatches',{
+ requestId:'v2u-restored-dispatch-original-0001',
+ items:[{orderItemId:10031,quantity:1}]
+})
+const restoredDi=sql.prepare(
+ 'SELECT di.id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=10030').get()
+assert(restoredDi?.id)
+const restoredFix=await api('POST',
+ `/api/orders/10030/shipping/dispatch-items/${restoredDi.id}/correct`,{
+ requestId:'v2u-restored-dispatch-correction-0001',
+ reason:'Исправление ошибочной отправки для теста'
+})
+assert.equal(restoredFix.ok,true)
+const correctedRow=sql.prepare(
+ 'SELECT di.quantity,di.cancelled_quantity,dc.quantity AS fix_qty,dc.stock_restored FROM order_dispatch_items di JOIN order_dispatch_corrections dc ON dc.dispatch_item_id=di.id WHERE di.id=?'
+).get(restoredDi.id)
+assert.equal(correctedRow.cancelled_quantity,correctedRow.quantity)
+assert.equal(correctedRow.stock_restored,1)
+assert.equal(correctedRow.fix_qty,correctedRow.quantity)
+assert.deepEqual(stock('warehouse'),restoredBefore,
+ 'The correction restored the original physical and reserved stock')
+const restoredPreview=await callV2Http('GET','/api/orders/10030/returns/v2/preview')
+assert.equal(restoredPreview.eligible,true)
+assert.equal(restoredPreview.evidence.lines[0].proposedAction,'cancel_unshipped_reservation')
+assert.equal(restoredPreview.evidence.lines[0].reasonCode,'corrected_dispatch_restored_reservation')
+const restoredPost=await callV2Http('POST','/api/orders/10030/returns/v2',{
+ requestId:'v2u-restored-dispatch-return-0001',
+ expectedOrderVersion:restoredPreview.evidence.orderVersion,
+ items:[{orderItemId:10031,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(restoredPost.remainingSale,0)
+assert.equal(stock('warehouse').quantity,restoredBefore.quantity,
+ 'Return after a corrected shipment must not create stock +1')
+assert.equal(stock('warehouse').reserved_quantity,restoredBefore.reserved_quantity-1)
+const restoredUndo=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:restoredPost.postingId,requestId:'v2u-restored-dispatch-undo-0001',
+ reason:'Проверка обратной операции',
+ shippedGoodsUnreceivedConfirmed:false,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:false
+})
+assert.equal(restoredUndo.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10031').get().quantity,1)
+assert.deepEqual(stock('warehouse'),restoredBefore)
+
+addOrder(10040,10041,'V2U-MISSING-CORRECTION',1300)
+await api('POST','/api/orders/10040/shipping/dispatches',{
+ requestId:'v2u-invalid-correction-original-0001',
+ items:[{orderItemId:10041,quantity:1}]
+})
+const fakeDi=sql.prepare(
+ 'SELECT di.id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=10040').get()
+assert(fakeDi?.id)
+await api('POST',`/api/orders/10040/shipping/dispatch-items/${fakeDi.id}/correct`,{
+ requestId:'v2u-invalid-correction-passed-0001',
+ reason:'Проверка блокировки при отсутствии доказательства'
+})
+sql.prepare('DELETE FROM order_dispatch_corrections WHERE dispatch_item_id=?').run(fakeDi.id)
+const cannotProve=await callV2Http('GET','/api/orders/10040/returns/v2/preview')
+assert.equal(cannotProve.evidence.lines[0].requiresReview,true)
+assert.equal(cannotProve.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
+assert.equal(cannotProve.eligible,false)
+
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
