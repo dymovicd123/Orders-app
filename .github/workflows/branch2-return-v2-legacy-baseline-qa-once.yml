@@ -93,6 +93,15 @@ jobs:
             ORDER BY oi.order_id,oi.id`);
           console.log('HISTORY_QA_ORDERS: '+JSON.stringify(diagOrders));
           console.log('HISTORY_QA_ITEMS: '+JSON.stringify(diagItems));
+          const sourceAudit=await read(`SELECT oi.order_id,oi.id AS item_id,oi.variant_id,
+             oi.source_type,oi.quantity,oi.stock_writeoff_status,o.shipping_status,
+             r.id AS reservation_id,r.variant_id AS reservation_variant,r.quantity AS reserved_quantity,
+             r.status AS reservation_status,r.inventory_source AS reservation_source
+             FROM order_items oi JOIN orders o ON o.id=oi.order_id
+             LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+             WHERE oi.id IN (5205,5206,5208,5211,5213,5216)
+             ORDER BY oi.id,r.id`);
+          console.log('HISTORY_QA_PROVENANCE: '+JSON.stringify(sourceAudit));
           const ids=[2196,2197,2198,2199,2200,2201,2204,2205,2206];
           for(const id of ids){
             const pathname='/api/orders/'+id+'/returns/v2/preview';
