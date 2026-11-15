@@ -215,8 +215,8 @@ export function OrderReturnV2Flow({
  return <section className="mini-panel debt-form-panel return-v2-panel" aria-label="Оформление возврата">
    <div className="mini-panel-head">
      <div>
-       <h3>Возврат заказа №{order?.external_id||orderId}</h3>
-       <p className="mini-panel-note">Товары для возврата уже выбраны. Проверьте список и сумму выплаты.</p>
+       <h3 data-return-form-title tabIndex={-1}>Возврат заказа №{order?.external_id||orderId}</h3>
+       <p className="mini-panel-note">Уберите лишние позиции, проверьте получение товаров и сумму денег клиенту.</p>
      </div>
      <div className="mini-panel-actions">
        <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
@@ -231,12 +231,12 @@ export function OrderReturnV2Flow({
        <span>{reviewCount} {reviewCount===1?'позиция требует':'позиции требуют'} уточнения. Остальные товары можно оформить без ожидания.</span>
      </div>:null}
    {preview?<div className="return-v2-finance-overview">
-      <div><span>Осталось в покупке</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
-      <div><span>Уже оплачено (за вычетом выплат)</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
-      <div><span>Долг клиента</span><strong>{formatMoney(preview.finance.customerDebt)} ₸</strong></div>
+      <div><span>Стоимость товаров до возврата</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
+      <div><span>Деньги у магазина</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
+      <div><span>Долг клиента сейчас</span><strong>{formatMoney(preview.finance.customerDebt)} ₸</strong></div>
    </div>:null}
    <div className="return-v2-items-title">
-      <strong>Товары</strong>
+      <strong><span className="return-v2-step-number">1</span> Какие товары возвращаем</strong>
       <span>{lines.filter(line=>!line.requiresReview&&money(selections[line.orderItemId])>0).length} из {lines.length} выбрано</span>
    </div>
    <div className="return-smart-grid">
@@ -253,7 +253,7 @@ export function OrderReturnV2Flow({
            <span className="return-smart-check">{quantity>0?'✓':''}</span>
            <span className="return-smart-main">
              <strong>{line.productName}</strong>
-             <small>{line.status} · {line.sourceType==='boutique'?'Бутик':line.sourceType==='workshop'?'Цех':'Склад'}</small>
+             <span className={`return-v2-item-status ${shipped?'is-shipped':workshop?'is-workshop':'is-unissued'}`}>{line.status} · {line.sourceType==='boutique'?'Бутик':line.sourceType==='workshop'?'Цех':'Склад'}</span>
              <small>{line.availableQuantity} шт. · цена продажи {formatMoney(line.soldUnitPrice)} ₸/шт.</small>
            </span>
            <b>{line.requiresReview?'Проверить':quantity>0?'Выбран':'Добавить'}</b>
@@ -268,19 +268,23 @@ export function OrderReturnV2Flow({
              <strong className="return-v2-line-total">К возврату: {formatMoney(quantity*line.soldUnitPrice)} ₸</strong>
              {noReserve?<div className="return-smart-unissued">
                <strong>Не отправлен</strong>
-               <span>Покупка отменится. Склад и резерв не изменятся.</span>
+               <span>Уберём из заказа. Товар не принимали обратно — остаток не изменится.</span>
              </div>:workshop?<div className="return-smart-unissued">
-               <strong>Цех · отказ клиента</strong>
-               <span>Исключим из покупки. Задание, изделие и оплата цеху сохранятся.</span>
-             </div>:shipped?<label><span>Физический статус возвращаемого товара</span>
+               <strong>Клиент отказался от изделия из цеха</strong>
+               <span>Уберём из покупки клиента. Задание цеху и его оплата сохраняются.</span>
+             </div>:shipped?<label className="return-v2-receipt-field"><span>Где товар сейчас?</span>
                <select value={intents[line.orderItemId]||'pending'} disabled={locked}
                 onChange={e=>setReceipt(line.orderItemId,e.target.value as Intent)}>
                 {(Object.keys(labels) as Intent[]).map(k=><option key={k} value={k}>{labels[k]}</option>)}
                </select>
-               <small>Приёмка добавит товар в остаток только после подтверждения его фактического получения.</small>
+               <small className={intents[line.orderItemId]&&intents[line.orderItemId]!=='pending'?'return-v2-caution':'return-v2-help'}>
+                  {intents[line.orderItemId]&&intents[line.orderItemId]!=='pending'
+                    ?'Вы подтверждаете, что вещь уже физически получена. Не выбирайте этот вариант заранее.'
+                    :'Товар пока не добавляется в остатки. Когда он придёт, отметьте получение во вкладке «Приёмка».'}
+                </small>
              </label>:<div className="return-smart-unissued">
                <strong>Не отправлен</strong>
-               <span>Покупка отменится, резерв освободится. Физический остаток не изменится.</span>
+               <span>Уберём из заказа и освободим резерв. Физический остаток не увеличится.</span>
              </div>}
            </>:null}
          </div>
@@ -288,7 +292,7 @@ export function OrderReturnV2Flow({
      })}
    </div>
    {eligible?<div className="mini-item order-payment-card">
-      <div className="mini-item-head"><strong>Деньги и итог возврата</strong></div>
+      <div className="mini-item-head"><strong><span className="return-v2-step-number">2</span> Сколько денег возвращаем</strong></div>
       <div className="subgrid order-payment-grid">
         <label><span>Фактически выплатить клиенту, ₸</span>
           <input type="number" min="0" step="1" max={maxRefund} value={refundAmount}
@@ -296,9 +300,9 @@ export function OrderReturnV2Flow({
             onChange={e=>{
               setManualRefund(true);setRefundAmount(money(e.target.value));requestRef.current=''
             }}/>
-          <small className="field-hint">Можно изменить, включая 0 ₸. Выплата не может превышать деньги, оставшиеся у магазина.</small>
+          <small className="field-hint">Укажите сумму, которую действительно выдаёте клиенту сейчас. Можно указать 0 ₸.</small>
         </label>
-        <label><span>Способ выплаты</span>
+        <label><span>Как вернёте деньги клиенту?</span>
           <SmartPickerInput value={refundMethod} options={paymentMethods||[]}
              disabled={busy||Boolean(committed)||unknownResult}
              onChange={(value:string)=>{
@@ -310,12 +314,18 @@ export function OrderReturnV2Flow({
       </div>
       <div className="return-smart-summary" role="status">
         <div><span>Исключаем из покупки</span><strong>{selectedQuantity} шт. · {formatMoney(selectedSale)} ₸</strong></div>
-        <div><span>После возврата останется</span><strong>{formatMoney(finalSale)} ₸</strong></div>
-        {projectedDebt>0?<div><span>Долг клиента после возврата</span><strong>{formatMoney(projectedDebt)} ₸</strong></div>:null}
-        {projectedOverpay>0?<div><span>Переплата клиенту</span><strong>{formatMoney(projectedOverpay)} ₸</strong></div>:null}
+        <div><span>Стоимость товаров после возврата</span><strong>{formatMoney(finalSale)} ₸</strong></div>
+        {projectedDebt>0?<div className="return-v2-balance-warning"><span>Клиент останется должен</span><strong>{formatMoney(projectedDebt)} ₸</strong></div>:null}
+        {projectedOverpay>0?<div className="return-v2-balance-warning"><span>Ещё нужно вернуть клиенту</span><strong>{formatMoney(projectedOverpay)} ₸</strong></div>:null}
       </div>
    </div>:null}
-   {preview?.cancellation?<OrderReturnV2Cancellation
+   {eligible&&selectedQuantity>0?<div className="return-v2-final-check" role="note">
+       <strong><span className="return-v2-step-number">3</span> Проверьте перед сохранением</strong>
+       <span>Возврат изменит покупку и учёт денег. Только фактически полученный товар можно сразу принять в остатки.</span>
+       {projectedOverpay>0?<span className="return-v2-final-warning">После этой выплаты нужно будет вернуть клиенту ещё {formatMoney(projectedOverpay)} ₸.</span>:null}
+       {projectedDebt>0?<span className="return-v2-final-warning">После возврата долг клиента составит {formatMoney(projectedDebt)} ₸.</span>:null}
+    </div>:null}
+    {preview?.cancellation?<OrderReturnV2Cancellation
      key={`${orderId}:${preview.cancellation.postingId}`}
      orderId={orderId} cancellation={preview.cancellation}
      formatMoney={formatMoney} SmartPickerInput={SmartPickerInput}
