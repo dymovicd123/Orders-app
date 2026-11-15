@@ -26,6 +26,7 @@ export type ReturnV2LineEvidence = {
   soldUnitPrice: number
   selectedSaleValue: number
   dispatchedQuantity: number
+  postedV2PhysicalQuantity: number
   activeReservedQuantity: number
   unresolvedReservedQuantity: number
   fulfilledQuantity: number
@@ -185,6 +186,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const id=Number(item.id)
     const contractQuantity=amount(item.quantity)??0
     const oldReturned=amount(item.old_returned_quantity)??0
+    const postedV2Physical=amount(item.posted_physical_v2_qty)
     const qty=Math.max(0,contractQuantity-oldReturned)
     const soldUnitPrice=amount(item.unit_price)??0
     const rs=reservations.get(id)||[]
@@ -232,7 +234,8 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     let action:ReturnV2LineAction='needs_review'
     let reasonCode='unknown_state'
     let message='Нет однозначного основания для складского действия. Не изменяйте остаток автоматически.'
-    const badNumbers=oldReturned>contractQuantity||qty===0
+    const badNumbers=oldReturned>contractQuantity||qty===0||postedV2Physical===null
+      ||(postedV2Physical!==null&&!Number.isSafeInteger(contractQuantity+postedV2Physical))
       ||!Number.isSafeInteger(qty*soldUnitPrice)
       ||rs.some(r=>amount(r.quantity)===null||amount(r.quantity)===0)
       ||ds.some(r=>amount(r.quantity)===null||amount(r.cancelled_quantity)===null
@@ -261,14 +264,15 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         && Number(d.correction_valid)===1))){
       reasonCode='corrected_dispatch_requires_review'
       message='Есть отменённая отправка. Проверьте, где товар и что уже учтено.'
-    }else if(dispatched>contractQuantity||dispatched>0&&dispatched<contractQuantity){
+    }else if(dispatched>contractQuantity+(postedV2Physical??0)
+      ||dispatched>0&&dispatched<contractQuantity+(postedV2Physical??0)){
       reasonCode='partial_dispatch_not_split'
       message='Часть этой строки отправлена без безопасного разделения. Требуется сверка.'
-    }else if(dispatched===contractQuantity&&qty>0){
+    }else if(dispatched===contractQuantity+(postedV2Physical??0)&&qty>0){
       const validDispatch=ds.every(d=>Number(d.movement_valid)===1||isWorkshop||(
         d.movement_id===null&&priorIssued))
       const badReservation=activeQty>0||unresolvedQty>0
-        ||(!isWorkshop&&(fulfilled.length!==1||fulfilledQty!==contractQuantity))
+        ||(!isWorkshop&&(fulfilled.length!==1||fulfilledQty!==contractQuantity+(postedV2Physical??0)))
       if(validDispatch&&!badReservation){
         action='physical_return_pending'
         reasonCode='dispatch_confirmed'
@@ -335,7 +339,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       contractQuantity,alreadyReturnedWithoutContractReduction:oldReturned,
       availableQuantity:qty,selectedQuantity:qty,
       soldUnitPrice,selectedSaleValue:qty*soldUnitPrice,
-      dispatchedQuantity:dispatched,
+      dispatchedQuantity:dispatched,postedV2PhysicalQuantity:postedV2Physical??0,
       activeReservedQuantity:activeQty,unresolvedReservedQuantity:unresolvedQty,
       fulfilledQuantity:fulfilledQty,
       plannedReserveRelease:action==='cancel_unshipped_reservation'?activeQty:0,
