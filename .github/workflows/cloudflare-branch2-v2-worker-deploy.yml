@@ -120,7 +120,7 @@ jobs:
           if len(flags) != 1 or flags[0].get('type') != 'plain_text' or flags[0].get('text') != 'false':
               raise SystemExit('STOP: deployed Branch2 Return V2 feature is not proven OFF.')
           if len(dbs) != 1 or dbs[0].get('type') != 'd1' or (
-              dbs[0].get('id') != '0904a573-21ff-44d8-93b0-c9200f771702'):
+              (dbs[0].get('database_id') or dbs[0].get('id')) != '0904a573-21ff-44d8-93b0-c9200f771702'):
               raise SystemExit('STOP: deployed Branch2 D1 binding is not the expected test database.')
           print('PASS: deployed test Worker has RETURN_V2_ENABLED=false and only Branch2 D1 binding.')
           PY
