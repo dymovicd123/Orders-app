@@ -1501,8 +1501,9 @@ assert.equal(resendUndo.cancelled,true)
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10131').get().quantity,1)
 assert.deepEqual(correctedStock(),resendStockAfter)
 
-// The apparently identical shipment is rejected if the older correction
-// actually did NOT restore the physical stock.
+// A documented earlier correction may intentionally have no stock restoration
+// (for example it crossed a newer stocktake). That warehouse history remains
+// open; return of the separately proven second shipment adds no physical stock.
 addCorrectedFixture(10140,10141,'V2U-RESENT-UNSAFE-CORRECTION',1600)
 await api('POST','/api/orders/10140/shipping/dispatches',{
  requestId:'v2u-resent-invalid-first-0001',
@@ -1519,9 +1520,37 @@ await api('POST','/api/orders/10140/shipping/dispatches',{
  items:[{orderItemId:10141,quantity:1}]
 })
 sql.prepare('UPDATE order_dispatch_corrections SET stock_restored=0 WHERE dispatch_item_id=?').run(priorUnsafe.id)
-const unprovenReship=await callV2Http('GET','/api/orders/10140/returns/v2/preview')
-assert.equal(unprovenReship.eligible,false)
-assert.equal(unprovenReship.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
+sql.prepare('UPDATE order_dispatch_corrections SET quantity=0 WHERE dispatch_item_id=?').run(priorUnsafe.id)
+const missingCorrectionProof=await callV2Http('GET','/api/orders/10140/returns/v2/preview')
+assert.equal(missingCorrectionProof.eligible,false)
+assert.equal(missingCorrectionProof.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
+sql.prepare('UPDATE order_dispatch_corrections SET quantity=1 WHERE dispatch_item_id=?').run(priorUnsafe.id)
+const nonrestoredStock=correctedStock()
+const recordedNoRestock=await callV2Http('GET','/api/orders/10140/returns/v2/preview')
+assert.equal(recordedNoRestock.eligible,true)
+assert.equal(recordedNoRestock.evidence.lines[0].reasonCode,'reshipped_after_unrestored_correction')
+assert.equal(recordedNoRestock.evidence.lines[0].proposedAction,'physical_return_pending')
+const retainedCorrection=sql.prepare(
+ 'SELECT quantity,stock_restored FROM order_dispatch_corrections WHERE dispatch_item_id=?'
+).get(priorUnsafe.id)
+const nonrestoredPost=await callV2Http('POST','/api/orders/10140/returns/v2',{
+ requestId:'v2u-resent-no-restock-pending-return-0001',
+ expectedOrderVersion:recordedNoRestock.evidence.orderVersion,
+ items:[{orderItemId:10141,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(nonrestoredPost.remainingSale,0)
+assert.deepEqual(correctedStock(),nonrestoredStock)
+assert.deepEqual(sql.prepare('SELECT quantity,stock_restored FROM order_dispatch_corrections WHERE dispatch_item_id=?').get(priorUnsafe.id),retainedCorrection)
+const nonrestoredUndo=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:nonrestoredPost.postingId,requestId:'v2u-resent-no-restock-undo-0001',
+ reason:'Клиент возобновил покупку после ошибочной отправки',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(nonrestoredUndo.cancelled,true)
+assert.deepEqual(correctedStock(),nonrestoredStock)
+assert.deepEqual(sql.prepare('SELECT quantity,stock_restored FROM order_dispatch_corrections WHERE dispatch_item_id=?').get(priorUnsafe.id),retainedCorrection)
 
 
 // Completed old Returns may have removed physical goods and paid cash without
