@@ -1441,5 +1441,79 @@ sql.prepare('UPDATE order_items SET quantity=0 WHERE id=10111').run()
 
 
 
+// A correctly restored first dispatch does not poison an independently
+// documented second dispatch. Only the CURRENT issue is physically returned.
+addCorrectedFixture(10130,10131,'V2U-RESENT-AFTER-RESTORED',1400)
+const resendBaseline=correctedStock()
+await api('POST','/api/orders/10130/shipping/dispatches',{
+ requestId:'v2u-resent-first-shipping-0001',
+ items:[{orderItemId:10131,quantity:1}]
+})
+const resendOld=sql.prepare(
+ 'SELECT di.id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=10130 ORDER BY di.id LIMIT 1').get()
+assert(resendOld?.id)
+const resendCorrection=await api('POST',
+ `/api/orders/10130/shipping/dispatch-items/${resendOld.id}/correct`,{
+ requestId:'v2u-resent-first-correction-0001',
+ reason:'Первую отправку отменили с восстановлением на складе'
+})
+assert.equal(resendCorrection.ok,true)
+assert.deepEqual(correctedStock(),resendBaseline)
+await api('POST','/api/orders/10130/shipping/dispatches',{
+ requestId:'v2u-resent-second-shipping-0001',
+ items:[{orderItemId:10131,quantity:1}]
+})
+const resendDispatchRows=sql.prepare(
+ 'SELECT quantity,cancelled_quantity FROM order_dispatch_items WHERE order_item_id=10131 ORDER BY id').all()
+assert.deepEqual(resendDispatchRows.map(r=>r.cancelled_quantity),[1,0])
+const resendStockAfter=correctedStock()
+assert.equal(resendStockAfter.quantity,resendBaseline.quantity-1)
+assert.equal(resendStockAfter.reserved_quantity,resendBaseline.reserved_quantity-1)
+const resendPreview=await callV2Http('GET','/api/orders/10130/returns/v2/preview')
+assert.equal(resendPreview.eligible,true)
+assert.equal(resendPreview.evidence.lines.length,1)
+assert.equal(resendPreview.evidence.lines[0].proposedAction,'physical_return_pending')
+const resendPost=await callV2Http('POST','/api/orders/10130/returns/v2',{
+ requestId:'v2u-resent-return-0001',
+ expectedOrderVersion:resendPreview.evidence.orderVersion,
+ items:[{orderItemId:10131,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(resendPost.remainingSale,0)
+assert.deepEqual(correctedStock(),resendStockAfter,
+ 'A return awaiting physical delivery must not change physical inventory')
+const resendUndo=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:resendPost.postingId,requestId:'v2u-resent-return-undo-0001',
+ reason:'Отмена возврата до физического получения',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(resendUndo.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10131').get().quantity,1)
+assert.deepEqual(correctedStock(),resendStockAfter)
+
+// The apparently identical shipment is rejected if the older correction
+// actually did NOT restore the physical stock.
+addCorrectedFixture(10140,10141,'V2U-RESENT-UNSAFE-CORRECTION',1600)
+await api('POST','/api/orders/10140/shipping/dispatches',{
+ requestId:'v2u-resent-invalid-first-0001',
+ items:[{orderItemId:10141,quantity:1}]
+})
+const priorUnsafe=sql.prepare(
+ 'SELECT di.id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=10140').get()
+await api('POST',`/api/orders/10140/shipping/dispatch-items/${priorUnsafe.id}/correct`,{
+ requestId:'v2u-resent-invalid-correct-0001',
+ reason:'Тест старой отменённой отправки'
+})
+await api('POST','/api/orders/10140/shipping/dispatches',{
+ requestId:'v2u-resent-invalid-second-0001',
+ items:[{orderItemId:10141,quantity:1}]
+})
+sql.prepare('UPDATE order_dispatch_corrections SET stock_restored=0 WHERE dispatch_item_id=?').run(priorUnsafe.id)
+const unprovenReship=await callV2Http('GET','/api/orders/10140/returns/v2/preview')
+assert.equal(unprovenReship.eligible,false)
+assert.equal(unprovenReship.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
