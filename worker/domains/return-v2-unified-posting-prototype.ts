@@ -20,7 +20,8 @@ type Res={id:number;order_item_id:number;quantity:number;status:string;
 type Stock={id:number;inventory_source:string;variant_id:number;quantity:number;reserved_quantity:number}
 type PreparedLine={orderItemId:number;quantity:number;originalQty:number;unitPrice:number;
   value:number;action:Exclude<ReturnV2LineAction,'needs_review'>;reservation:Res|null;
-  source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent}
+  source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent;
+  fulfilledQty:number;legacyUnloggedShipping:boolean}
 export class ReturnV2UnifiedPostingConflict extends Error {
   readonly status=409
   readonly code='return_v2_unified_posting_conflict'
@@ -84,6 +85,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   // Selected lines must always be fully proven; unselected lines are read-only.
   if(!preview.lines.length)
     reject('В заказе не осталось позиций для возврата.')
+  const baseline=await readOldReturnBaseline(db,wanted.orderId)
+  const baselineQtyByItem=new Map(baseline.byItem.map(b=>[b.itemId,b.quantity]))
   const byId=new Map(preview.lines.map(line=>[line.orderItemId,line]))
   let totalReduction=0
   const lines:PreparedLine[]=[]
@@ -117,9 +120,11 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       ).bind(wanted.orderId,line.orderItemId).first<{count:number}>())
       if(!task?.count)reject('Связанное цеховое задание не найдено.')
     }else if(act==='physical_return_pending'){
+      const isLegacy=line.reasonCode==='legacy_sent_fulfilled_without_dispatch'
       if(result.length!==1||result[0].status!=='fulfilled'
-        ||result[0].quantity!==line.contractQuantity
-        ||line.dispatchedQuantity!==line.contractQuantity)
+        ||result[0].quantity!==line.fulfilledQuantity
+        ||(isLegacy?line.dispatchedQuantity!==0
+          :line.dispatchedQuantity!==line.contractQuantity))
         reject('Выдача позиции перестала соответствовать журналу отправок.')
     }else{
       if(result.length!==1||result[0].status!==(act==='cancel_unshipped_reservation'?'active':'unresolved')
@@ -172,10 +177,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post)))
       reject('Эта позиция уже участвовала в другом возврате. Для повторной отмены нужен точный остаток того же резерва.')
 
+    const effectiveQty=line.contractQuantity-(baselineQtyByItem.get(line.orderItemId)||0)
+    if(effectiveQty<requested.quantity||effectiveQty<=0)
+      reject('Количество уже уменьшено предыдущим возвратом.')
     lines.push({orderItemId:line.orderItemId,quantity:requested.quantity,
-      originalQty:line.contractQuantity,unitPrice:line.soldUnitPrice,value,action:act,
+      originalQty:effectiveQty,unitPrice:line.soldUnitPrice,value,action:act,
       reservation,source:actual.source_type,variant:actual.variant_id,
-      oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent})
+      oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent,
+      fulfilledQty:line.fulfilledQuantity,
+      legacyUnloggedShipping:line.reasonCode==='legacy_sent_fulfilled_without_dispatch'})
   }
   const order=await db.prepare(
     `SELECT total_amount,updated_at,pricing_mode,external_id,manager_id
@@ -185,10 +195,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   if(!order||order.updated_at!==wanted.version||order.pricing_mode!=='itemized_v1')
     reject('Стоимость заказа или тип цены изменились.')
   const initialTotal=safeInt(order.total_amount)
-  const baseline=await readOldReturnBaseline(db,wanted.orderId)
   const normalizedInitial=initialTotal-baseline.reduction
-  if(normalizedInitial<0||baseline.byItem.some(b=>lines.some(l=>l.orderItemId===b.itemId)))
-    reject('В старом возврате обнаружено пересечение с выбранной позицией.')
+  if(normalizedInitial<0)reject('Старые возвраты превышают остаток стоимости заказа.')
   const finalTotal=normalizedInitial-totalReduction
   if(finalTotal<0||totalReduction<=0)reject('Нечего исключать из продажи.')
   const paid=await db.prepare(
@@ -397,6 +405,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
           AND EXISTS(SELECT 1 FROM workshop_tasks wt
             WHERE wt.order_id=order_items.order_id AND wt.order_item_id=order_items.id
               AND wt.status IN ('active','invoice','ready','done'))`
+      : line.action==='physical_return_pending'&&line.legacyUnloggedShipping
+      ? `AND EXISTS(SELECT 1 FROM inventory_reservations r
+          WHERE r.order_item_id=order_items.id AND r.status='fulfilled' AND r.quantity=?)
+         AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+          WHERE di.order_item_id=order_items.id)
+         AND EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id
+          AND o.shipping_status='sent')
+         AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+          WHERE r.order_item_id=order_items.id AND r.status IN ('active','unresolved'))`
       : line.action==='physical_return_pending'
       ? `AND EXISTS(
           SELECT 1 FROM inventory_reservations r WHERE r.order_item_id=order_items.id
@@ -418,7 +435,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          AND ${noUnreversedDispatchSql('order_items.id')}`
     const guardArgs=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
       ? [] : line.action==='physical_return_pending'
-      ? [line.originalQty,line.originalQty] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
+      ? (line.legacyUnloggedShipping?[line.fulfilledQty]:[line.originalQty,line.originalQty]) : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
         line.quantity===r!.quantity?'released':r!.status]
     const sameItemHistoryGuard=line.action==='cancel_unshipped_reservation'
       ? `AND NOT EXISTS(
@@ -449,12 +466,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          `+sameItemHistoryGuard+`
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
            ON ret.id=ri.return_id WHERE ri.order_item_id=order_items.id
-            AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?))
+            AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?)
+            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items lb
+              JOIN return_v2_unified_postings up ON up.id=lb.posting_id
+              WHERE lb.return_item_id=ri.id AND up.request_id=?))
          `+guard
     ).bind(line.quantity,line.quantity,line.quantity,line.action,
       line.orderItemId,wanted.orderId,line.originalQty,line.unitPrice,
       line.oldStatus,...(line.action==='cancel_unshipped_reservation'?[r!.id]:[]),
-      wanted.requestId,...guardArgs))
+      wanted.requestId,wanted.requestId,...guardArgs))
     statements.push(changed(db,'contract_line'))
     statements.push(db.prepare(
       `INSERT INTO return_v2_unified_lines(
