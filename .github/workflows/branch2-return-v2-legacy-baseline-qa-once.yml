@@ -88,9 +88,7 @@ jobs:
             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
               WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled,
             (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) FROM order_dispatch_items di
-              WHERE di.order_item_id=oi.id) AS currently_dispatched,
-            (SELECT COUNT(*) FROM inventory_movements m WHERE m.order_item_id=oi.id
-              AND m.movement_type='sale') AS sale_movement_count
+              WHERE di.order_item_id=oi.id) AS currently_dispatched
             FROM order_items oi WHERE oi.order_id IN (2196,2197,2198)
             ORDER BY oi.order_id,oi.id`);
           console.log('HISTORY_QA_ORDERS: '+JSON.stringify(diagOrders));
