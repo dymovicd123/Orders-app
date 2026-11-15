@@ -192,7 +192,7 @@ export function OrderReturnV2Flow({
  if(!orderId||viewMode==='legacy')return null
  if(viewMode==='checking')return <section className="mini-panel debt-form-panel" aria-label="Проверка Return V2" aria-busy="true">
    <div className="mini-panel-head">
-     <div><h3>Проверка товаров и остатков</h3>
+     <div><h3 data-return-form-title tabIndex={-1}>Проверка товаров и остатков</h3>
        <p className="mini-panel-note">Проверяем фактическую отправку, резерв и деньги перед оформлением возврата.</p>
      </div>
      <button className="secondary compact" type="button" onClick={onBack}>Назад к заказам</button>
@@ -200,8 +200,8 @@ export function OrderReturnV2Flow({
  </section>
  if(viewMode==='error')return <section className="mini-panel debt-form-panel" aria-label="Ошибка проверки Return V2">
    <div className="mini-panel-head">
-     <div><h3>Возврат · требуется проверка</h3>
-       <p className="mini-panel-note">Новая форма не смогла проверить заказ. Старая форма не используется автоматически, чтобы не нарушить учёт.</p>
+     <div><h3 data-return-form-title tabIndex={-1}>Возврат · требуется проверка</h3>
+       <p className="mini-panel-note">Не удалось проверить заказ. Пока проверка не пройдена, возврат не оформляется.</p>
      </div>
      <button className="secondary compact" type="button" onClick={onBack}>Назад к заказам</button>
    </div>
@@ -226,7 +226,7 @@ export function OrderReturnV2Flow({
    </div>
    {!eligible?<div className="return-v2-notice" role="status">
       <strong>{lines.length===0?'Нет товаров для возврата':'Сейчас нельзя оформить выбранные товары'}</strong>
-      <span>{preview?.reason||'По этим позициям нет достаточно надёжных данных для записи. Ни деньги, ни остатки не изменены.'}</span>
+      <span>{preview?.reason||'По выбранным товарам нужны дополнительные сведения. Ничего не изменено. Обратитесь к администратору.'}</span>
      </div>:reviewCount>0?<div className="return-v2-notice" role="status">
        <span>{reviewCount} {reviewCount===1?'позиция требует':'позиции требуют'} уточнения. Остальные товары можно оформить без ожидания.</span>
      </div>:null}
