@@ -4,7 +4,7 @@
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
 import {readOldReturnBaseline} from './return-v2-legacy-contract-baseline.ts'
-import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
+import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql,noUnprovenCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
@@ -21,7 +21,7 @@ type Stock={id:number;inventory_source:string;variant_id:number;quantity:number;
 type PreparedLine={orderItemId:number;quantity:number;originalQty:number;unitPrice:number;
   value:number;action:Exclude<ReturnV2LineAction,'needs_review'>;reservation:Res|null;
   source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent;
-  fulfilledQty:number;legacyUnloggedShipping:boolean}
+  fulfilledQty:number;legacyUnloggedShipping:boolean;unrestoredCorrection:boolean}
 export class ReturnV2UnifiedPostingConflict extends Error {
   readonly status=409
   readonly code='return_v2_unified_posting_conflict'
@@ -189,7 +189,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reservation,source:actual.source_type,variant:actual.variant_id,
       oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent,
       fulfilledQty:line.fulfilledQuantity,
-      legacyUnloggedShipping:line.reasonCode==='legacy_sent_fulfilled_without_dispatch'})
+      legacyUnloggedShipping:line.reasonCode==='legacy_sent_fulfilled_without_dispatch',
+      unrestoredCorrection:line.reasonCode==='reshipped_after_unrestored_correction'})
   }
   const order=await db.prepare(
     `SELECT total_amount,updated_at,pricing_mode,external_id,manager_id
@@ -424,8 +425,18 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             AND r.status='fulfilled' AND r.quantity=?
         ) AND (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
              FROM order_dispatch_items di WHERE di.order_item_id=order_items.id)=?
-          AND ${noUnsafeCancelledDispatchSql('order_items.id')}
-          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+          AND ${line.unrestoredCorrection
+             ? noUnprovenCancelledDispatchSql('order_items.id')
+             : noUnsafeCancelledDispatchSql('order_items.id')}
+          AND ${line.unrestoredCorrection
+             ? `EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id
+                   AND o.shipping_status='sent') AND
+                 EXISTS(SELECT 1 FROM order_dispatch_items di
+                   JOIN order_dispatch_corrections dc ON dc.dispatch_item_id=di.id
+                   WHERE di.order_item_id=order_items.id
+                     AND di.cancelled_quantity=di.quantity AND di.quantity>0
+                     AND dc.quantity=di.quantity AND dc.stock_restored=0)
+                 AND` : ''} NOT EXISTS(SELECT 1 FROM order_dispatch_items di
              WHERE di.order_item_id=order_items.id
                AND di.source_type<>'workshop' AND di.movement_id IS NOT NULL
                AND NOT EXISTS(SELECT 1 FROM inventory_movements m
