@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { OrderReturnV2Flow } from './OrderReturnV2Flow'
+import {allowLegacyReturnEditor,type ReturnV2UiMode} from './returnV2UiMode'
 import '../../styles/194-return-smart-ux.css'
 type SectionContext = Record<string, any>
 
@@ -62,10 +63,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
       : 'Без возврата в остатки'
 
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
-  const [v2Navigation,setV2Navigation]=useState<{orderId:number;mode:'checking'|'legacy'|'v2'|'error'}>({orderId:0,mode:'checking'})
+  const [v2Navigation,setV2Navigation]=useState<{orderId:number;mode:ReturnV2UiMode}>({orderId:0,mode:'checking'})
   const selectedId=Number(returnSelectedOrder?.id||0)
-  const returnFormMode=selectedId&&v2Navigation.orderId===selectedId
-    ?v2Navigation.mode:'checking'
+  const showLegacyReturnEditor=allowLegacyReturnEditor(selectedId,v2Navigation.orderId,v2Navigation.mode)
   const returnReceiptNeedsRecovery = (item: any) => Boolean(
     item.physicalTracking
     && item.physicalReceivedAt
@@ -281,8 +281,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   onBack={()=>closeReturnForm(true)}
                 />
               <section className="mini-panel debt-form-panel"
-                style={returnSelectedOrder && returnFormMode!=='legacy'
-                  ? {display:'none'} : undefined}>
+                style={!showLegacyReturnEditor ? {display:'none'} : undefined}>
                 <div className="mini-panel-head">
                   <h3>Форма возврата</h3>
                   <div className="mini-panel-actions">
