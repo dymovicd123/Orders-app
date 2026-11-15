@@ -5,7 +5,8 @@ import {createHash} from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
-import {listWorkshopTasks} from '../worker/domains/workshop.ts'
+import {listWorkshopTasks,updateWorkshopTask} from '../worker/domains/workshop.ts'
+import {listReturnHistory} from '../worker/domains/activity.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
 import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2ReceiptPrototype } from '../worker/domains/return-v2-unified-immediate-intake-prototype.ts'
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
@@ -1785,6 +1786,143 @@ assert.deepEqual(sql.prepare(
  unsafeExchangeOrderBefore)
 await DB.batch([guardExchangeHistoryInBatch(DB,10010)])
 
+
+
+const qaFresh=(orderId,itemId)=>{
+ const at=new Date().toISOString()
+ sql.prepare('UPDATE orders SET order_date=?,created_at=?,updated_at=? WHERE id=?')
+   .run(at.slice(0,10),at,at,orderId)
+ sql.prepare('UPDATE order_items SET created_at=?,inventory_obligation_origin_at=? WHERE id=?')
+   .run(at,at,itemId)
+ sql.prepare('UPDATE inventory_reservations SET created_at=?,updated_at=? WHERE order_item_id=?')
+   .run(at,at,itemId)
+}
+sql.prepare('UPDATE inventory_stock SET quantity=quantity+40 WHERE id=9541').run()
+addOrder(10510,10511,'QA-V2-TWO-SHIPPED',500,2)
+qaFresh(10510,10511)
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10510,'2026-11-15','CASH',1000,'primary')").run()
+const qaShipA=await api('POST','/api/orders/10510/shipping/dispatches',{
+ requestId:'qa-v2-two-shipped-dispatch-00001',items:[{orderItemId:10511,quantity:2}]
+})
+assert.equal(qaShipA.shippedQuantity,2)
+const qaBeforeA=await callV2Http('GET','/api/orders/10510/returns/v2/preview')
+assert.equal(qaBeforeA.eligible,true)
+assert.equal(qaBeforeA.evidence.lines.find(l=>l.orderItemId===10511).availableQuantity,2)
+const qaPostA=await callV2Http('POST','/api/orders/10510/returns/v2',{
+ requestId:'qa-v2-two-shipped-return-00001',
+ expectedOrderVersion:qaBeforeA.evidence.orderVersion,
+ items:[{orderItemId:10511,quantity:1,receiptIntent:'pending'}],
+ refundAmount:300,refundMethod:'CASH'
+},201)
+assert.equal(qaPostA.remainingSale,500)
+const qaBetweenA=await callV2Http('GET','/api/orders/10510/returns/v2/preview')
+const qaRemaining=qaBetweenA.evidence.lines.find(l=>l.orderItemId===10511)
+assert.equal(qaBetweenA.eligible,true)
+assert.equal(qaRemaining.availableQuantity,1)
+assert.equal(qaRemaining.proposedAction,'physical_return_pending')
+assert.equal(qaRemaining.postedV2PhysicalQuantity,1)
+assert.equal(qaRemaining.dispatchedQuantity,2)
+assert.equal(qaRemaining.fulfilledQuantity,2)
+const qaPostA2=await callV2Http('POST','/api/orders/10510/returns/v2',{
+ requestId:'qa-v2-two-shipped-return-00002',
+ expectedOrderVersion:qaBetweenA.evidence.orderVersion,
+ items:[{orderItemId:10511,quantity:1,receiptIntent:'pending'}],
+ refundAmount:500,refundMethod:'CASH'
+},201)
+assert.equal(qaPostA2.remainingSale,0)
+assert.equal((await readVersionedReturnMoney(DB,10510)).paidOut,800)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM returns WHERE order_id=10510 AND status='completed'").get().n,2)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=10511').get().n,2)
+
+addOrder(10520,10521,'QA-V2-RETRY-AFTER-CANCEL',500,2)
+qaFresh(10520,10521)
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10520,'2026-11-15','CASH',1000,'primary')").run()
+assert.equal((await api('POST','/api/orders/10520/shipping/dispatches',{
+ requestId:'qa-v2-cancel-shipped-dispatch-001',
+ items:[{orderItemId:10521,quantity:2}]
+})).shippedQuantity,2)
+const qaBeforeCancel=await callV2Http('GET','/api/orders/10520/returns/v2/preview')
+const qaFirstCanceled=await callV2Http('POST','/api/orders/10520/returns/v2',{
+ requestId:'qa-v2-cancel-test-first-00001',
+ expectedOrderVersion:qaBeforeCancel.evidence.orderVersion,
+ items:[{orderItemId:10521,quantity:1,receiptIntent:'pending'}],
+ refundAmount:300,refundMethod:'CASH'
+},201)
+const qaCancel=await callV2Http('POST',
+ `/api/orders/10520/returns/v2/${qaFirstCanceled.postingId}/cancel`,{
+ requestId:'qa-v2-cancel-test-undo-00001',
+ reason:'Проверка возврата после отмены',
+ shippedGoodsUnreceivedConfirmed:true,
+ reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:true,recoveryMethod:'CASH'
+})
+assert.equal(qaCancel.cancelled,true)
+assert.equal((await readVersionedReturnMoney(DB,10520)).paidOut,0)
+const qaAfterCancel=await callV2Http('GET','/api/orders/10520/returns/v2/preview')
+assert.equal(qaAfterCancel.eligible,true)
+assert.equal(qaAfterCancel.cancellation,null)
+assert.equal(qaAfterCancel.evidence.lines[0].availableQuantity,2)
+const qaAfterCancelPost=await callV2Http('POST','/api/orders/10520/returns/v2',{
+ requestId:'qa-v2-cancel-test-new-post-0001',
+ expectedOrderVersion:qaAfterCancel.evidence.orderVersion,
+ items:[{orderItemId:10521,quantity:1,receiptIntent:'pending'}],
+ refundAmount:300,refundMethod:'CASH'
+},201)
+assert.equal(qaAfterCancelPost.remainingSale,500)
+assert.equal((await readVersionedReturnMoney(DB,10520)).paidOut,300)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM returns WHERE order_id=10520 AND status='cancelled'").get().n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM returns WHERE order_id=10520 AND status='completed'").get().n,1)
+
+const qaTaskAt=new Date().toISOString()
+sql.prepare(`INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,
+ workshop_status,shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES(10530,'QA-V2-WORKSHOP-COMPLETE','2026-11-15',9501,'active','warehouse',
+ 'in_workshop','not_sent','itemized_v1',600,?,?)`).run(qaTaskAt,qaTaskAt)
+sql.prepare(`INSERT INTO order_items(id,order_id,product_name_snapshot,quantity,unit_price,
+ line_total,is_workshop,source_type,stock_writeoff_status,created_at)
+ VALUES(10531,10530,'QA WORKSHOP TASK',1,600,600,1,'warehouse','workshop',?)`).run(qaTaskAt)
+sql.prepare(`INSERT INTO workshop_tasks(id,order_id,order_item_id,external_order_id,
+ product_name_snapshot,quantity,status,created_at,updated_at)
+ VALUES(10532,10530,10531,'QA-V2-WORKSHOP-COMPLETE','QA WORKSHOP TASK',1,'active',?,?)`).run(qaTaskAt,qaTaskAt)
+const qaTaskPreview=await callV2Http('GET','/api/orders/10530/returns/v2/preview')
+assert.equal(qaTaskPreview.eligible,true)
+assert.equal(qaTaskPreview.evidence.lines[0].proposedAction,'cancel_workshop_obligation')
+await callV2Http('POST','/api/orders/10530/returns/v2',{
+ requestId:'qa-v2-workshop-refusal-000001',expectedOrderVersion:qaTaskPreview.evidence.orderVersion,
+ items:[{orderItemId:10531,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+const qaTaskStockBefore=sql.prepare('SELECT COALESCE(SUM(quantity),0) q FROM inventory_stock').get().q
+const qaCompleted=await updateWorkshopTask(DB,10532,{status:'done',orderItemId:10531})
+assert.equal(qaCompleted.ok,true)
+assert.equal(sql.prepare('SELECT status FROM workshop_tasks WHERE id=10532').get().status,'done')
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10531').get().quantity,0)
+assert.equal(sql.prepare('SELECT COALESCE(SUM(quantity),0) q FROM inventory_stock').get().q,qaTaskStockBefore)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10531').get().n,0)
+
+addOrder(10540,10541,'QA-V2-HISTORY-UNSHIPPED',450)
+qaFresh(10540,10541)
+const qaHistoryPreview=await callV2Http('GET','/api/orders/10540/returns/v2/preview')
+assert.equal(qaHistoryPreview.eligible,true)
+const qaHistoryPost=await callV2Http('POST','/api/orders/10540/returns/v2',{
+ requestId:'qa-v2-unshipped-history-0001',expectedOrderVersion:qaHistoryPreview.evidence.orderVersion,
+ items:[{orderItemId:10541,quantity:1,receiptIntent:'pending'}],refundAmount:0,refundMethod:''
+},201)
+const qaHistory=await listReturnHistory(DB,new URL('https://test-only.invalid/api/returns?q=QA-V2-HISTORY-UNSHIPPED'))
+const qaHistoryEntry=qaHistory.returns.find(r=>r.id===qaHistoryPost.returnId)
+assert(qaHistoryEntry)
+assert.equal(qaHistoryEntry.items.length,1)
+assert.equal(qaHistoryEntry.items[0].quantity,1)
+assert.equal(qaHistoryEntry.items[0].orderItemId,10541)
+assert.equal(qaHistoryEntry.items[0].contractAction,'cancel_unshipped_reservation')
+assert.equal(qaHistoryEntry.items[0].contractOnly,true)
+assert.equal(qaHistoryEntry.items[0].physicalTracking,false)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10541').get().n,0)
+const qaFlowUi=fs.readFileSync('src/features/sections/OrderReturnV2Flow.tsx','utf8')
+assert(qaFlowUi.includes("rejected?.code==='return_v2_not_eligible'"))
+assert(qaFlowUi.includes("setUnknownResult(false)"))
+assert(qaFlowUi.includes("setEligible(false)"))
+console.log('RETURN_V2_WORK_QA_P1_PASS: second shipped unit, post-cancellation return, preserved Workshop completion, full history and stale-form reset')
 
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
