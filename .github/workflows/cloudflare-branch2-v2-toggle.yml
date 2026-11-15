@@ -23,7 +23,9 @@ permissions:
   issues: write
 
 concurrency:
-  group: cloudflare-branch2-return-v2-staging
+  # Diagnostic comments must not compete with other issue_comment workflows
+  # for the shared staging mutation queue. They perform only GET/SELECT.
+  group: ${{ github.event_name == 'issue_comment' && github.event.comment.body == 'BRANCH2_RETURN_V2_VERIFY_UAT_20261115' && 'cloudflare-branch2-read-only-check' || 'cloudflare-branch2-return-v2-staging' }}
   cancel-in-progress: false
 
 jobs:
