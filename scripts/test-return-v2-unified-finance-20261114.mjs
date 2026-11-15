@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
+import {spawnSync} from 'node:child_process'
 import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
@@ -18,6 +19,21 @@ import { confirmRetiredOrderItemDelivered } from '../worker/domains/retired-item
 import { dispatchRestoredReturnV2ReservationPrototype } from '../worker/domains/return-v2-resumed-shipment-prototype.ts'
 import {handleOrderReturnV2Route,returnV2SchemaReadiness,RETURN_V2_REQUIRED_TABLES,RETURN_V2_REQUIRED_COLUMNS} from '../worker/routes/order-return-v2.ts'
 
+// Validate the runnable, no-network Branch2 preflight against the COMPLETE
+// migration chain in CI, not just individual Worker SQL statements.
+const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-branch2-readiness.mjs'],{
+ encoding:'utf8',timeout:90000
+})
+assert.equal(stagePreflight.status,0,
+ 'Read-only Branch2 local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
+const stageReport=JSON.parse(stagePreflight.stdout)
+assert.equal(stageReport.mode,'local-in-memory')
+assert.equal(stageReport.target,'orders-app-branch2')
+assert.equal(stageReport.schema.ready,true)
+assert.equal(stageReport.schema.expectedTables,9)
+assert.equal(stageReport.schema.expectedColumns,10)
+assert.equal(stageReport.remoteMigrationPerformed,false)
+assert.equal(stageReport.remoteDeploymentPerformed,false)
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
   sql.exec(fs.readFileSync('migrations/'+m,'utf8'))
