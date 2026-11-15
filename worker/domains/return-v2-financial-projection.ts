@@ -128,6 +128,25 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
               FROM return_v2_unified_lines ul
               WHERE ul.posting_id=up.id)<>up.initial_total-up.final_total
          OR NOT EXISTS(SELECT 1 FROM return_v2_unified_lines ul WHERE ul.posting_id=up.id)
+         OR EXISTS(SELECT 1 FROM return_v2_unified_action_overrides ao
+            LEFT JOIN return_v2_unified_lines ul
+              ON ul.posting_id=ao.posting_id AND ul.order_item_id=ao.order_item_id
+            LEFT JOIN order_items item ON item.id=ao.order_item_id
+            WHERE ao.posting_id=up.id AND (
+              ul.id IS NULL OR ul.action<>'cancel_unresolved_reservation'
+              OR ul.reservation_id IS NOT NULL OR ul.reservation_release<>0
+              OR ul.stock_quantity_change<>0 OR ul.receipt_intent<>'not_applicable'
+              OR item.id IS NULL OR item.order_id<>up.order_id
+              OR (ao.semantic_action='cancel_workshop_obligation'
+                AND COALESCE(item.is_workshop,0)<>1)
+              OR (ao.semantic_action='cancel_unreserved_obligation'
+                AND COALESCE(item.is_workshop,0)<>0)
+            ))
+         OR EXISTS(SELECT 1 FROM return_v2_unified_lines ul
+            LEFT JOIN return_v2_unified_action_overrides ao
+              ON ao.posting_id=ul.posting_id AND ao.order_item_id=ul.order_item_id
+            WHERE ul.posting_id=up.id AND ul.action='cancel_unresolved_reservation'
+              AND ul.reservation_id IS NULL AND ao.posting_id IS NULL)
          OR (ret.status='completed' AND up.full_termination=1 AND EXISTS(
               SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0))
          OR EXISTS(SELECT 1 FROM return_v2_unified_lines ul

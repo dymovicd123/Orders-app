@@ -403,11 +403,22 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         posting_id,order_item_id,action,contracted_quantity,original_line_quantity,
         sold_unit_price,contract_reduction,reservation_id,reservation_release,stock_quantity_change,receipt_intent)
        SELECT id,?,?,?,?,?,?,?,?,0,? FROM return_v2_unified_postings WHERE request_id=?`
-    ).bind(line.orderItemId,line.action,line.quantity,line.originalQty,line.unitPrice,
+    ).bind(line.orderItemId,
+      ['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
+        ?'cancel_unresolved_reservation':line.action,
+      line.quantity,line.originalQty,line.unitPrice,
       line.value,r?.id||null,
       line.action==='cancel_unshipped_reservation'?line.quantity:0,
       line.action==='physical_return_pending'?line.receiptIntent:'not_applicable',wanted.requestId))
     statements.push(changed(db,'line_provenance'))
+    if(['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)){
+      statements.push(db.prepare(
+        `INSERT INTO return_v2_unified_action_overrides(
+          posting_id,order_item_id,semantic_action)
+          SELECT id,?,? FROM return_v2_unified_postings WHERE request_id=?`
+      ).bind(line.orderItemId,line.action,wanted.requestId))
+      statements.push(changed(db,'action_semantics'))
+    }
     if(line.action==='physical_return_pending'){
       statements.push(db.prepare(
         `INSERT INTO return_items(return_id,order_item_id,product_name_snapshot,quantity,

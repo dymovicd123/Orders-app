@@ -128,7 +128,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
    fail('Сначала подтвердите фактический возврат выплаченных денег магазину и способ поступления.')
  if(refund===0&&(w.refunded||w.method))
    fail('Денежной выплаты не было: нельзя создавать обратный платёж.')
- const lines=(await db.prepare(`SELECT ul.id,ul.order_item_id,ul.action,ul.contracted_quantity,
+ const lines=(await db.prepare(`SELECT ul.id,ul.order_item_id,COALESCE(ao.semantic_action,ul.action) AS action,ul.contracted_quantity,
    ul.original_line_quantity,ul.sold_unit_price,ul.contract_reduction,
    ul.reservation_id,ul.reservation_release,ul.receipt_intent,
    oi.quantity AS current_quantity,oi.unit_price AS current_unit_price,
@@ -147,6 +147,8 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
      JOIN order_dispatches d ON d.id=di.dispatch_id
      WHERE di.order_item_id=ul.order_item_id AND d.created_at>?) AS new_dispatches
    FROM return_v2_unified_lines ul
+   LEFT JOIN return_v2_unified_action_overrides ao
+     ON ao.posting_id=ul.posting_id AND ao.order_item_id=ul.order_item_id
    JOIN order_items oi ON oi.id=ul.order_item_id AND oi.order_id=?
    LEFT JOIN inventory_reservations ir ON ir.id=ul.reservation_id AND ir.order_item_id=oi.id
    LEFT JOIN return_items ri ON ri.return_id=? AND ri.order_item_id=oi.id
