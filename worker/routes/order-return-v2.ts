@@ -8,7 +8,7 @@ import {submitUnifiedReturnV2WithReceiptPrototype,
   completeUnifiedReturnV2ReceiptPrototype} from '../domains/return-v2-unified-immediate-intake-prototype.ts'
 import {readVersionedReturnMoney} from '../domains/return-v2-financial-projection.ts'
 import {readOldReturnBaseline} from '../domains/return-v2-legacy-contract-baseline.ts'
-import {unsafeActiveExchangeSql} from '../domains/return-v2-safe-exchange-history.ts'
+import {hasUnsafeActiveExchange} from '../domains/return-v2-safe-exchange-history.ts'
 import {cancelUnifiedReturnV2Prototype} from '../domains/return-v2-unified-cancel-prototype.ts'
 
 const endpoint=/^\/api\/orders\/(\d+)\/returns\/v2(?:\/(preview|\d+\/(?:receipt|cancel)))?$/
@@ -74,23 +74,23 @@ function response(data:unknown,status=200){
  return json(data,{status,headers:{'Cache-Control':'no-store'}})
 }
 async function preview(db:D1Database,orderId:number){
- const [lineEvidence,financial,history,baseline]=await Promise.all([
+ const [lineEvidence,financial,history,baseline,unsafeExchange]=await Promise.all([
    previewUnifiedReturnV2LineEvidence(db,orderId),
    readVersionedReturnMoney(db,orderId),
    db.prepare(`SELECT
      (SELECT COUNT(*) FROM returns r WHERE r.order_id=?
        AND COALESCE(r.status,'completed')='completed') AS returns_count,
-     (SELECT CASE WHEN ${unsafeActiveExchangeSql('?')} THEN 1 ELSE 0 END) AS exchanges_count,
      (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS unified_count,
      (SELECT COUNT(*) FROM return_v2_postings vp WHERE vp.order_id=?) AS old_v2_count,
      (SELECT COUNT(*) FROM return_v2_unified_cancellations c
        JOIN return_v2_unified_postings up ON up.id=c.posting_id
        WHERE up.order_id=?) AS cancel_count`)
-     .bind(orderId,orderId,orderId,orderId,orderId).first<{
-      returns_count:number;exchanges_count:number;unified_count:number;
+     .bind(orderId,orderId,orderId,orderId).first<{
+      returns_count:number;unified_count:number;
       old_v2_count:number;cancel_count:number
      }>(),
    readOldReturnBaseline(db,orderId),
+   hasUnsafeActiveExchange(db,orderId),
  ])
  const recent=await db.prepare(`SELECT up.id AS posting_id,up.return_id,up.posted_at,
     up.cash_refund,ret.status AS return_status,
@@ -115,7 +115,7 @@ async function preview(db:D1Database,orderId:number){
      received_count:number;lifecycle_count:number;later_payments:number
    }>()
  const hasUnsupported=toInt(history?.old_v2_count,0)>0
-   ||toInt(history?.exchanges_count,0)>0
+   ||unsafeExchange
    ||toInt(history?.cancel_count,0)>0
    ||toInt(history?.returns_count,0)!==toInt(history?.unified_count,0)
      +baseline.alreadyBaselined+baseline.returns.length
