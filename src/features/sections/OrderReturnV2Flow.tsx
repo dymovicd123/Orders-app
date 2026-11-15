@@ -211,11 +211,11 @@ export function OrderReturnV2Flow({
    <button className="secondary compact" type="button" disabled={fetching}
      onClick={()=>void refresh(orderId)}>{fetching?'Проверяем…':'Повторить проверку'}</button>
  </section>
- return <section className="mini-panel debt-form-panel" aria-label="Новый возврат товаров">
+ return <section className="mini-panel debt-form-panel return-v2-panel" aria-label="Оформление возврата">
    <div className="mini-panel-head">
      <div>
-       <h3>Возврат товаров · новый учёт</h3>
-       <p className="mini-panel-note">Выберите товары и сумму выплаты. Система отдельно обработает отправку, резерв и задания цеха, не создавая лишних приходов.</p>
+       <h3>Возврат заказа №{order?.external_id||orderId}</h3>
+       <p className="mini-panel-note">Товары для возврата уже выбраны. Проверьте список и сумму выплаты.</p>
      </div>
      <div className="mini-panel-actions">
        <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
@@ -223,21 +223,21 @@ export function OrderReturnV2Flow({
        <button type="button" className="secondary compact" onClick={onBack}>Назад к заказам</button>
      </div>
    </div>
-   {!eligible?<div className="history-note is-danger" role="alert">
-      <strong>Возврат пока нельзя провести</strong>
-      <span>{preview?.reason||'В заказе нет позиций с подтверждённой складской историей.'}</span>
-      <span>Проверьте сообщения у товаров ниже. Деньги и остатки не изменены.</span>
+   {!eligible?<div className="return-v2-notice" role="status">
+      <strong>{lines.length===0?'Нет товаров для возврата':'Сейчас нельзя оформить выбранные товары'}</strong>
+      <span>{preview?.reason||'По этим позициям нет достаточно надёжных данных для записи. Ни деньги, ни остатки не изменены.'}</span>
+     </div>:reviewCount>0?<div className="return-v2-notice" role="status">
+       <span>{reviewCount} {reviewCount===1?'позиция требует':'позиции требуют'} уточнения. Остальные товары можно оформить без ожидания.</span>
      </div>:null}
-   {reviewCount>0?<div className="history-note is-danger" role="status">
-     <strong>Не все товары можно обработать автоматически: требуется сверка {reviewCount} поз.</strong>
-     <span>Такие позиции показаны ниже, но не отмечены как возвращаемые. Проведение других подтверждённых товаров не исправит их историю.</span>
+   {preview?<div className="return-v2-finance-overview">
+      <div><span>Осталось в покупке</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
+      <div><span>Уже оплачено (за вычетом выплат)</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
+      <div><span>Долг клиента</span><strong>{formatMoney(preview.finance.customerDebt)} ₸</strong></div>
    </div>:null}
-   {preview?<div className="editor-summary-grid">
-      <div><span>Стоимость оставшихся покупок</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
-      <div><span>У магазина после прежних выплат</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
-      <div><span>Текущий долг клиента</span><strong>{formatMoney(preview.finance.customerDebt)} ₸</strong></div>
-      <div><span>Уже выдано клиенту</span><strong>{formatMoney(preview.finance.paidOut)} ₸</strong></div>
-   </div>:null}
+   <div className="return-v2-items-title">
+      <strong>Товары</strong>
+      <span>{lines.filter(line=>!line.requiresReview&&money(selections[line.orderItemId])>0).length} из {lines.length} выбрано</span>
+   </div>
    <div className="return-smart-grid">
      {lines.map(line=>{
        const quantity=selections[line.orderItemId]||0
@@ -255,31 +255,31 @@ export function OrderReturnV2Flow({
              <small>{line.status} · {line.sourceType==='boutique'?'Бутик':line.sourceType==='workshop'?'Цех':'Склад'}</small>
              <small>{line.availableQuantity} шт. · цена продажи {formatMoney(line.soldUnitPrice)} ₸/шт.</small>
            </span>
-           <b>{line.requiresReview?'Требует проверки':quantity>0?'Выбран':'Выбрать'}</b>
+           <b>{line.requiresReview?'Проверить':quantity>0?'Выбран':'Добавить'}</b>
          </button>
          <div className="return-smart-controls">
            {line.requiresReview?<small className="field-hint">{line.message}</small>:null}
            {!line.requiresReview&&quantity>0?<>
-             <label><span>Количество</span>
+             {line.availableQuantity>1?<label><span>Количество</span>
                <input type="number" min="0" max={line.availableQuantity} value={quantity} disabled={locked}
                  onChange={e=>setQuantity(line.orderItemId,Math.max(0,Math.min(line.availableQuantity,money(e.target.value))))}/>
-             </label>
-             <strong>Исключается из покупки: {formatMoney(quantity*line.soldUnitPrice)} ₸</strong>
+             </label>:null}
+             <strong className="return-v2-line-total">К возврату: {formatMoney(quantity*line.soldUnitPrice)} ₸</strong>
              {noReserve?<div className="return-smart-unissued">
-               <strong>Не отправлен и не зарезервирован</strong>
-               <span>Отменится только покупка. Складские остатки и резервы останутся без изменений.</span>
+               <strong>Не отправлен</strong>
+               <span>Покупка отменится. Склад и резерв не изменятся.</span>
              </div>:workshop?<div className="return-smart-unissued">
-               <strong>Клиент отказался · задание цеху сохраняется</strong>
-               <span>{line.message} Ни производство, ни оплата цеху, ни физический остаток автоматически не изменяются.</span>
+               <strong>Цех · отказ клиента</strong>
+               <span>Исключим из покупки. Задание, изделие и оплата цеху сохранятся.</span>
              </div>:shipped?<label><span>Физический статус возвращаемого товара</span>
                <select value={intents[line.orderItemId]||'pending'} disabled={locked}
                 onChange={e=>setReceipt(line.orderItemId,e.target.value as Intent)}>
                 {(Object.keys(labels) as Intent[]).map(k=><option key={k} value={k}>{labels[k]}</option>)}
                </select>
-               <small>Если выбрана приёмка, её можно провести только после фактического получения. При складской сверке потребуется дополнительное подтверждение.</small>
+               <small>Приёмка добавит товар в остаток только после подтверждения его фактического получения.</small>
              </label>:<div className="return-smart-unissued">
-               <strong>Не выдавался клиенту — убрать из покупки</strong>
-               <span>Система снимет резерв, но физический остаток не увеличит и не спишет.</span>
+               <strong>Не отправлен</strong>
+               <span>Покупка отменится, резерв освободится. Физический остаток не изменится.</span>
              </div>}
            </>:null}
          </div>
@@ -287,7 +287,7 @@ export function OrderReturnV2Flow({
      })}
    </div>
    {eligible?<div className="mini-item order-payment-card">
-      <div className="mini-item-head"><strong>Деньги и итог</strong></div>
+      <div className="mini-item-head"><strong>Деньги и итог возврата</strong></div>
       <div className="subgrid order-payment-grid">
         <label><span>Фактически выплатить клиенту, ₸</span>
           <input type="number" min="0" step="1" max={maxRefund} value={refundAmount}
@@ -295,9 +295,9 @@ export function OrderReturnV2Flow({
             onChange={e=>{
               setManualRefund(true);setRefundAmount(money(e.target.value));requestRef.current=''
             }}/>
-          <small className="field-hint">Предложена стоимость выбранных товаров, но не больше доступных денег. Сумму можно изменить, включая 0 ₸.</small>
+          <small className="field-hint">Можно изменить, включая 0 ₸. Выплата не может превышать деньги, оставшиеся у магазина.</small>
         </label>
-        <label><span>Способ возврата денег (не выбран)</span>
+        <label><span>Способ выплаты</span>
           <SmartPickerInput value={refundMethod} options={paymentMethods||[]}
              disabled={busy||Boolean(committed)||unknownResult}
              onChange={(value:string)=>{
@@ -308,10 +308,10 @@ export function OrderReturnV2Flow({
         </label>
       </div>
       <div className="return-smart-summary" role="status">
-        <div><span>Выбрано товаров</span><strong>{selectedQuantity} шт. · {formatMoney(selectedSale)} ₸</strong></div>
-        <div><span>Останется стоимость продажи</span><strong>{formatMoney(finalSale)} ₸</strong></div>
-        <div><span>После выплаты: долг клиента</span><strong>{formatMoney(projectedDebt)} ₸</strong></div>
-        <div><span>Либо переплата клиенту</span><strong>{formatMoney(projectedOverpay)} ₸</strong></div>
+        <div><span>Исключаем из покупки</span><strong>{selectedQuantity} шт. · {formatMoney(selectedSale)} ₸</strong></div>
+        <div><span>После возврата останется</span><strong>{formatMoney(finalSale)} ₸</strong></div>
+        {projectedDebt>0?<div><span>Долг клиента после возврата</span><strong>{formatMoney(projectedDebt)} ₸</strong></div>:null}
+        {projectedOverpay>0?<div><span>Переплата клиенту</span><strong>{formatMoney(projectedOverpay)} ₸</strong></div>:null}
       </div>
    </div>:null}
    {preview?.cancellation?<OrderReturnV2Cancellation
