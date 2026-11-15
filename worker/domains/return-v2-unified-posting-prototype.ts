@@ -3,6 +3,7 @@
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {readOldReturnBaseline} from './return-v2-legacy-contract-baseline.ts'
 import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
@@ -184,7 +185,11 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   if(!order||order.updated_at!==wanted.version||order.pricing_mode!=='itemized_v1')
     reject('Стоимость заказа или тип цены изменились.')
   const initialTotal=safeInt(order.total_amount)
-  const finalTotal=initialTotal-totalReduction
+  const baseline=await readOldReturnBaseline(db,wanted.orderId)
+  const normalizedInitial=initialTotal-baseline.reduction
+  if(normalizedInitial<0||baseline.byItem.some(b=>lines.some(l=>l.orderItemId===b.itemId)))
+    reject('В старом возврате обнаружено пересечение с выбранной позицией.')
+  const finalTotal=normalizedInitial-totalReduction
   if(finalTotal<0||totalReduction<=0)reject('Нечего исключать из продажи.')
   const paid=await db.prepare(
     `SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) AS sum
@@ -198,7 +203,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
     'SELECT COUNT(*) AS count FROM return_v2_unified_postings WHERE order_id=?'
   ).bind(wanted.orderId).first<{count:number}>()
   const existingPostCount=safeInt(priorPosting?.count)
-  let priorRefund=0
+  let priorRefund=baseline.previousRefund
   if(existingPostCount>0){
     const ledger=await readVersionedReturnMoney(db,wanted.orderId)
     if(ledger.kind!=='return_v2'||ledger.currentSale!==initialTotal
@@ -232,6 +237,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reject('Указанный резерв больше фактического зарезервированного количества.')
   }
   const stamp=new Date().toISOString(),date=stamp.slice(0,10)
+  const legacyIdsJson=JSON.stringify(baseline.returns.map(x=>x.id))
   const statements:D1PreparedStatement[]=[
     db.prepare(
       `INSERT INTO returns(order_id,manager_id,return_date,amount,payment_method,
@@ -244,15 +250,18 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
              WHERE oi.order_id=o.id AND oi.quantity>0)=?
           AND (SELECT COALESCE(SUM(CASE WHEN p.amount>0 THEN p.amount ELSE 0 END),0)
              FROM payments p WHERE p.order_id=o.id)=?
-          -- Only a strict chain of completed unified V2 Returns can
-          -- precede this one. A V1 Return, a cancelled V2, or an exchange is
-          -- never silently appended to the contract.
+          -- Complete historical Returns must be either already accounted
+          -- by an immutable baseline or matched to this transaction's exact
+          -- read-only baseline list. Cancelled old Returns never count.
           AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id
-            AND (COALESCE(r.status,'completed')<>'completed'
-              OR NOT EXISTS(SELECT 1 FROM return_v2_unified_postings old
-                WHERE old.order_id=o.id AND old.return_id=r.id)))
-          AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id)
-              =(SELECT COUNT(*) FROM return_v2_unified_postings old WHERE old.order_id=o.id)
+            AND COALESCE(r.status,'completed')='completed'
+            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings old
+              WHERE old.order_id=o.id AND old.return_id=r.id)
+            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lb
+              WHERE lb.order_id=o.id AND lb.return_id=r.id)
+            AND r.id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))
+          AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
+            AND COALESCE(r.status,'completed')='completed')=?
           AND NOT EXISTS(SELECT 1 FROM return_v2_postings old WHERE old.order_id=o.id)
           AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations c
             JOIN return_v2_unified_postings old ON old.id=c.posting_id
@@ -282,17 +291,67 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
               AND (co.step<>'started' OR co.lease_token IS NOT NULL OR co.target_id IS NOT NULL)
           )`
     ).bind(date,wanted.refund,wanted.method||null,stamp,wanted.orderId,initialTotal,
-      wanted.version,initialTotal,received,priorRefund),
+      wanted.version,initialTotal,received,legacyIdsJson,baseline.activeReturnCount,priorRefund),
     changed(db,'return_header'),
     db.prepare(
       `INSERT INTO return_v2_unified_postings(request_id,intent_fingerprint,order_id,
        return_id,posted_at,initial_total,final_total,initial_received,cash_refund,
        refund_method,full_termination)
        VALUES(?,?,?,last_insert_rowid(),?,?,?,?,?,?,?)`
-    ).bind(wanted.requestId,wanted.fingerprint,wanted.orderId,stamp,initialTotal,
+    ).bind(wanted.requestId,wanted.fingerprint,wanted.orderId,stamp,normalizedInitial,
       finalTotal,received,wanted.refund,wanted.method||null,fullTermination?1:0),
     changed(db,'posting'),
   ]
+  if(baseline.needsBaseline){
+    statements.push(db.prepare(`INSERT INTO return_v2_legacy_baselines(
+      posting_id,order_id,original_sale,normalized_sale,reduction)
+      SELECT up.id,up.order_id,?,?,? FROM return_v2_unified_postings up
+      WHERE up.request_id=? AND up.initial_total=?`)
+      .bind(initialTotal,normalizedInitial,baseline.reduction,wanted.requestId,normalizedInitial))
+    statements.push(changed(db,'legacy_baseline_header'))
+    for(const old of baseline.returns){
+      statements.push(db.prepare(`INSERT INTO return_v2_legacy_baseline_returns(
+        return_id,posting_id,order_id,original_cash_refund)
+        SELECT r.id,up.id,up.order_id,r.amount
+        FROM returns r JOIN return_v2_unified_postings up
+          ON up.order_id=r.order_id AND up.request_id=?
+        WHERE r.id=? AND r.order_id=? AND r.amount=?
+          AND COALESCE(r.status,'completed')='completed'
+          AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns prior
+            WHERE prior.return_id=r.id)`)
+        .bind(wanted.requestId,old.id,wanted.orderId,old.amount))
+      statements.push(changed(db,'legacy_baseline_return'))
+    }
+    for(const old of baseline.lines){
+      statements.push(db.prepare(`INSERT INTO return_v2_legacy_baseline_items(
+        return_item_id,posting_id,order_item_id,quantity,sold_unit_price,reduction)
+        SELECT ri.id,up.id,oi.id,?,?,?
+        FROM return_items ri
+        JOIN returns ret ON ret.id=ri.return_id
+        JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=ret.order_id
+        JOIN return_v2_unified_postings up ON up.order_id=ret.order_id AND up.request_id=?
+        WHERE ri.id=? AND ret.id=? AND ret.order_id=?
+          AND COALESCE(ret.status,'completed')='completed'
+          AND COALESCE(ri.contract_quantity_applied,0)=0 AND ri.quantity=?
+          AND oi.unit_price=? AND oi.line_total=oi.quantity*oi.unit_price`)
+        .bind(old.quantity,old.unitPrice,old.reduction,wanted.requestId,
+          old.returnItemId,old.returnId,wanted.orderId,old.quantity,old.unitPrice))
+      statements.push(changed(db,'legacy_baseline_item'))
+    }
+    for(const item of baseline.byItem){
+      statements.push(db.prepare(`UPDATE order_items
+        SET quantity=quantity-?,line_total=(quantity-?)*unit_price
+        WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
+          AND line_total=quantity*unit_price
+          AND quantity>=?
+          AND (SELECT COALESCE(SUM(b.quantity),0) FROM return_v2_legacy_baseline_items b
+            JOIN return_v2_unified_postings up ON up.id=b.posting_id
+            WHERE b.order_item_id=order_items.id AND up.request_id=?)=?`)
+        .bind(item.quantity,item.quantity,item.itemId,wanted.orderId,
+          item.originalQuantity,item.unitPrice,item.quantity,wanted.requestId,item.quantity))
+      statements.push(changed(db,'legacy_contract_line'))
+    }
+  }
   // One reserved_quantity compare-and-swap per SKU, even when multiple lines
   // share the same physical stock. The physical 'quantity' is NEVER updated.
   for(const {stock,release} of grouped.values()){
