@@ -1124,5 +1124,48 @@ assert.deepEqual(sql.prepare('SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM
 
 
 
+// No reservation and no dispatch must not force a manager into a warehouse
+// investigation when the item was never issued and its sale price is exact.
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,
+  shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (9994,'V2U-UNRESERVED-NOTSENT','2026-11-01',9501,'active','warehouse',
+  'ready','not_sent','itemized_v1',3000,?,?)`).run(workshopNow,workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (9995,9994,'NOT RESERVED, NOT DISPATCHED',1,3000,3000,0,
+  'warehouse','pending_reservation',?)`).run(workshopNow)
+const noReserveStock=sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) q,COALESCE(SUM(reserved_quantity),0) r FROM inventory_stock').get()
+const unreservedPreview=await callV2Http('GET','/api/orders/9994/returns/v2/preview')
+assert.equal(unreservedPreview.eligible,true)
+assert.equal(unreservedPreview.evidence.lines[0].proposedAction,'cancel_unreserved_obligation')
+const unreservedPosted=await callV2Http('POST','/api/orders/9994/returns/v2',{
+ requestId:'never-reserved-customer-cancel-0001',
+ expectedOrderVersion:unreservedPreview.evidence.orderVersion,
+ items:[{orderItemId:9995,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(unreservedPosted.remainingSale,0)
+assert.equal(sql.prepare('SELECT total_amount,debt_amount FROM orders WHERE id=9994').get().total_amount,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_reservations WHERE order_item_id=9995').get().n,0)
+assert.deepEqual(sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) q,COALESCE(SUM(reserved_quantity),0) r FROM inventory_stock').get(),noReserveStock)
+const unreservedCancelled=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:unreservedPosted.postingId,
+ requestId:'never-reserved-customer-undo-0001',
+ reason:'Клиент передумал',
+ shippedGoodsUnreceivedConfirmed:false,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(unreservedCancelled.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=9995').get().quantity,1)
+assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9994').get().total_amount,3000)
+assert.deepEqual(sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) q,COALESCE(SUM(reserved_quantity),0) r FROM inventory_stock').get(),noReserveStock)
+
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')

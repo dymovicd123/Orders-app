@@ -7,6 +7,7 @@ export type ReturnV2LineAction =
   | 'cancel_unshipped_reservation'
   | 'cancel_unresolved_reservation'
   | 'cancel_workshop_obligation'
+  | 'cancel_unreserved_obligation'
   | 'needs_review'
 
 export type ReturnV2LineEvidence = {
@@ -67,6 +68,7 @@ function labelFor(action:ReturnV2LineAction) {
   if(action==='cancel_unshipped_reservation')return 'Не отправлен — отмена и снятие резерва'
   if(action==='cancel_unresolved_reservation')return 'Не отправлен — отмена неразрешённого резерва'
   if(action==='cancel_workshop_obligation')return 'Цех — отмена покупки без отмены производства'
+  if(action==='cancel_unreserved_obligation')return 'Не отправлен — покупка отменяется без движения склада'
   return 'Требуется уточнение складской истории'
 }
 
@@ -230,6 +232,12 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       action='cancel_unresolved_reservation'
       reasonCode='unresolved_reservation_not_dispatched'
       message='Физического списания нет. Закрыть неразрешённый резерв без изменения остатка.'
+    }else if(!isWorkshop&&dispatched===0&&ds.length===0&&rs.length===0
+      &&!priorIssued&&['pending_reservation','not_reserved','unreserved',''].includes(stockStatus)
+      &&['warehouse','boutique'].includes(source)){
+      action='cancel_unreserved_obligation'
+      reasonCode='never_reserved_never_dispatched'
+      message='Отправки и резерва нет. Убрать из покупки без списания, снятия резерва и физического прихода.'
     }else if(isWorkshop&&dispatched===0&&ds.length===0&&rs.length===0
       &&tasks.length>0&&tasks.every(t=>['active','invoice','ready','done'].includes(t.status)
         &&amount(t.quantity)!==null&&t.quantity>0)){

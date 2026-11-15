@@ -4,7 +4,7 @@ import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
- proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'cancel_workshop_obligation'|'needs_review';
+ proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'cancel_workshop_obligation'|'cancel_unreserved_obligation'|'needs_review';
  status:string;message:string;requiresReview:boolean;availableQuantity:number;
  selectedQuantity:number;soldUnitPrice:number;selectedSaleValue:number
 }
@@ -243,6 +243,7 @@ export function OrderReturnV2Flow({
        const quantity=selections[line.orderItemId]||0
        const shipped=line.proposedAction==='physical_return_pending'
        const workshop=line.proposedAction==='cancel_workshop_obligation'
+       const noReserve=line.proposedAction==='cancel_unreserved_obligation'
        const locked=busy||Boolean(committed)||unknownResult||!eligible
        return <div key={line.orderItemId}
           className={`return-smart-card ${quantity>0?'is-selected':''} ${shipped?'':'is-unissued'}`}>
@@ -264,7 +265,10 @@ export function OrderReturnV2Flow({
                  onChange={e=>setQuantity(line.orderItemId,Math.max(0,Math.min(line.availableQuantity,money(e.target.value))))}/>
              </label>
              <strong>Исключается из покупки: {formatMoney(quantity*line.soldUnitPrice)} ₸</strong>
-             {workshop?<div className="return-smart-unissued">
+             {noReserve?<div className="return-smart-unissued">
+               <strong>Не отправлен и не зарезервирован</strong>
+               <span>Отменится только покупка. Складские остатки и резервы останутся без изменений.</span>
+             </div>:workshop?<div className="return-smart-unissued">
                <strong>Клиент отказался · задание цеху сохраняется</strong>
                <span>{line.message} Ни производство, ни оплата цеху, ни физический остаток автоматически не изменяются.</span>
              </div>:shipped?<label><span>Физический статус возвращаемого товара</span>

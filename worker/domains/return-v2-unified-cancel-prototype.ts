@@ -181,6 +181,12 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
        l.physical_received_at!==null||l.physical_restocked!==0||
        l.lifecycle_count!==0)
        fail('Отправленный товар уже поступил, списан или физическая история неоднозначна.')
+   }else if(l.action==='cancel_unreserved_obligation'){
+     if(l.is_workshop!==0||l.reservation_id!==null||l.reservation_release!==0||
+       l.physical_id!==null||l.receipt_intent!=='not_applicable'||
+       l.lifecycle_count!==0||l.new_dispatches!==0||
+       !['pending_reservation','not_reserved','unreserved',''].includes(String(l.current_status||'')))
+       fail('У товара появилась выдача, резерв или несогласованный статус.')
    }else if(l.action==='cancel_workshop_obligation'){
      if(l.is_workshop!==1||l.reservation_id!==null||l.reservation_release!==0||
        l.physical_id!==null||l.receipt_intent!=='not_applicable'||
@@ -289,8 +295,8 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
  for(const l of pendingLines){
    const qty=l.contracted_quantity,full=qty===l.original_line_quantity
    const isPhysical=l.action==='physical_return_pending'
-   const isWorkshop=l.action==='cancel_workshop_obligation'
-   if(!isPhysical&&!isWorkshop){
+   const withoutReservation=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(l.action)
+   if(!isPhysical&&!withoutReservation){
      const active=l.action==='cancel_unshipped_reservation'
      const targetStatus=active?'active':'unresolved'
      statements.push(db.prepare(`UPDATE inventory_reservations
@@ -304,9 +310,9 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
          l.reservation_status,p.posted_at))
      statements.push(checked(db,'restore_reservation_row'))
    }
-   const expectedStatus=isPhysical||isWorkshop?l.current_status:
+   const expectedStatus=isPhysical||withoutReservation?l.current_status:
      (full?'reservation_released':l.action==='cancel_unshipped_reservation'?'reserved':'pending_reservation')
-   const restoredStatus=isPhysical||isWorkshop?l.current_status:
+   const restoredStatus=isPhysical||withoutReservation?l.current_status:
      (l.action==='cancel_unshipped_reservation'?'reserved':'pending_reservation')
    statements.push(db.prepare(`UPDATE order_items SET quantity=quantity+?,
       line_total=(quantity+?)*unit_price,stock_writeoff_status=?
