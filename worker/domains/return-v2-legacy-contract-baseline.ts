@@ -5,7 +5,7 @@ type ReturnRow={id:number;amount:number;linked_exchange:number}
 type ItemRow={id:number;return_id:number;order_item_id:number|null;
   quantity:number;contract_quantity_applied:number;unit_price:number|null;
   current_quantity:number|null;line_total:number|null;order_id:number|null}
-type ExistingRow={complete_count:number;total_refunded:number;unified_count:number;
+type ExistingRow={complete_count:number;total_refunded:number;unified_count:number;ever_unified_count:number;
   baselined_count:number;missing_baselined:number;total_paid:number}
 export type OldReturnBaselineLine={returnItemId:number;returnId:number;
   orderItemId:number;quantity:number;unitPrice:number;reduction:number}
@@ -28,7 +28,9 @@ export async function readOldReturnBaseline(db:D1Database,orderId:number):Promis
     (SELECT COUNT(*) FROM returns r WHERE r.order_id=? AND COALESCE(r.status,'completed')='completed') AS complete_count,
     (SELECT COALESCE(SUM(CASE WHEN r.amount>0 THEN r.amount ELSE 0 END),0)
        FROM returns r WHERE r.order_id=? AND COALESCE(r.status,'completed')='completed') AS total_refunded,
-    (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS unified_count,
+    (SELECT COUNT(*) FROM return_v2_unified_postings up JOIN returns r ON r.id=up.return_id
+      WHERE up.order_id=? AND r.status='completed') AS unified_count,
+    (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS ever_unified_count,
     (SELECT COUNT(*) FROM return_v2_legacy_baseline_returns lb WHERE lb.order_id=?) AS baselined_count,
     (SELECT COUNT(*) FROM return_v2_legacy_baseline_returns lb
       LEFT JOIN returns r ON r.id=lb.return_id
@@ -37,7 +39,7 @@ export async function readOldReturnBaseline(db:D1Database,orderId:number):Promis
         OR r.amount<>lb.original_cash_refund)) AS missing_baselined,
     (SELECT COALESCE(SUM(CASE WHEN p.amount>0 THEN p.amount ELSE 0 END),0)
       FROM payments p WHERE p.order_id=?) AS total_paid`)
-    .bind(orderId,orderId,orderId,orderId,orderId,orderId).first<ExistingRow>()
+    .bind(orderId,orderId,orderId,orderId,orderId,orderId,orderId).first<ExistingRow>()
  if(!state)fail('История прежних возвратов не найдена.')
  const activeReturnCount=n(state.complete_count,'Число возвратов')
  const previousRefund=n(state.total_refunded,'Прежние выплаты')
@@ -55,7 +57,7 @@ export async function readOldReturnBaseline(db:D1Database,orderId:number):Promis
       AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.return_id=r.id)
       AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lb WHERE lb.return_id=r.id)
     ORDER BY r.id`).bind(orderId).all<ReturnRow>()).results||[]
- if(returns.length>100||existing>0&&returns.length>0)
+ if(returns.length>100||n(state.ever_unified_count,'История нового возврата')>0&&returns.length>0)
    fail('После нового возврата обнаружена несовместимая старая операция.')
  if(returns.some(r=>n(r.id,'Возврат',1)<=0||n(r.amount,'Выплата')<0||r.linked_exchange!==0))
    fail('Старый возврат относится к денежному обмену или не подтверждён.')
