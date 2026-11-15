@@ -53,7 +53,7 @@ type ReservationRow = {
 type DispatchRow = {
   order_item_id:number;quantity:number;cancelled_quantity:number
   source_type:string;variant_id:number|null;movement_id:number|null
-  movement_valid:number;correction_valid:number
+  movement_valid:number;correction_valid:number;correction_documented:number;correction_unrestored:number
 }
 
 export class ReturnV2LineEvidenceConflict extends Error {
@@ -131,7 +131,13 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
          SELECT 1 FROM order_dispatch_corrections dc
          WHERE dc.dispatch_item_id=di.id AND dc.quantity=di.quantity
            AND dc.stock_restored=1
-       ) THEN 1 ELSE 0 END AS correction_valid
+       ) THEN 1 ELSE 0 END AS correction_valid,
+       CASE WHEN EXISTS(SELECT 1 FROM order_dispatch_corrections dc
+         WHERE dc.dispatch_item_id=di.id AND dc.quantity=di.quantity
+           AND dc.stock_restored IN (0,1)) THEN 1 ELSE 0 END AS correction_documented,
+       CASE WHEN EXISTS(SELECT 1 FROM order_dispatch_corrections dc
+         WHERE dc.dispatch_item_id=di.id AND dc.quantity=di.quantity
+           AND dc.stock_restored=0) THEN 1 ELSE 0 END AS correction_unrestored
        FROM order_dispatch_items di
        JOIN order_dispatches d ON d.id=di.dispatch_id
        WHERE d.order_id=? ORDER BY di.order_item_id,di.id`
@@ -213,6 +219,19 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       amount(d.quantity)!==null&&d.quantity>0
       &&d.cancelled_quantity===d.quantity
       &&Number(d.movement_valid)===1&&Number(d.correction_valid)===1)
+    const reshippedWithUnrestoredCorrection=!isWorkshop
+      &&String(order.shipping_status)==='sent'&&stockStatus==='fulfilled'
+      &&['warehouse','boutique'].includes(source)
+      &&dispatched===contractQuantity&&contractQuantity>0
+      &&fulfilled.length===1&&fulfilledQty===contractQuantity
+      &&activeQty===0&&unresolvedQty===0&&nonCurrent.length===0
+      &&ds.some(d=>d.cancelled_quantity===d.quantity
+        &&Number(d.correction_unrestored)===1&&Number(d.movement_valid)===1)
+      &&ds.some(d=>d.cancelled_quantity===0&&Number(d.movement_valid)===1)
+      &&ds.every(d=>d.cancelled_quantity===0
+        ||(d.cancelled_quantity===d.quantity
+          &&Number(d.movement_valid)===1
+          &&Number(d.correction_documented)===1))
     let action:ReturnV2LineAction='needs_review'
     let reasonCode='unknown_state'
     let message='Нет однозначного основания для складского действия. Не изменяйте остаток автоматически.'
@@ -236,6 +255,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       action='cancel_unshipped_reservation'
       reasonCode='corrected_dispatch_restored_reservation'
       message='Отправка отменена, вещь возвращена в складской учёт и резерв восстановлен. При отмене покупки снимаем резерв без нового прихода.'
+    }else if(reshippedWithUnrestoredCorrection){
+      action='physical_return_pending'
+      reasonCode='reshipped_after_unrestored_correction'
+      message='Повторная отправка подтверждена. Ранее отменённая выдача осталась без нового складского прихода; историю сохраняем. Физический приход только после получения товара.'
     }else if(ds.length && ds.some(d=>d.cancelled_quantity>0 &&
       !(d.cancelled_quantity===d.quantity && Number(d.movement_valid)===1
         && Number(d.correction_valid)===1))){
