@@ -272,6 +272,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     
               <div ref={returnFormRef} className="return-form-v2-bridge">
                 <OrderReturnV2Flow
+                  key={selectedId}
                   order={returnSelectedOrder}
                   formatMoney={formatMoney}
                   SmartPickerInput={SmartPickerInput}
