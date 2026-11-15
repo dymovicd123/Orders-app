@@ -7,8 +7,9 @@ import {previewUnifiedReturnV2LineEvidence} from '../domains/return-v2-unified-l
 import {submitUnifiedReturnV2WithReceiptPrototype,
   completeUnifiedReturnV2ReceiptPrototype} from '../domains/return-v2-unified-immediate-intake-prototype.ts'
 import {readVersionedReturnMoney} from '../domains/return-v2-financial-projection.ts'
+import {cancelUnifiedReturnV2Prototype} from '../domains/return-v2-unified-cancel-prototype.ts'
 
-const endpoint=/^\/api\/orders\/(\d+)\/returns\/v2(?:\/(preview|\d+\/receipt))?$/
+const endpoint=/^\/api\/orders\/(\d+)\/returns\/v2(?:\/(preview|\d+\/(?:receipt|cancel)))?$/
 const requiredTables=[
   'return_v2_postings','return_v2_unified_postings','return_v2_unified_lines',
   'return_v2_unified_cancellations','return_v2_metadata_edits','return_v2_resumed_dispatches'
@@ -47,6 +48,26 @@ async function preview(db:D1Database,orderId:number){
       old_v2_count:number;cancel_count:number
      }>(),
  ])
+ const recent=await db.prepare(`SELECT up.id AS posting_id,up.return_id,up.posted_at,
+    up.cash_refund,ret.status AS return_status,
+    (SELECT COUNT(*) FROM return_v2_unified_lines ul
+      WHERE ul.posting_id=up.id AND ul.action='physical_return_pending') AS shipped_count,
+    (SELECT COUNT(*) FROM return_v2_unified_lines ul
+      WHERE ul.posting_id=up.id AND ul.action<>'physical_return_pending') AS reserved_count,
+    (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=up.return_id
+      AND (ri.physical_received_at IS NOT NULL OR ri.restocked<>0)) AS received_count,
+    (SELECT COUNT(*) FROM inventory_lifecycle_events le
+      WHERE le.operation_type='return' AND le.operation_id=up.return_id) AS lifecycle_count,
+    (SELECT COUNT(*) FROM payments p WHERE p.order_id=up.order_id
+      AND julianday(p.created_at)>julianday(up.posted_at)) AS later_payments
+   FROM return_v2_unified_postings up
+   JOIN returns ret ON ret.id=up.return_id
+   WHERE up.order_id=? ORDER BY up.id DESC LIMIT 1`)
+   .bind(orderId).first<{
+     posting_id:number;return_id:number;posted_at:string;cash_refund:number;
+     return_status:string;shipped_count:number;reserved_count:number;
+     received_count:number;lifecycle_count:number;later_payments:number
+   }>()
  const hasUnsupported=toInt(history?.old_v2_count,0)>0
    ||toInt(history?.exchanges_count,0)>0
    ||toInt(history?.cancel_count,0)>0
@@ -64,7 +85,28 @@ async function preview(db:D1Database,orderId:number){
    :Math.max(0,paidIn-paidOut)
  const currentSale=financial.kind==='return_v2'
    ?financial.currentSale:financial.totalAmount
+ const cancellationAvailable=Boolean(recent
+   &&toInt(history?.unified_count,0)===1
+   &&toInt(history?.returns_count,0)===1
+   &&!hasUnsupported
+   &&recent.return_status==='completed'
+   &&recent.received_count===0&&recent.lifecycle_count===0
+   &&recent.later_payments===0
+   &&financial.kind==='return_v2'
+   &&financial.orderVersion===recent.posted_at)
  return {ok:true,enabled:true,eligible,exclusive:financial.kind==='return_v2',
+   cancellation:recent?{
+     postingId:recent.posting_id,returnId:recent.return_id,
+     refundAmount:recent.cash_refund,
+     hasSent:recent.shipped_count>0,
+     hasUnsent:recent.reserved_count>0,
+     available:cancellationAvailable,
+     reason:cancellationAvailable
+       ?'Можно запросить отмену после фактического подтверждения; свободный резерв и деньги ещё проверит сервер.'
+       :recent.received_count>0||recent.lifecycle_count>0
+         ?'Товар уже физически принят или начат складской учёт. Простая отмена недоступна.'
+         :'После возврата уже была другая операция или изменение. Отмена требует отдельной проверки.'
+   }:null,
    reason:hasUnsupported
       ?'У заказа есть старая операция, обмен или отменённый Return V2. Сначала требуется проверка истории.'
       :provenLines.length===0
@@ -137,6 +179,32 @@ export async function handleOrderReturnV2Route(
      ||Object.values(decisions).some(v=>!['already_counted','arrived_after_check'].includes(v)))
      return disabled('Решение по проверке склада некорректно.','return_v2_bad_checkpoint',400)
    return response(await completeUnifiedReturnV2ReceiptPrototype(db,postingId,decisions))
+  }
+  const cancelMatch=suffix.match(/^(\d+)\/cancel$/)
+  if(request.method==='POST'&&cancelMatch){
+   const postingId=toInt(cancelMatch[1],0)
+   const belongs=await db.prepare(`SELECT 1 AS ok FROM return_v2_unified_postings
+     WHERE id=? AND order_id=?`).bind(postingId,orderId).first<{ok:number}>()
+   if(!belongs)return disabled('Возврат не найден в этом заказе.','return_v2_wrong_cancel',404)
+   const input=await readJson<{
+     requestId?:unknown;reason?:unknown;
+     shippedGoodsUnreceivedConfirmed?:unknown;
+     reservationsRestoreConfirmed?:unknown;
+     refundRecoveredConfirmed?:unknown;recoveryMethod?:unknown
+   }>(request)
+   if(typeof input.shippedGoodsUnreceivedConfirmed!=='boolean'
+     ||typeof input.reservationsRestoreConfirmed!=='boolean'
+     ||typeof input.refundRecoveredConfirmed!=='boolean')
+    return disabled('Каждое подтверждение должно быть явно выбрано.','return_v2_cancel_bad_confirmations',400)
+   const saved=await cancelUnifiedReturnV2Prototype(db,{
+     postingId,requestId:String(input.requestId||''),
+     reason:String(input.reason||''),
+     shippedGoodsUnreceivedConfirmed:input.shippedGoodsUnreceivedConfirmed,
+     reservationsRestoreConfirmed:input.reservationsRestoreConfirmed,
+     refundRecoveredConfirmed:input.refundRecoveredConfirmed,
+     recoveryMethod:String(input.recoveryMethod||'')
+   })
+   return response(saved)
   }
   return disabled('Неизвестный маршрут Return V2.','return_v2_method_not_allowed',405)
  }catch(error){
