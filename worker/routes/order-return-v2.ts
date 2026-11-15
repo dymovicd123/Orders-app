@@ -7,6 +7,7 @@ import {previewUnifiedReturnV2LineEvidence} from '../domains/return-v2-unified-l
 import {submitUnifiedReturnV2WithReceiptPrototype,
   completeUnifiedReturnV2ReceiptPrototype} from '../domains/return-v2-unified-immediate-intake-prototype.ts'
 import {readVersionedReturnMoney} from '../domains/return-v2-financial-projection.ts'
+import {unsafeActiveExchangeSql} from '../domains/return-v2-safe-exchange-history.ts'
 import {cancelUnifiedReturnV2Prototype} from '../domains/return-v2-unified-cancel-prototype.ts'
 
 const endpoint=/^\/api\/orders\/(\d+)\/returns\/v2(?:\/(preview|\d+\/(?:receipt|cancel)))?$/
@@ -75,8 +76,7 @@ async function preview(db:D1Database,orderId:number){
    readVersionedReturnMoney(db,orderId),
    db.prepare(`SELECT
      (SELECT COUNT(*) FROM returns r WHERE r.order_id=?) AS returns_count,
-     (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=?
-       AND COALESCE(e.status,'completed')<>'cancelled') AS exchanges_count,
+     (SELECT CASE WHEN ${unsafeActiveExchangeSql('?')} THEN 1 ELSE 0 END) AS exchanges_count,
      (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS unified_count,
      (SELECT COUNT(*) FROM return_v2_postings vp WHERE vp.order_id=?) AS old_v2_count,
      (SELECT COUNT(*) FROM return_v2_unified_cancellations c
