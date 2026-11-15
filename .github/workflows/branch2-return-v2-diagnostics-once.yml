@@ -1,0 +1,83 @@
+name: Branch2 Return V2 QA diagnosis - read only once
+on:
+  push:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: >-
+      startsWith(github.event.head_commit.message, 'Branch2: inspect Return V2 QA orders read only 20261115')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Read exact Branch2 QA order evidence without changing D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          if len(account)!=32 or not token:raise SystemExit('Missing Cloudflare read credentials')
+          dbid='0904a573-21ff-44d8-93b0-c9200f771702'
+          root='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+dbid
+          headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'}
+          req=urllib.request.Request(root,headers=headers)
+          with urllib.request.urlopen(req,timeout=30) as res:
+            meta=json.load(res)
+          if not meta.get('success') or meta['result']['name']!='orders_db_branch2_mirror_20261027':
+            raise SystemExit('STOP: not the approved Branch2 test D1')
+          cases=('ORD-20261107192851-E3F3FF04','ORD-20261109083715-71D0FB15')
+          sql="""
+          SELECT o.id AS order_id,o.external_id,o.pricing_mode,o.total_amount,
+             o.shipping_status,o.order_status,o.return_amount,
+             (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi WHERE oi.order_id=o.id) AS line_sum,
+             (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled') AS prior_returns,
+             (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled') AS active_exchanges
+            FROM orders o WHERE o.external_id IN (?,?) ORDER BY o.external_id;
+          SELECT oi.order_id,oi.id AS item_id,oi.quantity,oi.unit_price,oi.line_total,
+             oi.stock_writeoff_status,oi.source_type,oi.is_workshop,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+               WHERE r.order_item_id=oi.id AND r.status='active') AS active_reserve,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+               WHERE r.order_item_id=oi.id AND r.status='unresolved') AS unresolved_reserve,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+               WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled_reserve,
+             (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) FROM order_dispatch_items di
+                WHERE di.order_item_id=oi.id) AS dispatched,
+             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri JOIN returns rr ON rr.id=ri.return_id
+                WHERE ri.order_item_id=oi.id AND COALESCE(rr.status,'completed')<>'cancelled') AS returned_qty
+            FROM order_items oi JOIN orders o ON o.id=oi.order_id
+            WHERE o.external_id IN (?,?) ORDER BY oi.order_id,oi.id;
+          """
+          statements=[
+           ("""SELECT o.id AS order_id,o.external_id,o.pricing_mode,o.total_amount,
+             o.shipping_status,o.order_status,o.return_amount,
+             (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi WHERE oi.order_id=o.id) AS line_sum,
+             (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled') AS prior_returns,
+             (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled') AS active_exchanges
+            FROM orders o WHERE o.external_id IN (?,?) ORDER BY o.external_id""",cases),
+           ("""SELECT oi.order_id,oi.id AS item_id,oi.quantity,oi.unit_price,oi.line_total,
+             oi.stock_writeoff_status,oi.source_type,oi.is_workshop,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r WHERE r.order_item_id=oi.id AND r.status='active') AS active_reserve,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r WHERE r.order_item_id=oi.id AND r.status='unresolved') AS unresolved_reserve,
+             (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled_reserve,
+             (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) FROM order_dispatch_items di WHERE di.order_item_id=oi.id) AS dispatched,
+             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri JOIN returns rr ON rr.id=ri.return_id
+                WHERE ri.order_item_id=oi.id AND COALESCE(rr.status,'completed')<>'cancelled') AS returned_qty
+            FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.external_id IN (?,?)
+            ORDER BY oi.order_id,oi.id""",cases)
+          ]
+          for i,(statement,values) in enumerate(statements):
+            req=urllib.request.Request(root+'/query',method='POST',headers=headers,
+             data=json.dumps({'sql':statement,'params':list(values)}).encode())
+            with urllib.request.urlopen(req,timeout=30) as res:
+              obj=json.load(res)
+            if not obj.get('success'):raise SystemExit('SELECT failed: '+str(obj.get('errors')))
+            for entry in obj.get('result',[]):
+              if int(entry.get('meta',{}).get('changes',0))!=0:raise SystemExit('STOP: SELECT changed data')
+              print('QA_QUERY_'+str(i)+': '+json.dumps(entry.get('results',[]),ensure_ascii=False))
+          print('PASS: only read two QA orders in exact Branch2 D1')
+          PY
