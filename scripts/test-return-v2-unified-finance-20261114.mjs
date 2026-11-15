@@ -1071,5 +1071,58 @@ assert.equal(sameItemReplay.replayed,true)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9954').get().n,2)
 
 
+// Workshop customer refusal is NOT a production-task cancellation or a return
+// to physical inventory. Finished and unfinished tasks remain payable.
+const workshopNow='2026-11-01T00:00:00Z'
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,
+  pricing_mode,total_amount,created_at,updated_at)
+ VALUES (9991,'V2U-WORKSHOP-REFUSAL','2026-11-01',9501,'active','warehouse','ready',
+  'not_sent','itemized_v1',6000,?,?)`).run(workshopNow,workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (9992,9991,'READY WORKSHOP CUSTOMER REFUSAL',1,6000,6000,1,
+  'warehouse','workshop',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO workshop_tasks
+ (id,order_id,order_item_id,external_order_id,product_name_snapshot,quantity,status,created_at,updated_at)
+ VALUES (9993,9991,9992,'V2U-WORKSHOP-REFUSAL','READY WORKSHOP CUSTOMER REFUSAL',
+  1,'ready',?,?)`).run(workshopNow,workshopNow)
+const workshopTaskBefore=sql.prepare(
+ 'SELECT id,status,quantity,order_item_id FROM workshop_tasks WHERE id=9993').get()
+const workshopStockBefore=sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM(reserved_quantity),0) AS r FROM inventory_stock').get()
+const workshopPreview=await callV2Http('GET','/api/orders/9991/returns/v2/preview')
+assert.equal(workshopPreview.eligible,true)
+assert.equal(workshopPreview.evidence.lines.length,1)
+assert.equal(workshopPreview.evidence.lines[0].proposedAction,'cancel_workshop_obligation')
+const workshopPosted=await callV2Http('POST','/api/orders/9991/returns/v2',{
+ requestId:'workshop-refusal-contract-0001',
+ expectedOrderVersion:workshopPreview.evidence.orderVersion,
+ items:[{orderItemId:9992,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(workshopPosted.remainingSale,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=9992').get().quantity,0)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9991').get().debt_amount,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=9992').get().n,0)
+assert.deepEqual(sql.prepare('SELECT id,status,quantity,order_item_id FROM workshop_tasks WHERE id=9993').get(),workshopTaskBefore)
+assert.deepEqual(sql.prepare('SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM(reserved_quantity),0) AS r FROM inventory_stock').get(),workshopStockBefore)
+const workshopCancel=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:workshopPosted.postingId,
+ requestId:'workshop-refusal-cancel-0001',
+ reason:'Клиент возобновил покупку',
+ shippedGoodsUnreceivedConfirmed:false,
+ reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(workshopCancel.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=9992').get().quantity,1)
+assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9991').get().total_amount,6000)
+assert.deepEqual(sql.prepare('SELECT id,status,quantity,order_item_id FROM workshop_tasks WHERE id=9993').get(),workshopTaskBefore)
+assert.deepEqual(sql.prepare('SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM(reserved_quantity),0) AS r FROM inventory_stock').get(),workshopStockBefore)
+
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
