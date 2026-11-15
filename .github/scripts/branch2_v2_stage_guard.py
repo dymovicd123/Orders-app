@@ -6,6 +6,7 @@ are database metadata GET or a SELECT of SQLite schema-capability counters.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,19 @@ MIGRATIONS = (
     "0130_return_v2_unified_cancel_prototype.sql",
     "0131_return_v2_metadata_edits.sql",
     "0132_return_v2_resumed_dispatch_prototype.sql",
+)
+# Approved immutable Git blob digests for the exact ADDITIVE migration bytes.
+# If Branch2 changes these SQL files, stop and request a new source review.
+MIGRATION_BLOBS = (
+    "7e1c0e671c06665c46e28f27810c4aee73a9e948",
+    "4f42fac3c7b13ff3a0e9d48cba530ff87535ca1a",
+    "3395090a24f7a82f6d149a6f43ede4e8d7b8d5f6",
+    "8257c815c90e1611b91e31ca8f387fcf5d45220f",
+    "dd2cc5e2cb6a4c9d202d5528b8982ad52a12b7c8",
+    "e8cacf2eedb89344582e214a90175c13b96f0e42",
+    "6d8c8282efe6a3205dd3041083e42bf4006b94af",
+    "ff804aabdcf3087cfff06045e38f7130a9f032e4",
+    "9f7c75d56df907f448c6c1a64d5e0ae8482cc5f0",
 )
 # Expected cumulatively, using the *exact* migration source definitions.
 CHECKPOINTS = (
@@ -127,9 +141,17 @@ def check_local_target(stage):
         fail("Unexpected D1 database name/ID; refusing any remote operations.")
     if str(config.get("vars", {}).get("RETURN_V2_ENABLED", "")).lower() == "true":
         fail("Return V2 is already ON in Wrangler config. STOP and investigate.")
-    for migration in MIGRATIONS:
-        if not (stage / "migrations" / migration).is_file():
+    for migration, approved_blob in zip(MIGRATIONS, MIGRATION_BLOBS):
+        path = stage / "migrations" / migration
+        if not path.is_file():
             fail("Missing migration: " + migration)
+        content = path.read_bytes()
+        blob = hashlib.sha1(
+            b"blob " + str(len(content)).encode("ascii") + b"\0" + content
+        ).hexdigest()
+        if blob != approved_blob:
+            fail("Migration SQL differs from approved Branch2 bytes: " + migration)
+    print("PASS: separate Main/Branch2 identities and 9 approved SQL files.")
     return True
 
 
