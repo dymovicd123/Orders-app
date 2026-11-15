@@ -37,7 +37,12 @@ jobs:
       - name: Confirm explicit backup request
         env:
           CONFIRM: ${{ inputs.confirmation }}
+          PRIVATE_REPO: ${{ github.event.repository.private }}
         run: |
+          if [ "$PRIVATE_REPO" != "true" ]; then
+            echo "::error::Full D1 export is forbidden if this GitHub repo is public."
+            exit 2
+          fi
           if [ "$CONFIRM" != "BACKUP_BRANCH2" ]; then
             echo "::error::Type BACKUP_BRANCH2 to authorize a Branch2 D1 export."
             exit 2
@@ -117,7 +122,12 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirmation }}
           BACKUP_RUN: ${{ inputs.backup_run_id }}
+          PRIVATE_REPO: ${{ github.event.repository.private }}
         run: |
+          if [ "$PRIVATE_REPO" != "true" ]; then
+            echo "::error::Branch2 backup artifact must stay in a private repository."
+            exit 2
+          fi
           if [ "$CONFIRM" != "MIGRATE_BRANCH2" ]; then
             echo "::error::Type MIGRATE_BRANCH2 ONLY after downloading the Branch2 backup."
             exit 2
