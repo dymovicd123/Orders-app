@@ -1,0 +1,194 @@
+name: Cloudflare Branch2 - Promote Reviewed Return V2 Version
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cloudflare-branch2-return-v2-staging
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote verified existing Branch2-only Worker version
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.issue.number == 864 &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == 'dymovicd123' &&
+      github.event.comment.body == 'BRANCH2_RETURN_V2_PROMOTE_REVIEWED_VERSION_20261115'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - name: Checkout production identity guard (no production operations)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout exact test Worker source and D1 migration evidence
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Assert separate Main/Branch2 identities and migrated test D1 (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 .github/scripts/branch2_v2_stage_guard.py --stage stage --expected-index 9
+
+      - name: Prove latest reviewed version configuration and explicitly deploy it to Branch2 only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.error,urllib.request,uuid
+
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          root='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2'
+          expected_version='8384e431-9557-4e42-be0b-373edf0061c3'
+          expected_db='0904a573-21ff-44d8-93b0-c9200f771702'
+
+          def api(path,method='GET',payload=None):
+              url=root+path
+              headers={'Authorization':'Bearer '+token,'Accept':'application/json'}
+              data=None
+              if payload is not None:
+                  data=json.dumps(payload).encode()
+                  headers['Content-Type']='application/json'
+              req=urllib.request.Request(url,method=method,data=data,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=35) as response:
+                      return response.status,json.load(response)
+              except urllib.error.HTTPError as error:
+                  try: obj=json.loads(error.read().decode())
+                  except (ValueError,UnicodeError):obj={}
+                  return error.code,obj
+
+          def require_ok(path):
+              status,obj=api(path)
+              if status!=200 or not obj.get('success'):
+                  codes=[str(e.get('code')) for e in obj.get('errors',[])]
+                  raise SystemExit('STOP: cannot read Branch2 '+path+
+                                   ' (HTTP '+str(status)+'; codes '+','.join(codes)+').')
+              return obj.get('result') or {}
+
+          def matching_bindings(bindings):
+              if not isinstance(bindings,list):
+                  raise SystemExit('STOP: Worker version bindings are not a list.')
+              dbs=[b for b in bindings if b.get('name')=='DB']
+              if (len(dbs)!=1 or dbs[0].get('type')!='d1'
+                  or (dbs[0].get('database_id') or dbs[0].get('id'))!=expected_db):
+                  raise SystemExit('STOP: version D1 binding is NOT the approved Branch2 D1.')
+              flags=[b for b in bindings if b.get('name')=='RETURN_V2_ENABLED']
+              if (len(flags)!=1 or flags[0].get('type')!='plain_text'
+                  or flags[0].get('text')!='true'):
+                  print('Reviewed latest Worker has',len(flags),'Return V2 flag bindings.')
+                  print('Flag binding types:',[x.get('type') for x in flags])
+                  raise SystemExit('STOP: reviewed latest version lacks RETURN_V2_ENABLED=true.')
+              return True
+
+          result=require_ok('/versions?per_page=5')
+          items=result.get('items') or []
+          if not items:
+              raise SystemExit('STOP: no Cloudflare Worker versions returned.')
+          latest=items[0].get('id')
+          print('Latest remote Branch2 version ID:',latest)
+          print('Expected reviewed Branch2 upload version ID:',expected_version)
+          if latest!=expected_version:
+              raise SystemExit('STOP: latest Branch2 version no longer matches reviewed PR #955 upload.')
+          version=require_ok('/versions/'+expected_version)
+          resources=version.get('resources') or {}
+          print('Version metadata keys:',sorted(version.keys()))
+          matching_bindings(resources.get('bindings'))
+          print('PASS: latest reviewed Worker version has test D1 AND RETURN_V2_ENABLED=true.')
+
+          deploy_list=require_ok('/deployments')
+          deployments=deploy_list.get('deployments') or []
+          if not deployments:
+              raise SystemExit('STOP: no existing test Worker deployments found.')
+          latest_deployment=deployments[0]
+          previous=latest_deployment.get('versions') or []
+          if len(previous)!=1 or float(previous[0].get('percentage') or 0)!=100.0:
+              raise SystemExit('STOP: existing Branch2 deployment is unexpectedly split.')
+          previous_id=previous[0].get('version_id')
+          print('Currently active Branch2 version:',previous_id)
+          if previous_id==expected_version:
+              print('Already serving reviewed version at 100%; no new deployment needed.')
+          else:
+              payload={
+                'strategy':'percentage',
+                'versions':[{'version_id':expected_version,'percentage':100}],
+                'annotations':{'workers/message':'Branch2 Return V2 UAT: deploy previously reviewed PR 955 Worker version; Main untouched'}
+              }
+              status,created=api('/deployments','POST',payload)
+              if status not in (200,201) or not created.get('success'):
+                  errors=[str(e.get('code','unknown')) for e in created.get('errors',[])]
+                  raise SystemExit('STOP: Cloudflare rejected Branch2 version deployment (HTTP '+
+                                   str(status)+', codes '+','.join(errors)+').')
+              print('Cloudflare accepted explicit Branch2-only version deployment.')
+
+          for attempt in range(1,9):
+              time.sleep(3)
+              deployments=require_ok('/deployments').get('deployments') or []
+              if deployments:
+                  listed=deployments[0].get('versions') or []
+                  if len(listed)==1 and listed[0].get('version_id')==expected_version and float(listed[0].get('percentage') or 0)==100.0:
+                      break
+              if attempt==8:
+                  raise SystemExit('STOP: active Branch2 deployment could not be verified.')
+          print('PASS: reviewed test Worker version is now explicitly deployed at 100%.')
+          settings=require_ok('/settings')
+          matching_bindings(settings.get('bindings'))
+          print('PASS: active Branch2 settings have exact test D1 and feature flag=true.')
+          print('No Worker code upload, Main Worker operation, Main D1 read/write, or test D1 data mutation.')
+          PY
+
+      - name: Public Branch2 authentication endpoint read-only smoke
+        run: |
+          python3 - <<'PY'
+          import urllib.error,urllib.request
+          req=urllib.request.Request(
+            'https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status',
+            headers={'Accept':'application/json','User-Agent':'Mozilla/5.0 (Orders-app-Branch2)'})
+          try:
+              with urllib.request.urlopen(req,timeout=25) as response:
+                  if response.status!=200:raise SystemExit('Unexpected Branch2 public status.')
+                  print('PASS: public Branch2 auth-status HTTP 200.')
+          except urllib.error.HTTPError as error:
+              if error.code not in (401,403):raise
+              print('::warning::Branch2 public GET from CI returned HTTP',error.code)
+          PY
+
+      - name: Report actual result to tracking issue
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          ok=os.environ['OUTCOME']=='success'
+          msg=('Branch2 Return V2 **reviewed version promotion**: **'+os.environ['OUTCOME']+'**.\n\n'+
+               ('PASS: version c=8384e431 explicitly deployed 100%, test D1 and flag=true verified.' if ok
+                else 'STOP: exact reviewed version, active deployment, or feature flag did not match. Inspect action logs; do not retry blindly.')+
+               '\n\n'+os.environ['RUN_URL']+
+               '\n\nMain production Worker and D1 were not targets.')
+          url='https://api.github.com/repos/'+os.environ['REPO']+'/issues/864/comments'
+          req=urllib.request.Request(url,data=json.dumps({'body':msg}).encode(),
+            headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                     'Accept':'application/vnd.github+json',
+                     'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=25) as response:
+              assert response.status==201
+          PY
