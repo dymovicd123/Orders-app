@@ -96,6 +96,10 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reject('Выбранная позиция или количество изменились.')
     const act=line.proposedAction
     if(act==='needs_review')reject('Товар требует уточнения.')
+    if(line.reasonCode==='legacy_sent_fulfilled_without_dispatch'
+      &&line.fulfilledQuantity>line.contractQuantity
+      &&requested.quantity!==line.availableQuantity)
+      reject('После частичного обмена можно отменить только всё оставшееся количество этой строки.')
     if(act!=='physical_return_pending'&&requested.receiptIntent!=='pending')
       reject('Неотправленную позицию нельзя физически принять повторно: она уже в остатке.')
     const value=requested.quantity*line.soldUnitPrice

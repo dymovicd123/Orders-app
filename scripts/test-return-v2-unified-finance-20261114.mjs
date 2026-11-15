@@ -1675,5 +1675,69 @@ assert.equal(noHeaderSend.eligible,false)
 assert.equal(noHeaderSend.evidence.lines[0].reasonCode,'issued_before_shipping_unconfirmed')
 
 
+// Historical Exchange Set replaced ONE of TWO fulfilled units; the other
+// original unit remains a valid customer purchase. Old V1 uses order-level
+// shipping_status='sent' without modern dispatch lines.
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(10450,9521,'МУЖ','ПУРПУРНЫЙ','СТАНДАРТ','СТАНДАРТ','50','adult',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(10451,'warehouse',9521,10450,'V2U-PARTIAL-OLD-EXCHANGE','МУЖ','ПУРПУРНЫЙ','СТАНДАРТ','СТАНДАРТ','50',7,0)").run()
+sql.prepare(`INSERT INTO orders (id,external_id,order_date,manager_id,order_status,source_type,
+  workshop_status,shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (10430,'V2U-OLD-PARTIAL-EXCHANGE','2026-11-01',9501,'active','warehouse',
+  'ready','sent','itemized_v1',2000,?,?)`).run(legacyNow,legacyNow)
+for(const [id,label] of [[10431,'ONE OF TWO ORIGINAL STILL SOLD'],[10432,'EXCHANGE REPLACEMENT STILL SOLD']]){
+ sql.prepare(`INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,
+   quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at)
+   VALUES (?,10430,9521,10450,?,1,1000,1000,0,'warehouse','fulfilled',?)`)
+   .run(id,label,legacyNow)
+}
+for(const [id,qty] of [[10431,2],[10432,1]]){
+ sql.prepare(`INSERT INTO inventory_reservations
+  (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,
+   fulfilled_at,created_at,updated_at)
+  VALUES (10430,?,'warehouse',9521,10450,?,'fulfilled',?,?,?)`)
+ .run(id,qty,legacyNow,legacyNow,legacyNow)
+}
+sql.prepare(`INSERT INTO exchanges
+ (id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,
+  new_source_type,status,financial_action,financial_amount,created_at)
+ VALUES (10433,10430,'2026-11-01',NULL,0,NULL,'warehouse','completed','none',0,?)`)
+ .run(legacyNow)
+for(const [role,itemId] of [['old',10431],['new',10432]]){
+ sql.prepare(`INSERT INTO exchange_items
+  (exchange_id,role,order_item_id,product_name_snapshot,quantity,created_at)
+  VALUES (10433,?,?,'HISTORICAL PARTIAL EXCHANGE SET',1,?)`)
+ .run(role,itemId,legacyNow)
+}
+const exchangeStockBefore=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10451').get()
+const oldPartialExchange=await callV2Http('GET','/api/orders/10430/returns/v2/preview')
+assert.equal(oldPartialExchange.eligible,true)
+assert.equal(oldPartialExchange.evidence.summary.requiresReviewQuantity,0)
+assert.equal(oldPartialExchange.evidence.lines.length,2)
+assert.deepEqual(oldPartialExchange.evidence.lines.map(x=>x.proposedAction),
+ ['physical_return_pending','physical_return_pending'])
+const oldExchangePost=await callV2Http('POST','/api/orders/10430/returns/v2',{
+ requestId:'v2u-partial-exchange-old-and-new-0001',
+ expectedOrderVersion:oldPartialExchange.evidence.orderVersion,
+ items:[{orderItemId:10431,quantity:1,receiptIntent:'pending'},
+   {orderItemId:10432,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(oldExchangePost.remainingSale,0)
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10451').get(),
+ exchangeStockBefore,'Physical stock untouched when cancelling a proven old partial exchange sale')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE return_id=?').get(oldExchangePost.returnId).n,2)
+assert.equal((await readVersionedReturnMoney(DB,10430)).currentSale,0)
+const undoOldPartialExchange=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:oldExchangePost.postingId,requestId:'v2u-partial-exchange-undo-0001',
+ reason:'Отмена возврата старой частичной замены',
+ shippedGoodsUnreceivedConfirmed:true,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(undoOldPartialExchange.cancelled,true)
+assert.deepEqual(sql.prepare('SELECT id,quantity FROM order_items WHERE order_id=10430 ORDER BY id')
+ .all().map(x=>[x.id,x.quantity]),[[10431,1],[10432,1]])
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10451').get(),exchangeStockBefore)
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')

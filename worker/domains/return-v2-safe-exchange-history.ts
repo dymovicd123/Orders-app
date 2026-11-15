@@ -36,7 +36,10 @@ export function unsafeActiveExchangeSql(orderIdSql:string):string {
                 ei.order_item_id IS NULL
                 OR ei.quantity<=0
                 OR oi.id IS NULL OR oi.order_id<>e.order_id
-                OR (ei.role='old' AND oi.quantity<>0)
+                OR (ei.role='old' AND oi.quantity<>0 AND NOT EXISTS(
+                  SELECT 1 FROM inventory_reservations ir
+                  WHERE ir.order_item_id=oi.id AND ir.status='fulfilled'
+                    AND ir.quantity=oi.quantity+ei.quantity))
                 OR (ei.role='new' AND oi.quantity<0)
               ))
             AND NOT EXISTS(SELECT 1 FROM exchange_items ei
