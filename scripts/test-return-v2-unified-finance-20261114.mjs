@@ -1542,7 +1542,7 @@ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WH
 sql.prepare(`INSERT INTO inventory_reservations
  (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
  VALUES (10200,10202,'warehouse',9521,10050,1,'active',?,?)`).run(legacyNow,legacyNow)
-sql.prepare("UPDATE orders SET total_amount=2050,shipping_status='partially_sent' WHERE id=10200").run()
+sql.prepare("UPDATE orders SET total_amount=2050,shipping_status='not_sent' WHERE id=10200").run()
 sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10200,'2026-11-01','KASPI',300,'primary')").run()
 sql.prepare(`INSERT INTO returns
  (id,order_id,return_date,amount,payment_method,status,created_at)
