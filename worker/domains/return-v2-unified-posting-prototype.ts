@@ -5,7 +5,7 @@ import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './r
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
 import {readOldReturnBaseline} from './return-v2-legacy-contract-baseline.ts'
 import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql,noUnprovenCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
-import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {guardExchangeHistoryInBatch} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
 type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
