@@ -18,7 +18,7 @@ jobs:
       - name: Checkout candidate Return V2 ledger code, not a deployed Worker
         uses: actions/checkout@v4
         with:
-          ref: fix/return-v2-cloudflare-d1-ledger-depth-20261115
+          ref: branch2
           persist-credentials: false
       - name: Evaluate exact server-side Return V2 preview against QA test DB (SELECT only)
         env:
@@ -81,6 +81,20 @@ jobs:
               console.log('QA_LEDGER_GUARD_D1: '+JSON.stringify({index:i,ok:false,error:String(e?.message||e).slice(0,350)}));
             }
           }
+          const diagOrders=await read(`SELECT id,shipping_status,order_status,pricing_mode,total_amount
+            FROM orders WHERE id IN (2196,2197,2198) ORDER BY id`);
+          const diagItems=await read(`SELECT oi.order_id,oi.id,oi.quantity,oi.unit_price,
+            oi.stock_writeoff_status,oi.source_type,
+            (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+              WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled,
+            (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) FROM order_dispatch_items di
+              WHERE di.order_item_id=oi.id) AS currently_dispatched,
+            (SELECT COUNT(*) FROM inventory_movements m WHERE m.order_item_id=oi.id
+              AND m.movement_type='sale') AS sale_movement_count
+            FROM order_items oi WHERE oi.order_id IN (2196,2197,2198)
+            ORDER BY oi.order_id,oi.id`);
+          console.log('HISTORY_QA_ORDERS: '+JSON.stringify(diagOrders));
+          console.log('HISTORY_QA_ITEMS: '+JSON.stringify(diagItems));
           const ids=[2196,2197,2198,2199,2200,2201,2204,2205,2206];
           for(const id of ids){
             const pathname='/api/orders/'+id+'/returns/v2/preview';
