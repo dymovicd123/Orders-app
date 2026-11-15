@@ -72,7 +72,7 @@ jobs:
                name,ok:false,error:String(e?.message||e),stack:String(e?.stack||'').slice(0,1000)
             }));}
           }
-          console.log('QA_PARTIAL_EXCHANGE_CANDIDATE_20261115_REV2');
+          console.log('QA_PARTIAL_EXCHANGE_CANDIDATE_20261115_REV3');
           const {RETURN_V2_UNIFIED_INTEGRITY_QUERIES}=await import('./worker/domains/return-v2-unified-integrity-sql.ts');
           for(let i=0;i<RETURN_V2_UNIFIED_INTEGRITY_QUERIES.length;i++){
             try{
