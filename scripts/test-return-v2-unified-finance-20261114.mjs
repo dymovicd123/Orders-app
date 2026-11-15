@@ -1589,6 +1589,11 @@ assert.equal((await readVersionedReturnMoney(DB,10200)).paidOut,300)
 const replayOld=await callV2Http('POST','/api/orders/10200/returns/v2',legacyPayload,200)
 assert.equal(replayOld.replayed,true)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_legacy_baseline_items WHERE order_item_id=10201').get().n,1)
+console.log('LEGACY_BASELINE_UNDO_STOCK_DIAG',JSON.stringify({
+ stock:sql.prepare("SELECT id,quantity,reserved_quantity,last_source_ref,last_action FROM inventory_stock WHERE id=10051").get(),
+ res:sql.prepare("SELECT id,quantity,status,updated_at FROM inventory_reservations WHERE order_item_id=10202").all(),
+ lines:sql.prepare("SELECT ul.order_item_id,ul.reservation_id,ul.reservation_release,ul.action,up.request_id,up.posted_at FROM return_v2_unified_lines ul JOIN return_v2_unified_postings up ON up.id=ul.posting_id WHERE up.order_id=10200").all()
+}))
 const undoLegacyNew=await cancelUnifiedReturnV2Prototype(DB,{
  postingId:legacyMerged.postingId,requestId:'v2u-legacy-baseline-cancel-new-0001',
  reason:'Клиент оставил новый товар; старый возврат не отменяется',
