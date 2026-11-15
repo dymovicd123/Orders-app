@@ -1103,6 +1103,13 @@ const workshopPosted=await callV2Http('POST','/api/orders/9991/returns/v2',{
  refundAmount:0,refundMethod:''
 },201)
 assert.equal(workshopPosted.remainingSale,0)
+assert.equal(sql.prepare("SELECT action FROM return_v2_unified_lines WHERE order_item_id=9992").get().action,
+ 'cancel_unresolved_reservation','Base journal action remains valid on historical D1')
+assert.equal(sql.prepare("SELECT semantic_action FROM return_v2_unified_action_overrides WHERE order_item_id=9992").get().semantic_action,
+ 'cancel_workshop_obligation','Additive journal preserves the true business action')
+sql.prepare("UPDATE return_v2_unified_action_overrides SET semantic_action='cancel_unreserved_obligation' WHERE order_item_id=9992").run()
+await assert.rejects(readVersionedReturnMoney(DB,9991),/разбор|поддерживаемые/)
+sql.prepare("UPDATE return_v2_unified_action_overrides SET semantic_action='cancel_workshop_obligation' WHERE order_item_id=9992").run()
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=9992').get().quantity,0)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9991').get().debt_amount,0)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=9992').get().n,0)
@@ -1148,6 +1155,8 @@ const unreservedPosted=await callV2Http('POST','/api/orders/9994/returns/v2',{
  refundAmount:0,refundMethod:''
 },201)
 assert.equal(unreservedPosted.remainingSale,0)
+assert.equal(sql.prepare("SELECT action FROM return_v2_unified_lines WHERE order_item_id=9995").get().action,'cancel_unresolved_reservation')
+assert.equal(sql.prepare("SELECT semantic_action FROM return_v2_unified_action_overrides WHERE order_item_id=9995").get().semantic_action,'cancel_unreserved_obligation')
 assert.equal(sql.prepare('SELECT total_amount,debt_amount FROM orders WHERE id=9994').get().total_amount,0)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_reservations WHERE order_item_id=9995').get().n,0)
 assert.deepEqual(sql.prepare(
