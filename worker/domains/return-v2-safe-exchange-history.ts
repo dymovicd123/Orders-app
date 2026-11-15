@@ -37,7 +37,7 @@ export function unsafeActiveExchangeSql(orderIdSql:string):string {
                 OR ei.quantity<=0
                 OR oi.id IS NULL OR oi.order_id<>e.order_id
                 OR (ei.role='old' AND oi.quantity<>0)
-                OR (ei.role='new' AND oi.quantity<=0)
+                OR (ei.role='new' AND oi.quantity<0)
               ))
             AND NOT EXISTS(SELECT 1 FROM exchange_items ei
               JOIN exchange_items other ON other.exchange_id=ei.exchange_id
