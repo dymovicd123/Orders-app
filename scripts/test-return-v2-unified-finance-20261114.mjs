@@ -1524,5 +1524,86 @@ assert.equal(unprovenReship.eligible,false)
 assert.equal(unprovenReship.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
 
 
+// Completed old Returns may have removed physical goods and paid cash without
+// reducing the customer's contract. The first new Return V2 reconciles that
+// historic obligation once, atomically, but NEVER books stock or cash twice.
+addCorrectedFixture(10200,10201,'LEGACY-RETURNED-BEFORE-V2',1000)
+await api('POST','/api/orders/10200/shipping/dispatches',{
+ requestId:'v2u-legacy-before-actual-shipment-0001',
+ items:[{orderItemId:10201,quantity:1}]
+})
+const legacyNow='2026-11-01T00:00:00Z'
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,
+  is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at)
+ VALUES (10202,10200,9521,10050,'CURRENT UNSHIPPED AFTER V1 RETURN',1,1050,1050,
+  0,'warehouse','reserved',?,'v2u-legacy-current-10202',?)`).run(legacyNow,legacyNow)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10051').run()
+sql.prepare(`INSERT INTO inventory_reservations
+ (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
+ VALUES (10200,10202,'warehouse',9521,10050,1,'active',?,?)`).run(legacyNow,legacyNow)
+sql.prepare("UPDATE orders SET total_amount=2050,shipping_status='partially_sent' WHERE id=10200").run()
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10200,'2026-11-01','KASPI',300,'primary')").run()
+sql.prepare(`INSERT INTO returns
+ (id,order_id,return_date,amount,payment_method,status,created_at)
+ VALUES (10300,10200,'2026-11-02',100,'KASPI','completed',?)`).run(legacyNow)
+sql.prepare(`INSERT INTO return_items
+ (id,return_id,order_item_id,product_name_snapshot,quantity,amount,inventory_source,
+  restocked,physical_tracking,contract_quantity_applied,created_at)
+ VALUES (10301,10300,10201,'LEGACY-RETURNED-BEFORE-V2',1,0,NULL,0,1,0,?)`).run(legacyNow)
+sql.prepare(`INSERT INTO returns
+ (id,order_id,return_date,amount,payment_method,status,created_at)
+ VALUES (10302,10200,'2026-11-03',50,'KASPI','completed',?)`).run(legacyNow)
+const legacyStockBeforeV2=correctedStock()
+const legacyPreview=await callV2Http('GET','/api/orders/10200/returns/v2/preview')
+assert.equal(legacyPreview.eligible,true)
+assert.equal(legacyPreview.finance.currentSale,1050)
+assert.equal(legacyPreview.finance.paidIn,300)
+assert.equal(legacyPreview.finance.paidOut,150)
+assert.equal(legacyPreview.finance.netHeld,150)
+assert.equal(legacyPreview.finance.customerDebt,900)
+assert.equal(legacyPreview.evidence.lines.find(x=>x.orderItemId===10202).proposedAction,'cancel_unshipped_reservation')
+assert.equal(legacyPreview.evidence.lines.find(x=>x.orderItemId===10201).requiresReview,true)
+const legacyPayload={
+ requestId:'v2u-legacy-baseline-merged-0001',
+ expectedOrderVersion:legacyPreview.evidence.orderVersion,
+ items:[{orderItemId:10202,quantity:1,receiptIntent:'pending'}],
+ refundAmount:150,refundMethod:'KASPI'
+}
+const legacyMerged=await callV2Http('POST','/api/orders/10200/returns/v2',legacyPayload,201)
+assert.equal(legacyMerged.remainingSale,0)
+assert.equal(legacyMerged.cashRefund,150)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10201').get().quantity,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10202').get().quantity,0)
+assert.equal(sql.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=10200').get().total_amount,0)
+assert.equal(sql.prepare('SELECT return_amount FROM orders WHERE id=10200').get().return_amount,300)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=10200').get().debt_amount,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_legacy_baseline_returns WHERE order_id=10200').get().n,2)
+assert.equal(sql.prepare('SELECT COALESCE(SUM(reduction),0) n FROM return_v2_legacy_baseline_items WHERE order_item_id=10201').get().n,1000)
+assert.equal(sql.prepare('SELECT amount FROM returns WHERE id=10300').get().amount,100)
+assert.equal(sql.prepare('SELECT amount FROM returns WHERE id=10302').get().amount,50)
+assert.deepEqual({physical:correctedStock().quantity,reserved:correctedStock().reserved_quantity},
+ {physical:legacyStockBeforeV2.quantity,reserved:legacyStockBeforeV2.reserved_quantity-1},
+ 'Migrating legacy purchase obligations must not add old returned goods to stock')
+assert.equal((await readVersionedReturnMoney(DB,10200)).paidOut,300)
+const replayOld=await callV2Http('POST','/api/orders/10200/returns/v2',legacyPayload,200)
+assert.equal(replayOld.replayed,true)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_legacy_baseline_items WHERE order_item_id=10201').get().n,1)
+const undoLegacyNew=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:legacyMerged.postingId,requestId:'v2u-legacy-baseline-cancel-new-0001',
+ reason:'Клиент оставил новый товар; старый возврат не отменяется',
+ shippedGoodsUnreceivedConfirmed:false,reservationsRestoreConfirmed:true,
+ refundRecoveredConfirmed:true,recoveryMethod:'KASPI'
+})
+assert.equal(undoLegacyNew.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10201').get().quantity,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10202').get().quantity,1)
+assert.equal(sql.prepare('SELECT total_amount,return_amount,debt_amount FROM orders WHERE id=10200').get().total_amount,1050)
+assert.equal(sql.prepare('SELECT return_amount FROM orders WHERE id=10200').get().return_amount,150)
+assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=10200').get().debt_amount,900)
+assert.deepEqual(correctedStock(),legacyStockBeforeV2)
+assert.equal((await readVersionedReturnMoney(DB,10200)).customerDebt,900)
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
