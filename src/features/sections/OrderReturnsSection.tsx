@@ -1,5 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { OrderReturnV2Flow } from './OrderReturnV2Flow'
 import {allowLegacyReturnEditor,type ReturnV2UiMode} from './returnV2UiMode'
@@ -65,6 +65,23 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
   const [v2Navigation,setV2Navigation]=useState<{orderId:number;mode:ReturnV2UiMode}>({orderId:0,mode:'checking'})
   const selectedId=Number(returnSelectedOrder?.id||0)
+  const [activeView,setActiveView]=useState<'form'|'intake'|'history'>(selectedId?'form':'intake')
+  const [savedReturn,setSavedReturn]=useState<{returnId:number;cashRefund:number;remainingSale:number;intakePending:boolean}|null>(null)
+  useEffect(()=>{
+    if(!selectedId)return
+    setSavedReturn(null)
+    setActiveView('form')
+    let secondFrame=0
+    const firstFrame=requestAnimationFrame(()=>{
+      secondFrame=requestAnimationFrame(()=>{
+        const target=returnFormRef.current as HTMLElement|null
+        if(!target||!target.getClientRects().length)return
+        target.scrollIntoView({behavior:'smooth',block:'start'})
+        target.querySelector<HTMLElement>('[data-return-form-title]')?.focus({preventScroll:true})
+      })
+    })
+    return ()=>{cancelAnimationFrame(firstFrame);cancelAnimationFrame(secondFrame)}
+  },[selectedId,returnFormRef])
   const showLegacyReturnEditor=allowLegacyReturnEditor(selectedId,v2Navigation.orderId,v2Navigation.mode)
   const returnReceiptNeedsRecovery = (item: any) => Boolean(
     item.physicalTracking
@@ -154,33 +171,31 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
 
   return (
     <article className="card wide sector-orders" id="order-returns" style={{ ...sectorStyle('orders'), ...orderPanelStyle('returns') }}>
-              <div className="card-label">Возврат</div>
-              <div className="card-meta">Возврат открывается из главной таблицы заказов кнопкой `Возврат`. Здесь остаётся только форма выбранного заказа и история возвратов.</div>
-    
-              <div className="editor-summary debt-summary-panel">
-                <div className="editor-summary-grid">
-                  <div>
-                    <span>Открытая форма</span>
-                    <strong>{returnSelectedOrder ? 1 : 0}</strong>
-                  </div>
-                  <div>
-                    <span>Проведённых возвратов</span>
-                    <strong>{returnHistorySummary.activeCount}</strong>
-                  </div>
-                  <div>
-                    <span>На сумму</span>
-                    <strong>{formatMoney(returnHistorySummary.activeAmount)}</strong>
-                  </div>
-                  <div>
-                    <span>Отменённых</span>
-                    <strong>{returnHistorySummary.cancelledCount}</strong>
-                  </div>
-                  <div>
-                    <span>Ожидают приёмки</span>
-                    <strong>{returnPendingInbox.pendingQuantity} шт.</strong>
-                  </div>
-                </div>
+              
+              <div className="card-label">Возвраты</div>
+              <div className="card-meta">Оформление возврата, получение товаров и журнал операций доступны отдельно.</div>
+              <div className="return-workspace-tabs" role="tablist" aria-label="Разделы возвратов">
+                <button type="button" role="tab" aria-selected={activeView==='form'}
+                  aria-controls="return-workspace-form" className={activeView==='form'?'is-active':''}
+                  onClick={()=>{setActiveView('form');setSavedReturn(null)}}>
+                  Оформление {selectedId?<>· заказ №{returnSelectedOrder?.external_id||selectedId}</>:null}
+                </button>
+                <button type="button" role="tab" aria-selected={activeView==='intake'}
+                  aria-controls="return-workspace-intake" className={activeView==='intake'?'is-active':''}
+                  onClick={()=>setActiveView('intake')}>Приёмка товаров <span>{returnPendingInbox.pendingQuantity||0}</span></button>
+                <button type="button" role="tab" aria-selected={activeView==='history'}
+                  aria-controls="return-workspace-history" className={activeView==='history'?'is-active':''}
+                  onClick={()=>setActiveView('history')}>История возвратов</button>
               </div>
+              {savedReturn?<div className="return-workspace-success" role="status">
+                <strong>Возврат №{savedReturn.returnId} проведён. Форма закрыта.</strong>
+                <span>Клиенту выплачено {formatMoney(savedReturn.cashRefund)} ₸. В покупке осталось {formatMoney(savedReturn.remainingSale)} ₸.</span>
+                {savedReturn.intakePending?<span>Товары, которые ещё не получили, находятся во вкладке «Приёмка товаров».</span>:null}
+              </div>:null}
+              {activeView==='intake'?<section id="return-workspace-intake" role="tabpanel" className="return-workspace-panel">
+                <div className="return-workspace-panel-head"><h3>Ожидают приёмки</h3>
+                  <p>Подтверждайте получение только после фактического поступления вещи. До приёмки остаток не увеличивается.</p>
+                </div>
               {returnPendingInbox.error ? <p className="history-load-state is-error" role="alert">{returnPendingInbox.error} <button type="button" className="secondary compact" onClick={() => void loadReturnPendingInbox()}>Повторить</button></p> : null}
               {returnPendingInbox.busy && !returnPendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
               {Number(returnPendingInbox.pendingQuantity || 0) > 0 ? (
@@ -255,8 +270,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   ) : null}
                 </section>
               ) : null}
+              {!returnPendingInbox.busy && !returnPendingInbox.error && !Number(returnPendingInbox.pendingQuantity||0) ? (
+                <div className="return-workspace-empty">Нет вещей, ожидающих физического получения.</div>
+              ) : null}
+              </section>:null}
     
-              {!returnSelectedOrder ? (
+              {activeView==='form'&&!returnSelectedOrder ? (
                 <section className="mini-panel debt-table-panel">
                   <div className="mini-panel-head">
                     <div>
@@ -270,7 +289,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                 </section>
               ) : null}
     
-              <div ref={returnFormRef} className="return-form-v2-bridge">
+              <div id="return-workspace-form" role="tabpanel" ref={returnFormRef} className="return-form-v2-bridge"
+                 style={activeView==='form'?undefined:{display:'none'}}>
                 <OrderReturnV2Flow
                   key={selectedId}
                   order={returnSelectedOrder}
@@ -278,7 +298,14 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   SmartPickerInput={SmartPickerInput}
                   paymentMethods={suggestionValues.paymentMethods}
                   onMode={(id,mode)=>setV2Navigation({orderId:id,mode})}
-                  onSaved={()=>void loadReturnHistory()}
+                  onSaved={(posted)=>{
+                    setSavedReturn({returnId:posted.returnId,cashRefund:posted.cashRefund,remainingSale:posted.remainingSale,intakePending:Boolean(posted.receipt?.receiptPending)})
+                    closeReturnForm(false)
+                    setActiveView(posted.receipt?.receiptPending?'intake':'history')
+                    void loadReturnHistory()
+                    void loadReturnPendingInbox()
+                  }}
+                  onCancelled={()=>{void loadReturnHistory();void loadReturnPendingInbox()}}
                   onBack={()=>closeReturnForm(true)}
                 />
               <section className="mini-panel debt-form-panel"
@@ -599,7 +626,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
               </section>
               </div>
 
-              <section className="mini-panel debt-history-panel history-cards-panel">
+              {activeView==='history'?<section id="return-workspace-history" role="tabpanel" className="mini-panel debt-history-panel history-cards-panel">
                 <div className="mini-panel-head history-section-head">
                   <div>
                     <h3>История возвратов</h3>
@@ -730,7 +757,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                 ) : (
                   <div className="history-load-state"><strong>Возвратов по выбранным условиям нет.</strong><span>Это нормальный пустой результат, а не ошибка загрузки.</span></div>
                 )}
-              </section>
+              </section>:null}
             </article>
   )
 }
