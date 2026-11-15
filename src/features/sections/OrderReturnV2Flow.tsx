@@ -4,7 +4,7 @@ import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
- proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'needs_review';
+ proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'cancel_workshop_obligation'|'needs_review';
  status:string;message:string;requiresReview:boolean;availableQuantity:number;
  selectedQuantity:number;soldUnitPrice:number;selectedSaleValue:number
 }
@@ -215,7 +215,7 @@ export function OrderReturnV2Flow({
    <div className="mini-panel-head">
      <div>
        <h3>Возврат товаров · новый учёт</h3>
-       <p className="mini-panel-note">Отмена покупки и физическая приёмка — разные действия. Неотправленные товары уже находятся в остатке: их резерв снимается без повторного прихода.</p>
+       <p className="mini-panel-note">Выберите товары и сумму выплаты. Система отдельно обработает отправку, резерв и задания цеха, не создавая лишних приходов.</p>
      </div>
      <div className="mini-panel-actions">
        <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
@@ -242,6 +242,7 @@ export function OrderReturnV2Flow({
      {lines.map(line=>{
        const quantity=selections[line.orderItemId]||0
        const shipped=line.proposedAction==='physical_return_pending'
+       const workshop=line.proposedAction==='cancel_workshop_obligation'
        const locked=busy||Boolean(committed)||unknownResult||!eligible
        return <div key={line.orderItemId}
           className={`return-smart-card ${quantity>0?'is-selected':''} ${shipped?'':'is-unissued'}`}>
@@ -263,7 +264,10 @@ export function OrderReturnV2Flow({
                  onChange={e=>setQuantity(line.orderItemId,Math.max(0,Math.min(line.availableQuantity,money(e.target.value))))}/>
              </label>
              <strong>Исключается из покупки: {formatMoney(quantity*line.soldUnitPrice)} ₸</strong>
-             {shipped?<label><span>Физический статус возвращаемого товара</span>
+             {workshop?<div className="return-smart-unissued">
+               <strong>Клиент отказался · задание цеху сохраняется</strong>
+               <span>{line.message} Ни производство, ни оплата цеху, ни физический остаток автоматически не изменяются.</span>
+             </div>:shipped?<label><span>Физический статус возвращаемого товара</span>
                <select value={intents[line.orderItemId]||'pending'} disabled={locked}
                 onChange={e=>setReceipt(line.orderItemId,e.target.value as Intent)}>
                 {(Object.keys(labels) as Intent[]).map(k=><option key={k} value={k}>{labels[k]}</option>)}
