@@ -21,16 +21,17 @@ type Props={
  formatMoney:(n:number)=>string;
  SmartPickerInput:any;paymentMethods:any[];
  onMode:(orderId:number,mode:ReturnV2UiMode)=>void;
- onSaved:()=>void;
+ onSaved:(saved:{returnId:number;cashRefund:number;remainingSale:number;receipt?:{receiptPending?:boolean}})=>void;
+ onCancelled:()=>void;
  onBack:()=>void
 }
 type Intent='pending'|'warehouse'|'boutique'|'no_stock'
 
 const labels:Record<Intent,string>={
- pending:'Ожидаем физическое получение',
- warehouse:'Уже получен — принять на склад',
- boutique:'Уже получен — принять в бутик',
- no_stock:'Уже получен — не добавлять в остатки'
+ pending:'Ещё не получили — ожидаем возврат',
+ warehouse:'Уже получили — добавить на склад',
+ boutique:'Уже получили — добавить в бутик',
+ no_stock:'Уже получили — без добавления в остатки'
 }
 const money=(n:unknown)=>Number.isFinite(Number(n))?Math.max(0,Math.trunc(Number(n))):0
 async function loadJson(res:Response){
@@ -40,7 +41,7 @@ async function loadJson(res:Response){
  return payload
 }
 export function OrderReturnV2Flow({
- order,formatMoney,SmartPickerInput,paymentMethods,onMode,onSaved,onBack
+ order,formatMoney,SmartPickerInput,paymentMethods,onMode,onSaved,onCancelled,onBack
 }:Props){
  const orderId=Number(order?.id||0)
  const [preview,setPreview]=useState<Preview|null>(null)
@@ -176,7 +177,7 @@ export function OrderReturnV2Flow({
      const saved=await loadJson(res)
      if(saved.contractPosted===true){
        setCommitted(saved)
-       onSaved()
+       onSaved(saved)
      }else throw new Error('Подтверждение записи не получено. Повторите исходный запрос.')
    }catch(e){
      const msg=e instanceof Error?e.message:'Не удалось подтвердить сохранение.'
@@ -318,7 +319,7 @@ export function OrderReturnV2Flow({
      key={`${orderId}:${preview.cancellation.postingId}`}
      orderId={orderId} cancellation={preview.cancellation}
      formatMoney={formatMoney} SmartPickerInput={SmartPickerInput}
-     paymentMethods={paymentMethods} onSaved={onSaved}
+     paymentMethods={paymentMethods} onSaved={onCancelled}
    />:null}
    {error?<div className="history-note is-danger" role="alert"><strong>{error}</strong>
      {unknownResult?<span>Не создавайте новый запрос. Повторите прежнее сохранение с теми же параметрами.</span>:null}
