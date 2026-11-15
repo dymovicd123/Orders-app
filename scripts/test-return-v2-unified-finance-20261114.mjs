@@ -1028,8 +1028,8 @@ const wrongCancelOrder=await callV2Http('POST',
 assert.equal(wrongCancelOrder.code,'return_v2_wrong_cancel')
 const afterUndoPreview=await callV2Http('GET',v2Endpoint+'/preview')
 assert.equal(afterUndoPreview.exclusive,true)
-assert.equal(afterUndoPreview.cancellation.available,false)
-assert.equal(afterUndoPreview.eligible,false)
+assert.equal(afterUndoPreview.cancellation,null)
+assert.equal(afterUndoPreview.eligible,true)
 // A different order can now use the same SKU. Do not run it before the
 // cancellation above: that would intentionally invalidate its exact stock
 // source-ref proof and correctly cause a 409.
