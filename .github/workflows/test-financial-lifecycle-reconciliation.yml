@@ -1,0 +1,39 @@
+name: Financial lifecycle reconciliation
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-financial-lifecycle-reconciliation-20261021.mjs'
+      - '.github/workflows/test-financial-lifecycle-reconciliation.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-financial-lifecycle-reconciliation-20261021.mjs'
+      - '.github/workflows/test-financial-lifecycle-reconciliation.yml'
+permissions:
+  contents: read
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify real SQL cash/debt/refund/exchange semantics
+        run: node --experimental-strip-types scripts/test-financial-lifecycle-reconciliation-20261021.mjs
+
+      - name: Characterize refund cancellation and cross-period reporting
+        run: node --experimental-strip-types scripts/test-finance-report-cancellation-timeline-20261021.mjs
+      - name: Regression existing itemized and post-return debt semantics
+        run: |
+          node scripts/test-stage03-h1-itemized-money-calculator.mjs
+          node scripts/test-operational-autonomy-a3-post-return-debt-close.mjs
+          node scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs
+          node scripts/test-order-standalone-return-price-correction-r2.mjs
+          node scripts/test-finance-f4-money-journal.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+
