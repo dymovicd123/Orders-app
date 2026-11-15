@@ -1527,7 +1527,16 @@ assert.equal(unprovenReship.evidence.lines[0].reasonCode,'corrected_dispatch_req
 // Completed old Returns may have removed physical goods and paid cash without
 // reducing the customer's contract. The first new Return V2 reconciles that
 // historic obligation once, atomically, but NEVER books stock or cash twice.
+// Keep this legacy reconciliation completely independent from the previous
+// shipment/correction stock fixtures (which deliberately exhaust SKU 10050).
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(10250,9521,'МУЖ','БОРДОВЫЙ','СТАНДАРТ','СТАНДАРТ','50','adult',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(10251,'warehouse',9521,10250,'V2U-LEGACY-BASELINE-TEST','МУЖ','БОРДОВЫЙ','СТАНДАРТ','СТАНДАРТ','50',10,0)").run()
 addCorrectedFixture(10200,10201,'LEGACY-RETURNED-BEFORE-V2',1000)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE id=10251').run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10251').run()
+sql.prepare('UPDATE order_items SET variant_id=10250 WHERE id=10201').run()
+sql.prepare('UPDATE inventory_reservations SET variant_id=10250 WHERE order_item_id=10201').run()
+const legacyStock=()=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10251').get()
 await api('POST','/api/orders/10200/shipping/dispatches',{
  requestId:'v2u-legacy-before-actual-shipment-0001',
  items:[{orderItemId:10201,quantity:1}]
@@ -1536,9 +1545,9 @@ const legacyNow='2026-11-01T00:00:00Z'
 sql.prepare(`INSERT INTO order_items
  (id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,
   is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at)
- VALUES (10202,10200,9521,10050,'CURRENT UNSHIPPED AFTER V1 RETURN',1,1050,1050,
+ VALUES (10202,10200,9521,10250,'CURRENT UNSHIPPED AFTER V1 RETURN',1,1050,1050,
   0,'warehouse','reserved',?,'v2u-legacy-current-10202',?)`).run(legacyNow,legacyNow)
-sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10051').run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10251').run()
 sql.prepare(`INSERT INTO inventory_reservations
  (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
  VALUES (10200,10202,'warehouse',9521,10050,1,'active',?,?)`).run(legacyNow,legacyNow)
@@ -1554,7 +1563,7 @@ sql.prepare(`INSERT INTO return_items
 sql.prepare(`INSERT INTO returns
  (id,order_id,return_date,amount,payment_method,status,created_at)
  VALUES (10302,10200,'2026-11-03',50,'KASPI','completed',?)`).run(legacyNow)
-const legacyStockBeforeV2=correctedStock()
+const legacyStockBeforeV2=legacyStock()
 const legacyPreview=await callV2Http('GET','/api/orders/10200/returns/v2/preview')
 assert.equal(legacyPreview.eligible,true)
 assert.equal(legacyPreview.finance.currentSale,1050)
@@ -1582,18 +1591,13 @@ assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_legacy_baseline_retur
 assert.equal(sql.prepare('SELECT COALESCE(SUM(reduction),0) n FROM return_v2_legacy_baseline_items WHERE order_item_id=10201').get().n,1000)
 assert.equal(sql.prepare('SELECT amount FROM returns WHERE id=10300').get().amount,100)
 assert.equal(sql.prepare('SELECT amount FROM returns WHERE id=10302').get().amount,50)
-assert.deepEqual({physical:correctedStock().quantity,reserved:correctedStock().reserved_quantity},
+assert.deepEqual({physical:legacyStock().quantity,reserved:legacyStock().reserved_quantity},
  {physical:legacyStockBeforeV2.quantity,reserved:legacyStockBeforeV2.reserved_quantity-1},
  'Migrating legacy purchase obligations must not add old returned goods to stock')
 assert.equal((await readVersionedReturnMoney(DB,10200)).paidOut,300)
 const replayOld=await callV2Http('POST','/api/orders/10200/returns/v2',legacyPayload,200)
 assert.equal(replayOld.replayed,true)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_v2_legacy_baseline_items WHERE order_item_id=10201').get().n,1)
-console.log('LEGACY_BASELINE_UNDO_STOCK_DIAG',JSON.stringify({
- stock:sql.prepare("SELECT id,quantity,reserved_quantity,last_source_ref,last_action FROM inventory_stock WHERE id=10051").get(),
- res:sql.prepare("SELECT id,quantity,status,updated_at FROM inventory_reservations WHERE order_item_id=10202").all(),
- lines:sql.prepare("SELECT ul.order_item_id,ul.reservation_id,ul.reservation_release,ul.action,up.request_id,up.posted_at FROM return_v2_unified_lines ul JOIN return_v2_unified_postings up ON up.id=ul.posting_id WHERE up.order_id=10200").all()
-}))
 const undoLegacyNew=await cancelUnifiedReturnV2Prototype(DB,{
  postingId:legacyMerged.postingId,requestId:'v2u-legacy-baseline-cancel-new-0001',
  reason:'Клиент оставил новый товар; старый возврат не отменяется',
@@ -1606,7 +1610,7 @@ assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10202').get(
 assert.equal(sql.prepare('SELECT total_amount,return_amount,debt_amount FROM orders WHERE id=10200').get().total_amount,1050)
 assert.equal(sql.prepare('SELECT return_amount FROM orders WHERE id=10200').get().return_amount,150)
 assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=10200').get().debt_amount,900)
-assert.deepEqual(correctedStock(),legacyStockBeforeV2)
+assert.deepEqual(legacyStock(),legacyStockBeforeV2)
 assert.equal((await readVersionedReturnMoney(DB,10200)).customerDebt,900)
 
 
