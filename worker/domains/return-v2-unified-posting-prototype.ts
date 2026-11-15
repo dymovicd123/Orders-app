@@ -3,6 +3,7 @@
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
 type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
@@ -260,8 +261,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
           AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
             WHERE r.order_id=o.id AND r.status='completed')=?
-          AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id
-            AND COALESCE(e.status,'completed')<>'cancelled')
+          AND NOT ${unsafeActiveExchangeSql('o.id')}
        AND NOT EXISTS(
          SELECT 1 FROM critical_operations co
          WHERE co.operation_type='order_edit' AND co.status='started'
