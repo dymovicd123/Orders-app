@@ -15,9 +15,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Checkout branch2 application source
+      - name: Checkout candidate Return V2 ledger code, not a deployed Worker
         uses: actions/checkout@v4
         with:
+          ref: fix/return-v2-cloudflare-d1-ledger-depth-20261115
           persist-credentials: false
       - name: Evaluate exact server-side Return V2 preview against QA test DB (SELECT only)
         env:
@@ -70,6 +71,15 @@ jobs:
             catch(e){console.log('DIAG_READ_STAGE: '+JSON.stringify({
                name,ok:false,error:String(e?.message||e),stack:String(e?.stack||'').slice(0,1000)
             }));}
+          }
+          const {RETURN_V2_UNIFIED_INTEGRITY_QUERIES}=await import('./worker/domains/return-v2-unified-integrity-sql.ts');
+          for(let i=0;i<RETURN_V2_UNIFIED_INTEGRITY_QUERIES.length;i++){
+            try{
+              const result=await db.prepare(RETURN_V2_UNIFIED_INTEGRITY_QUERIES[i]).bind(2200).first();
+              console.log('QA_LEDGER_GUARD_D1: '+JSON.stringify({index:i,ok:true,count:result?.invalid_count}));
+            }catch(e){
+              console.log('QA_LEDGER_GUARD_D1: '+JSON.stringify({index:i,ok:false,error:String(e?.message||e).slice(0,350)}));
+            }
           }
           const ids=[2196,2197,2198,2199,2200,2201,2204,2205,2206];
           for(const id of ids){
