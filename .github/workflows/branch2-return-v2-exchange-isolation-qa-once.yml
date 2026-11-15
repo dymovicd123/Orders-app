@@ -18,7 +18,7 @@ jobs:
       - name: Checkout candidate Return V2 ledger code, not a deployed Worker
         uses: actions/checkout@v4
         with:
-          ref: integration/return-v2-exchange-sql-20261115
+          ref: fix/return-v2-isolate-exchange-sql-20261115
           persist-credentials: false
       - name: Evaluate exact server-side Return V2 preview against QA test DB (SELECT only)
         env:
