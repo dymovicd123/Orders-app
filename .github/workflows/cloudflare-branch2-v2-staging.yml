@@ -4,19 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "Run backup FIRST, then migrate in a separate manual run"
+        description: "Only test Branch2: migrate_without_backup skips backup. Main is never targeted."
         type: choice
         required: true
         default: backup
         options:
           - backup
           - migrate
+          - migrate_without_backup
       confirmation:
-        description: "backup: BACKUP_BRANCH2 | migrate: MIGRATE_BRANCH2"
+        description: "migrate_without_backup: BRANCH2_TEST_NO_BACKUP | backup: BACKUP_BRANCH2"
         type: string
         required: true
       backup_run_id:
-        description: "Migrate only: successful backup run ID AFTER downloading its archive"
+        description: "Only for migrate (WITH backup): completed backup run ID"
         type: string
         required: false
 
@@ -114,26 +115,40 @@ jobs:
           echo 'No migrations, Worker deployment, or feature flag changes occurred.' >> "$GITHUB_STEP_SUMMARY"
 
   migrate:
-    if: github.ref == 'refs/heads/main' && inputs.phase == 'migrate'
+    if: github.ref == 'refs/heads/main' && (inputs.phase == 'migrate' || inputs.phase == 'migrate_without_backup')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Confirm migration and downloaded backup
+      - name: Confirm explicit test-only migration and choice of backup
         env:
+          PHASE: ${{ inputs.phase }}
           CONFIRM: ${{ inputs.confirmation }}
           BACKUP_RUN: ${{ inputs.backup_run_id }}
           PRIVATE_REPO: ${{ github.event.repository.private }}
         run: |
-          if [ "$PRIVATE_REPO" != "true" ]; then
-            echo "::error::Branch2 backup artifact must stay in a private repository."
-            exit 2
-          fi
-          if [ "$CONFIRM" != "MIGRATE_BRANCH2" ]; then
-            echo "::error::Type MIGRATE_BRANCH2 ONLY after downloading the Branch2 backup."
-            exit 2
-          fi
-          if ! [[ "$BACKUP_RUN" =~ ^[0-9]+$ ]]; then
-            echo "::error::Supply the successful backup workflow run ID."
+          set -euo pipefail
+          if [ "$PHASE" = "migrate_without_backup" ]; then
+            if [ "$CONFIRM" != "BRANCH2_TEST_NO_BACKUP" ]; then
+              echo "::error::To skip backup, type BRANCH2_TEST_NO_BACKUP exactly."
+              exit 2
+            fi
+            if [ -n "$BACKUP_RUN" ]; then
+              echo "::error::No-backup mode must leave Backup run ID empty."
+              exit 2
+            fi
+            echo "::warning::Test Branch2 D1 will receive migrations with NO BACKUP. The test DB may be recreated if needed."
+            echo "Main Worker and production D1 will not be queried, deployed, or changed."
+          elif [ "$PHASE" = "migrate" ]; then
+            if [ "$PRIVATE_REPO" != "true" ]; then
+              echo "::error::Cannot verify private backup artifact in a public repository."
+              exit 2
+            fi
+            if [ "$CONFIRM" != "MIGRATE_BRANCH2" ] || ! [[ "$BACKUP_RUN" =~ ^[0-9]+$ ]]; then
+              echo "::error::With-backup mode requires MIGRATE_BRANCH2 and a backup run ID."
+              exit 2
+            fi
+          else
+            echo "::error::Unexpected phase."
             exit 2
           fi
 
@@ -150,22 +165,31 @@ jobs:
           path: stage
           persist-credentials: false
 
-      - name: Verify backup artifact, target, and schema (READ ONLY)
+      - name: Verify exact Main and Branch2 identities and remote schema (READ ONLY)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GH_TOKEN: ${{ github.token }}
+          PHASE: ${{ inputs.phase }}
           BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
         run: |
-          python3 .github/scripts/branch2_v2_stage_guard.py \
-            --stage stage --expected-index 0 --backup-run-id "$BACKUP_RUN_ID"
-          echo 'Fresh backup verified. Next stage will modify only Branch2 D1 schema.'
+          set -euo pipefail
+          if [ "$PHASE" = "migrate_without_backup" ]; then
+            python3 .github/scripts/branch2_v2_stage_guard.py \
+              --stage stage --expected-index 0
+            echo 'Separate Main/Branch2 D1 UUIDs verified. No backup selected.'
+          else
+            python3 .github/scripts/branch2_v2_stage_guard.py \
+              --stage stage --expected-index 0 --backup-run-id "$BACKUP_RUN_ID"
+            echo 'Fresh backup artifact verified.'
+          fi
+          echo 'Only exact remote Branch2 D1 schema may change in the next step.'
 
       - name: Install Wrangler from Branch2 lockfile
         working-directory: stage
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Apply migrations 0124-0132 with per-step schema checks
+      - name: Apply Branch2 ONLY migrations 0124-0132 with per-step schema checks
         working-directory: stage
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
