@@ -1434,9 +1434,9 @@ assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10111').get(
 // If a supposedly retired old item remains live, Exchange Set has not been
 // fully reconciled. Never allow Return V2 to guess its current inventory.
 sql.prepare('UPDATE order_items SET quantity=1,line_total=0 WHERE id=10111').run()
-const setUnsafe=await callV2Http('GET','/api/orders/10110/returns/v2/preview')
-assert.equal(setUnsafe.eligible,false)
-assert.equal(setUnsafe.evidence.lines[0].reasonCode,'exchange_history_requires_migration')
+const setUnsafe=await previewUnifiedReturnV2LineEvidence(DB,10110)
+assert.equal(setUnsafe.lines[0].reasonCode,'exchange_history_requires_migration')
+assert(setUnsafe.lines.every(l=>l.requiresReview))
 sql.prepare('UPDATE order_items SET quantity=0 WHERE id=10111').run()
 
 
