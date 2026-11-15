@@ -1167,5 +1167,43 @@ assert.deepEqual(sql.prepare(
 
 
 
+// A fully cancelled historical exchange must not lock an unrelated remaining
+// item. Active exchanges remain excluded by all three safety gates.
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,
+  shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (9996,'V2U-CANCELLED-EXCHANGE','2026-11-01',9501,'active','warehouse',
+ 'ready','not_sent','itemized_v1',2500,?,?)`).run(workshopNow,workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (9997,9996,'UNISSUED AFTER CANCELLED EXCHANGE',1,2500,2500,0,
+  'warehouse','pending_reservation',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO exchanges
+ (order_id,exchange_date,old_order_item_id,old_quantity,new_source_type,status,created_at)
+ VALUES (9996,'2026-11-01',9997,1,'warehouse','cancelled',?)`).run(workshopNow)
+const afterCancelled=await callV2Http('GET','/api/orders/9996/returns/v2/preview')
+assert.equal(afterCancelled.eligible,true)
+assert.equal(afterCancelled.evidence.lines[0].proposedAction,'cancel_unreserved_obligation')
+const cancelledExchangePosted=await callV2Http('POST','/api/orders/9996/returns/v2',{
+ requestId:'cancelled-exchange-safe-return-0001',
+ expectedOrderVersion:afterCancelled.evidence.orderVersion,
+ items:[{orderItemId:9997,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(cancelledExchangePosted.remainingSale,0)
+assert.equal((await readVersionedReturnMoney(DB,9996)).customerDebt,0)
+const cancelledExchangeUndo=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:cancelledExchangePosted.postingId,
+ requestId:'cancelled-exchange-safe-undo-0001',
+ reason:'Отмена ошибочного возврата',
+ shippedGoodsUnreceivedConfirmed:false,reservationsRestoreConfirmed:false,
+ refundRecoveredConfirmed:false
+})
+assert.equal(cancelledExchangeUndo.cancelled,true)
+assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9996').get().total_amount,2500)
+
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
