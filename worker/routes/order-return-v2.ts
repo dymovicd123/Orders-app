@@ -44,7 +44,7 @@ export function returnV2SchemaReadinessSql(){
    (${columns}) AS column_count,
    (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
       AND name='return_v2_unified_lines'
-      AND instr(sql,\"'cancel_workshop_obligation'\")>0) AS workshop_action_count`
+      AND instr(sql,'cancel_workshop_obligation')>0) AS workshop_action_count`
 }
 export async function returnV2SchemaReadiness(db:D1Database){
  const result=await db.prepare(returnV2SchemaReadinessSql())
