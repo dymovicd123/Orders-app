@@ -104,6 +104,13 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (result?.ok) await loadReturnHistory()
   }
   const returnPhysicalStatus = (item: any) => {
+    if (item.contractOnly) return item.contractAction === 'cancel_workshop_obligation'
+      ? 'Клиент отказался · задание и расчёт с цехом сохранены'
+      : item.contractAction === 'cancel_unshipped_reservation'
+        ? 'Не отправляли · резерв освобождён · без прихода на склад'
+        : item.contractAction === 'cancel_unresolved_reservation'
+          ? 'Не отправляли · неразрешённый резерв закрыт · без прихода'
+          : 'Исключено из покупки · без физической приёмки'
     if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!item.physicalReceivedAt) return 'Ожидает приёмки'
     if (!item.inventorySource) return 'Получен, в остаток не добавляли'
