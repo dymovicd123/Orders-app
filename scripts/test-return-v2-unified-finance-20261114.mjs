@@ -1381,5 +1381,65 @@ assert.equal(cannotProve.eligible,false)
 
 
 
+// Exchange Set headers intentionally carry NULL old/new item ids: those are
+// journalled per-item in exchange_items. The sale remains itemized and cashless.
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,
+  shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (10110,'V2U-EXCHANGE-SET-OK','2026-11-01',9501,'active','warehouse',
+  'ready','not_sent','itemized_v1',2500,?,?)`).run(workshopNow,workshopNow)
+for(const [id,name,qty,price,status] of [
+ [10111,'REPLACED BY SET',0,0,'exchanged'],
+ [10112,'NEW SET ITEM A',1,1000,'pending_reservation'],
+ [10113,'NEW SET ITEM B',1,1500,'pending_reservation']
+]){
+ sql.prepare(`INSERT INTO order_items
+  (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+   source_type,stock_writeoff_status,created_at)
+  VALUES (?,10110,?,?,?,?,0,'warehouse',?,?)`)
+  .run(id,name,qty,price,qty*price,status,workshopNow)
+}
+sql.prepare(`INSERT INTO exchanges
+ (id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,
+  new_source_type,status,financial_action,financial_amount,created_at)
+ VALUES (10114,10110,'2026-11-01',NULL,0,NULL,'warehouse','completed','none',0,?)`)
+ .run(workshopNow)
+for(const [role,itemId,qty] of [['old',10111,2],['new',10112,1],['new',10113,1]]){
+ sql.prepare(`INSERT INTO exchange_items
+ (exchange_id,role,order_item_id,product_name_snapshot,quantity,created_at)
+ VALUES (10114,?,?,'EXCHANGE SET PROOF',?,?)`).run(role,itemId,qty,workshopNow)
+}
+const setPreview=await callV2Http('GET','/api/orders/10110/returns/v2/preview')
+assert.equal(setPreview.eligible,true)
+assert.equal(setPreview.evidence.lines.length,2)
+assert(setPreview.evidence.lines.every(l=>l.proposedAction==='cancel_unreserved_obligation'))
+const setPosted=await callV2Http('POST','/api/orders/10110/returns/v2',{
+ requestId:'v2u-exchange-set-customer-return-0001',
+ expectedOrderVersion:setPreview.evidence.orderVersion,
+ items:setPreview.evidence.lines.map(l=>({orderItemId:l.orderItemId,quantity:1,receiptIntent:'pending'})),
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(setPosted.remainingSale,0)
+assert.equal((await readVersionedReturnMoney(DB,10110)).customerDebt,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10111').get().quantity,0)
+const setCancelled=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:setPosted.postingId,requestId:'v2u-exchange-set-return-cancel-0001',
+ reason:'Проверка обратной операции',shippedGoodsUnreceivedConfirmed:false,
+ reservationsRestoreConfirmed:false,refundRecoveredConfirmed:false
+})
+assert.equal(setCancelled.cancelled,true)
+assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=10110').get().total_amount,2500)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10111').get().quantity,0)
+
+// If a supposedly retired old item remains live, Exchange Set has not been
+// fully reconciled. Never allow Return V2 to guess its current inventory.
+sql.prepare('UPDATE order_items SET quantity=1,line_total=0 WHERE id=10111').run()
+const setUnsafe=await previewUnifiedReturnV2LineEvidence(DB,10110)
+assert.equal(setUnsafe.lines[0].reasonCode,'exchange_history_requires_migration')
+assert(setUnsafe.lines.every(l=>l.requiresReview))
+sql.prepare('UPDATE order_items SET quantity=0 WHERE id=10111').run()
+
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
