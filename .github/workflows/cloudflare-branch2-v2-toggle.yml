@@ -345,8 +345,17 @@ jobs:
                   print('PASS: independently read Branch2 Worker Return V2 flag=true, correct D1.')
                   break
               if attempt==5:
-                  observed=[b.get('text') for b in flags if b.get('type')=='plain_text']
-                  print('Observed non-secret Branch2 V2 flag values:',observed)
+                  # Diagnostically print ONLY allowlisted non-secret fields:
+                  # never print unrelated bindings, scripts, token or customer data.
+                  print('Cloudflare settings response keys:',sorted(data.get('result',{}).keys()))
+                  print('Number of settings bindings:',len(bindings))
+                  print('Matching Return V2 binding count:',len(flags))
+                  for flag in flags:
+                      print('Return V2 binding type:',flag.get('type'))
+                      print('Return V2 binding field names:',sorted(flag.keys()))
+                      if flag.get('type')=='plain_text':
+                          print('Return V2 plain-text flag:',repr(flag.get('text')))
+                  print('DB binding type:',dbs[0].get('type'))
                   raise SystemExit('STOP: Return V2 not enabled on confirmed Branch2 Worker.')
               time.sleep(4)
           PY
