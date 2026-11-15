@@ -252,6 +252,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   const stamp=new Date().toISOString(),date=stamp.slice(0,10)
   const legacyIdsJson=JSON.stringify(baseline.returns.map(x=>x.id))
   const statements:D1PreparedStatement[]=[
+    guardExchangeHistoryInBatch(db,wanted.orderId),
     db.prepare(
       `INSERT INTO returns(order_id,manager_id,return_date,amount,payment_method,
            status,comment,created_at)
