@@ -1,0 +1,126 @@
+name: Branch2 Return V2 isolated Exchange Set candidate D1 QA
+on:
+  push:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: >-
+      startsWith(github.event.head_commit.message, 'Branch2: read-only QA isolated Exchange SQL 20261115')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Prepare runtime for authoritative read-only Return V2 preview
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Checkout candidate Return V2 ledger code, not a deployed Worker
+        uses: actions/checkout@v4
+        with:
+          ref: fix/return-v2-isolate-exchange-sql-20261115
+          persist-credentials: false
+      - name: Evaluate exact server-side Return V2 preview against QA test DB (SELECT only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --experimental-strip-types --input-type=module <<'JS'
+          import {handleOrderReturnV2Route} from './worker/routes/order-return-v2.ts';
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const token=process.env.CLOUDFLARE_API_TOKEN;
+          const dbId='0904a573-21ff-44d8-93b0-c9200f771702';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+dbId;
+          const headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
+          const meta=await (await fetch(base,{headers})).json();
+          if(!meta.success||meta.result?.name!=='orders_db_branch2_mirror_20261027')
+            throw new Error('STOP: wrong D1; no queries sent');
+          const read=async(sql,params=[])=>{
+            if(!/^\s*SELECT\b/i.test(sql))throw new Error('Non-SELECT rejected');
+            const res=await fetch(base+'/query',{method:'POST',headers,
+              body:JSON.stringify({sql,params})});
+            if(!res.ok)throw new Error('D1 query HTTP '+res.status+' '+(await res.text()).slice(0,1000));
+            const body=await res.json();
+            if(!body.success)throw new Error('D1 SELECT failed '+JSON.stringify(body.errors));
+            const page=body.result?.[0];
+            if(!page||Number(page.meta?.changes||0)!==0)throw new Error('SELECT mutation guard');
+            return page.results||[];
+          };
+          const stmt=(sql,params=[])=>({
+            bind(...values){return stmt(sql,values)},
+            async all(){return {results:await read(sql,params)}},
+            async first(){return (await read(sql,params))[0]||null},
+          });
+          const db={prepare(sql){return stmt(sql)}};
+          const {returnV2SchemaReadiness}=await import('./worker/routes/order-return-v2.ts');
+          const {previewUnifiedReturnV2LineEvidence}=await import('./worker/domains/return-v2-unified-line-evidence.ts');
+          const {readVersionedReturnMoney}=await import('./worker/domains/return-v2-financial-projection.ts');
+          const {readOldReturnBaseline}=await import('./worker/domains/return-v2-legacy-contract-baseline.ts');
+          const stages=[
+            ['schema',()=>returnV2SchemaReadiness(db)],
+            ['lines2200',()=>previewUnifiedReturnV2LineEvidence(db,2200)],
+            ['ledger2200',()=>readVersionedReturnMoney(db,2200)],
+            ['baseline2200',()=>readOldReturnBaseline(db,2200)],
+            ['baseline2197',()=>readOldReturnBaseline(db,2197)],
+          ];
+          for(const [name,fn] of stages){
+            try{const result=await fn();console.log('DIAG_READ_STAGE: '+JSON.stringify({
+                name,ok:true,kind:result?.kind||null,ready:result?.ready??null,
+                baselineLines:result?.lines?.length??null,
+            }));}
+            catch(e){console.log('DIAG_READ_STAGE: '+JSON.stringify({
+               name,ok:false,error:String(e?.message||e),stack:String(e?.stack||'').slice(0,1000)
+            }));}
+          }
+          console.log('QA_PARTIAL_EXCHANGE_CANDIDATE_20261115_REV3');
+          const {RETURN_V2_UNIFIED_INTEGRITY_QUERIES}=await import('./worker/domains/return-v2-unified-integrity-sql.ts');
+          for(let i=0;i<RETURN_V2_UNIFIED_INTEGRITY_QUERIES.length;i++){
+            try{
+              const result=await db.prepare(RETURN_V2_UNIFIED_INTEGRITY_QUERIES[i]).bind(2200).first();
+              console.log('QA_LEDGER_GUARD_D1: '+JSON.stringify({index:i,ok:true,count:result?.invalid_count}));
+            }catch(e){
+              console.log('QA_LEDGER_GUARD_D1: '+JSON.stringify({index:i,ok:false,error:String(e?.message||e).slice(0,350)}));
+            }
+          }
+          const diagOrders=await read(`SELECT id,shipping_status,order_status,pricing_mode,total_amount
+            FROM orders WHERE id IN (2196,2197,2198) ORDER BY id`);
+          const diagItems=await read(`SELECT oi.order_id,oi.id,oi.quantity,oi.unit_price,
+            oi.stock_writeoff_status,oi.source_type,
+            (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+              WHERE r.order_item_id=oi.id AND r.status='fulfilled') AS fulfilled,
+            (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) FROM order_dispatch_items di
+              WHERE di.order_item_id=oi.id) AS currently_dispatched
+            FROM order_items oi WHERE oi.order_id IN (2196,2197,2198)
+            ORDER BY oi.order_id,oi.id`);
+          console.log('HISTORY_QA_ORDERS: '+JSON.stringify(diagOrders));
+          console.log('HISTORY_QA_ITEMS: '+JSON.stringify(diagItems));
+          const sourceAudit=await read(`SELECT oi.order_id,oi.id AS item_id,oi.variant_id,
+             oi.source_type,oi.quantity,oi.stock_writeoff_status,o.shipping_status,
+             r.id AS reservation_id,r.variant_id AS reservation_variant,r.quantity AS reserved_quantity,
+             r.status AS reservation_status,r.inventory_source AS reservation_source
+             FROM order_items oi JOIN orders o ON o.id=oi.order_id
+             LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+             WHERE oi.id IN (5205,5206,5208,5211,5213,5216)
+             ORDER BY oi.id,r.id`);
+          console.log('HISTORY_QA_PROVENANCE: '+JSON.stringify(sourceAudit));
+          const ids=[2196,2197,2198,2199,2200,2201,2204,2205,2206];
+          for(const id of ids){
+            const pathname='/api/orders/'+id+'/returns/v2/preview';
+            const response=await handleOrderReturnV2Route(db,new Request('https://test.invalid'+pathname),
+              pathname,true,'admin');
+            if(!response)throw new Error('Missing HTTP preview handler '+id);
+            const body=await response.json();
+            console.log('QA_BASELINE_HTTP_PREVIEW: '+JSON.stringify({
+              id,http:response.status,eligible:body.eligible,
+              code:body.code||null,reason:body.reason||body.message||null,
+              blocked:body.evidence?.summary?.requiresReviewQuantity??null,
+              remaining:body.evidence?.summary?.selectedQuantity??null,
+              lines:body.evidence?.lines?.map(x=>({id:x.orderItemId,
+                available:x.availableQuantity,action:x.proposedAction,
+                reason:x.reasonCode})),
+              finance:body.finance||null,
+              oldAdjustment:body.previousReturnAdjustment||null,
+            }));
+          }
+          console.log('QA_NINE_ORDERS_READ_ONLY_COMPLETED');
+          JS
