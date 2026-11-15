@@ -102,9 +102,13 @@ jobs:
               raise SystemExit('STOP: no Cloudflare Worker versions returned.')
           latest=items[0].get('id')
           print('Latest remote Branch2 version ID:',latest)
-          print('Expected reviewed Branch2 upload version ID:',expected_version)
-          if latest!=expected_version:
-              raise SystemExit('STOP: latest Branch2 version no longer matches reviewed PR #955 upload.')
+          print('Target is pinned to the reviewed Branch2 PR #955 upload version:',expected_version)
+          # Other draft versions can be created by Cloudflare Builds or
+          # non-deployed secret attempts. Their existence must NOT silently
+          # redirect us to an unreviewed release. Only the exact pinned ID
+          # whose own bindings and D1 are independently verified may deploy.
+          if not any(item.get('id')==expected_version for item in items):
+              raise SystemExit('STOP: pinned PR #955 Worker version is not in current version inventory.')
           version=require_ok('/versions/'+expected_version)
           resources=version.get('resources') or {}
           print('Version metadata keys:',sorted(version.keys()))
