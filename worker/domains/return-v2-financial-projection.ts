@@ -4,6 +4,7 @@
 import { readOrderFinancialLedger } from './money.ts'
 import { toInt } from '../core/text.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
+import {RETURN_V2_UNIFIED_INTEGRITY_QUERIES} from './return-v2-unified-integrity-sql.ts'
 
 export class ReturnV2LedgerConflict extends Error {
   readonly status=409
@@ -75,128 +76,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
            AND fe.order_id=o.id AND fe.source_id=r.id
            AND fe.event_type='order_refund' AND fe.amount_delta=-r.amount
        )) AS missing_events,
-    (SELECT COUNT(*) FROM return_v2_unified_postings up
-       LEFT JOIN returns ret ON ret.id=up.return_id
-       WHERE up.order_id=o.id AND (
-         ret.id IS NULL OR ret.order_id<>o.id
-         OR ret.status NOT IN ('completed','cancelled')
-         OR (ret.status='completed' AND EXISTS(
-              SELECT 1 FROM return_v2_unified_cancellations c WHERE c.posting_id=up.id))
-         OR (ret.status='cancelled' AND NOT EXISTS(
-              SELECT 1 FROM return_v2_unified_cancellations c
-              WHERE c.posting_id=up.id AND c.return_id=ret.id AND c.order_id=o.id
-                AND c.initial_total=up.initial_total AND c.initial_received=up.initial_received
-                AND c.reversed_amount=up.cash_refund
-                AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
-                     FROM payments pay WHERE pay.order_id=o.id)=up.initial_received
-                AND ((up.cash_refund=0 AND c.refund_recovered_at IS NULL
-                         AND c.recovery_method IS NULL)
-                     OR (up.cash_refund>0 AND c.refund_recovered_at IS NOT NULL
-                         AND c.recovery_method IS NOT NULL
-                         AND EXISTS(SELECT 1 FROM financial_events fe
-                           WHERE fe.event_key='return-v2:unified:cancelled:'||up.id
-                             AND fe.order_id=o.id AND fe.source_id=ret.id
-                             AND fe.event_type='refund_reversal'
-                             AND fe.related_type='order_refund'
-                             AND fe.amount_delta=up.cash_refund
-                             AND fe.payment_method=c.recovery_method)))))
-         OR (ret.status='cancelled' AND EXISTS(
-              SELECT 1 FROM return_items ri WHERE ri.return_id=up.return_id
-                AND (ri.physical_received_at IS NOT NULL OR ri.restocked<>0)))
-         OR ret.amount<>up.cash_refund
-         OR COALESCE(ret.payment_method,'')<>COALESCE(up.refund_method,'')
-         OR up.initial_total<up.final_total OR up.initial_received<up.cash_refund
-         -- The order is the latest contract, not necessarily the initial
-         -- post. Prior active Return V2 contracts must form an exact chain.
-         OR (ret.status='completed' AND NOT EXISTS(
-              SELECT 1 FROM return_v2_unified_postings newer
-              WHERE newer.order_id=up.order_id AND newer.id>up.id)
-              AND up.final_total<>o.total_amount)
-         OR (ret.status='cancelled' AND up.initial_total<>o.total_amount)
-         OR (ret.status='cancelled' AND EXISTS(
-              SELECT 1 FROM return_v2_unified_postings newer
-              WHERE newer.order_id=up.order_id AND newer.id>up.id))
-         OR EXISTS(
-              SELECT 1 FROM return_v2_unified_postings prev
-              WHERE prev.id=(SELECT MAX(older.id) FROM return_v2_unified_postings older
-                WHERE older.order_id=up.order_id AND older.id<up.id)
-                AND (prev.final_total<>up.initial_total
-                   OR EXISTS(SELECT 1 FROM returns old_ret
-                     WHERE old_ret.id=prev.return_id AND old_ret.status<>'completed')))
-         OR (up.full_termination=1 AND EXISTS(
-              SELECT 1 FROM return_v2_unified_postings newer
-              WHERE newer.order_id=up.order_id AND newer.id>up.id))
-         OR (SELECT COALESCE(SUM(ul.contract_reduction),0)
-              FROM return_v2_unified_lines ul
-              WHERE ul.posting_id=up.id)<>up.initial_total-up.final_total
-         OR NOT EXISTS(SELECT 1 FROM return_v2_unified_lines ul WHERE ul.posting_id=up.id)
-         OR EXISTS(SELECT 1 FROM return_v2_legacy_baselines lb WHERE lb.posting_id=up.id
-            AND (lb.order_id<>up.order_id OR lb.normalized_sale<>up.initial_total
-              OR lb.reduction<>(SELECT COALESCE(SUM(li.reduction),0)
-                FROM return_v2_legacy_baseline_items li WHERE li.posting_id=up.id)
-              OR EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
-                LEFT JOIN returns old_ret ON old_ret.id=lr.return_id
-                WHERE lr.posting_id=up.id AND (
-                  lr.order_id<>up.order_id OR old_ret.id IS NULL
-                  OR old_ret.order_id<>up.order_id OR old_ret.status<>'completed'
-                  OR old_ret.amount<>lr.original_cash_refund))
-              OR EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items li
-                LEFT JOIN return_items old_ri ON old_ri.id=li.return_item_id
-                LEFT JOIN order_items oi ON oi.id=li.order_item_id
-                WHERE li.posting_id=up.id AND (
-                  old_ri.id IS NULL OR old_ri.order_item_id<>li.order_item_id
-                  OR old_ri.quantity<>li.quantity
-                  OR COALESCE(old_ri.contract_quantity_applied,0)<>0
-                  OR oi.id IS NULL OR oi.order_id<>up.order_id
-                  OR oi.unit_price<>li.sold_unit_price
-                  OR li.reduction<>li.quantity*li.sold_unit_price
-                  OR NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lr
-                    WHERE lr.return_id=old_ri.return_id AND lr.posting_id=up.id)))
-            ))
-         OR EXISTS(SELECT 1 FROM return_v2_unified_action_overrides ao
-            LEFT JOIN return_v2_unified_lines ul
-              ON ul.posting_id=ao.posting_id AND ul.order_item_id=ao.order_item_id
-            LEFT JOIN order_items item ON item.id=ao.order_item_id
-            WHERE ao.posting_id=up.id AND (
-              ul.id IS NULL OR ul.action<>'cancel_unresolved_reservation'
-              OR ul.reservation_id IS NOT NULL OR ul.reservation_release<>0
-              OR ul.stock_quantity_change<>0 OR ul.receipt_intent<>'not_applicable'
-              OR item.id IS NULL OR item.order_id<>up.order_id
-              OR (ao.semantic_action='cancel_workshop_obligation'
-                AND COALESCE(item.is_workshop,0)<>1)
-              OR (ao.semantic_action='cancel_unreserved_obligation'
-                AND COALESCE(item.is_workshop,0)<>0)
-            ))
-         OR EXISTS(SELECT 1 FROM return_v2_unified_lines ul
-            LEFT JOIN return_v2_unified_action_overrides ao
-              ON ao.posting_id=ul.posting_id AND ao.order_item_id=ul.order_item_id
-            WHERE ul.posting_id=up.id AND ul.action='cancel_unresolved_reservation'
-              AND ul.reservation_id IS NULL AND ao.posting_id IS NULL)
-         OR (ret.status='completed' AND up.full_termination=1 AND EXISTS(
-              SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0))
-         OR EXISTS(SELECT 1 FROM return_v2_unified_lines ul
-             LEFT JOIN order_items oi ON oi.id=ul.order_item_id
-             WHERE ul.posting_id=up.id AND (
-               oi.id IS NULL OR oi.order_id<>o.id OR oi.unit_price<>ul.sold_unit_price
-               OR ul.contract_reduction<>ul.contracted_quantity*ul.sold_unit_price
-               OR (ul.action='physical_return_pending' AND NOT EXISTS(
-                  SELECT 1 FROM return_items ri WHERE ri.return_id=up.return_id
-                    AND ri.order_item_id=ul.order_item_id
-                    AND ri.quantity=ul.contracted_quantity
-                    AND ri.amount=ul.contract_reduction
-                    AND ri.physical_tracking=1 AND ri.contract_quantity_applied=1))
-               OR (ul.action<>'physical_return_pending' AND EXISTS(
-                  SELECT 1 FROM return_items ri WHERE ri.return_id=up.return_id
-                    AND ri.order_item_id=ul.order_item_id))
-             ))
-         OR EXISTS(SELECT 1 FROM return_items ri WHERE ri.return_id=up.return_id
-            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_lines ul
-              WHERE ul.posting_id=up.id AND ul.order_item_id=ri.order_item_id
-                AND ul.action='physical_return_pending'))
-         OR (up.cash_refund=0 AND EXISTS(
-             SELECT 1 FROM financial_events fe
-             WHERE fe.event_key='return-v2:unified:'||up.request_id))
-       )) AS invalid_unified,
+    (0) AS invalid_unified,
     (SELECT COUNT(*) FROM return_v2_unified_postings up
        JOIN returns ret ON ret.id=up.return_id
        WHERE up.order_id=o.id AND ret.amount>0 AND NOT EXISTS(
@@ -218,8 +98,15 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
   // No reinterpretation of old cash-only returns, discounts, or historical debt.
   return {kind:'legacy',orderId,...ledger,customerOverpay:null}
  }
+ let invalidUnified=0
+ for(const query of RETURN_V2_UNIFIED_INTEGRITY_QUERIES){
+   const result=await db.prepare(query).bind(orderId).first<{invalid_count:number}>()
+   if(!result)fail('Журнал операций Return V2 не удалось проверить.')
+   invalidUnified+=exact(result.invalid_count,'Целостность журнала Return V2')
+   if(invalidUnified>0)break
+ }
  if(row.pricing_mode!=='itemized_v1'||(v2Count>0&&unifiedCount>0)
-   ||toInt(row.invalid_unified,0)||toInt(row.missing_unified_events,0)
+   ||invalidUnified>0||toInt(row.missing_unified_events,0)
    ||toInt(row.other_returns,0)
    ||toInt(row.exchanges_count,0)||toInt(row.invalid_posts,0)
    ||toInt(row.missing_events,0)) {
