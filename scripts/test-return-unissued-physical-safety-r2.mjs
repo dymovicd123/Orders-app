@@ -29,7 +29,12 @@ check(ui.includes('Есть товары, которые клиенту не в�
 check(ui.includes('сначала измените состав заказа'), 'Return UI does not direct cancelled-before-handover goods to Order edit')
 check(ui.includes("'Не выдавали'") && ui.includes('Товар остаётся у вас') && ui.includes('disabled={item.issuedToClient === false || returnBusy}'), 'Never-issued Return rows are not visibly blocked from physical intake')
 check(ui.includes('handleEditOrder(returnSelectedOrder)'), 'Return UI does not offer a direct safe Order edit action')
-check(ui.includes("(item.isWorkshop ? 'no_stock' : 'warehouse')"), 'Delayed Workshop Return intake can default to Warehouse from history')
+const destinationForReturn = ui.split('const defaultReturnDestination')[1]?.split('const selectedReturnLines')[0] || ''
+check(destinationForReturn.includes("item.sourceType === 'workshop' || item.isWorkshop")
+  && destinationForReturn.includes("'no_stock'")
+  && ui.includes('value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}')
+  && ui.includes('destination: receiptDestinations[receiptKey] || defaultReturnDestination(item)'),
+  'Delayed Workshop Return intake must default to no_stock in the dedicated intake queue')
 
 const createReturn = creation
 check(createReturn.includes('const issuedToClient = await orderItemWasActuallyDispatched(db,orderItem) || sentFallback'), 'Return backend does not derive physical handover truth')

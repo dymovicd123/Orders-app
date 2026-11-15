@@ -91,7 +91,7 @@ export function OrderReturnV2Cancellation({
     </div>
    :!cancellation.available?<p className="field-hint">{cancellation.reason}</p>
    :<>
-      <p className="field-hint">Допустима только отмена до физической приёмки. Сервер дополнительно проверяет кассу, склад и отсутствие последующих операций.</p>
+      <p className="field-hint">Отмена возможна, только если возвращаемые вещи ещё не приняты. Если клиенту выдавали деньги, сначала получите их обратно.</p>
       <button type="button" className="secondary compact" disabled={locked}
         onClick={()=>setOpen(v=>!v)}>{open?'Скрыть отмену':'Проверить отмену'}</button>
       {open?<div className="stack">
