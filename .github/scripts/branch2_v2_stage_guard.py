@@ -9,6 +9,7 @@ import datetime
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -16,6 +17,9 @@ import urllib.request
 EXPECTED_WORKER = "orders-app-branch2"
 EXPECTED_DB = "orders_db_branch2_mirror_20261027"
 EXPECTED_DB_ID = "0904a573-21ff-44d8-93b0-c9200f771702"
+EXPECTED_MAIN_WORKER = "orders-app"
+EXPECTED_MAIN_DB = "orders_db_prod"
+EXPECTED_MAIN_DB_ID = "17e68a41-1d58-4a36-8a63-47c3e32443c4"
 WORKFLOW_NAME = "Cloudflare Branch2 - Backup and Prepare Return V2"
 TABLES = (
     "return_v2_prepared_operations",
@@ -91,6 +95,25 @@ def http_json(url, token, body=None):
 
 
 def check_local_target(stage):
+    # Validate both tracked environment identities *before* any mutating CLI.
+    # This code is checked out from main but runs Wrangler exclusively with
+    # the separately checked-out Branch2 configuration and exact D1 ID.
+    main_config_path = Path("wrangler.jsonc")
+    if not main_config_path.is_file():
+        fail("Production identity file unavailable; cannot prove D1 separation.")
+    main_config = main_config_path.read_text(encoding="utf-8")
+    def main_value(field):
+        found = re.findall(r'"' + re.escape(field) + r'"\s*:\s*"([^"]+)"', main_config)
+        if len(found) != 1:
+            fail("Could not unambiguously read Main " + field + ".")
+        return found[0]
+    if (main_value("name") != EXPECTED_MAIN_WORKER
+            or main_value("database_name") != EXPECTED_MAIN_DB
+            or main_value("database_id") != EXPECTED_MAIN_DB_ID):
+        fail("Main environment identity unexpectedly changed; aborting safely.")
+    if EXPECTED_DB_ID == EXPECTED_MAIN_DB_ID or EXPECTED_DB == EXPECTED_MAIN_DB:
+        fail("Branch2 and Main databases are not distinct.")
+
     config_file = stage / "wrangler.jsonc"
     if not config_file.is_file():
         fail("Expected branch2 wrangler.jsonc is missing.")
