@@ -10,19 +10,50 @@ import {readVersionedReturnMoney} from '../domains/return-v2-financial-projectio
 import {cancelUnifiedReturnV2Prototype} from '../domains/return-v2-unified-cancel-prototype.ts'
 
 const endpoint=/^\/api\/orders\/(\d+)\/returns\/v2(?:\/(preview|\d+\/(?:receipt|cancel)))?$/
-const requiredTables=[
-  'return_v2_postings','return_v2_unified_postings','return_v2_unified_lines',
-  'return_v2_unified_cancellations','return_v2_metadata_edits','return_v2_resumed_dispatches'
-]
+// Required migration capabilities, not just names of the final journals.
+// A partially applied D1 migration chain must fail before a preview or write.
+export const RETURN_V2_REQUIRED_TABLES=[
+  'return_v2_prepared_operations','return_v2_prepared_items',
+  'return_v2_postings','return_v2_cancellations',
+  'return_v2_unified_postings','return_v2_unified_lines',
+  'return_v2_unified_cancellations','return_v2_metadata_edits',
+  'return_v2_resumed_dispatches'
+] as const
+export const RETURN_V2_REQUIRED_COLUMNS=[
+  ['return_items','contract_quantity_applied'],
+  ['return_v2_prepared_operations','baseline_order_updated_at'],
+  ['return_v2_prepared_items','baseline_order_item_quantity'],
+  ['return_v2_unified_postings','intent_fingerprint'],
+  ['return_v2_unified_lines','receipt_intent'],
+  ['return_v2_unified_lines','reservation_release'],
+  ['return_v2_unified_lines','stock_quantity_change'],
+  ['return_v2_unified_cancellations','refund_recovered_at'],
+  ['return_v2_metadata_edits','intent_json'],
+  ['return_v2_resumed_dispatches','expected_order_version']
+] as const
+
+export async function returnV2SchemaReadiness(db:D1Database){
+ const placeholders=RETURN_V2_REQUIRED_TABLES.map(()=>'?').join(',')
+ // All PRAGMA calls run in a single read, avoiding many round trips to D1.
+ const columns=RETURN_V2_REQUIRED_COLUMNS.map(([table,column])=>
+   `(SELECT COUNT(*) FROM pragma_table_info('${table}') WHERE name='${column}')`).join(' + ')
+ const result=await db.prepare(`SELECT
+   (SELECT COUNT(*) FROM sqlite_master
+     WHERE type='table' AND name IN (${placeholders})) AS table_count,
+   (${columns}) AS column_count`)
+   .bind(...RETURN_V2_REQUIRED_TABLES)
+   .first<{table_count:number;column_count:number}>()
+ return {
+   ready:toInt(result?.table_count,0)===RETURN_V2_REQUIRED_TABLES.length
+     &&toInt(result?.column_count,0)===RETURN_V2_REQUIRED_COLUMNS.length,
+   foundTables:toInt(result?.table_count,0),
+   expectedTables:RETURN_V2_REQUIRED_TABLES.length,
+   foundColumns:toInt(result?.column_count,0),
+   expectedColumns:RETURN_V2_REQUIRED_COLUMNS.length
+ }
+}
 async function schemaReady(db:D1Database){
- const names=requiredTables.map(()=>'?').join(',')
- const result=await db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master
-    WHERE type='table' AND name IN (${names})`)
-   .bind(...requiredTables).first<{n:number}>()
- if(toInt(result?.n,0)!==requiredTables.length)return false
- const receipt=await db.prepare(`SELECT 1 AS ok FROM pragma_table_info('return_v2_unified_lines')
-  WHERE name='receipt_intent' LIMIT 1`).first<{ok:number}>()
- return Boolean(receipt?.ok)
+ return (await returnV2SchemaReadiness(db)).ready
 }
 function disabled(message:string,code='return_v2_unavailable',status=409){
  return json({ok:false,code,message},{status,headers:{'Cache-Control':'no-store'}})
