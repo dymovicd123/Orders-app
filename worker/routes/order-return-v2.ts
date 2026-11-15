@@ -32,16 +32,19 @@ export const RETURN_V2_REQUIRED_COLUMNS=[
   ['return_v2_resumed_dispatches','expected_order_version']
 ] as const
 
-export async function returnV2SchemaReadiness(db:D1Database){
- const placeholders=RETURN_V2_REQUIRED_TABLES.map(()=>'?').join(',')
- // All PRAGMA calls run in a single read, avoiding many round trips to D1.
+// Can be run verbatim by read-only Wrangler D1 execute during Branch2
+// preflight. Only the fixed, in-repository schema identifiers enter this SQL.
+export function returnV2SchemaReadinessSql(){
+ const tables=RETURN_V2_REQUIRED_TABLES.map(name=>`'${name}'`).join(',')
  const columns=RETURN_V2_REQUIRED_COLUMNS.map(([table,column])=>
    `(SELECT COUNT(*) FROM pragma_table_info('${table}') WHERE name='${column}')`).join(' + ')
- const result=await db.prepare(`SELECT
+ return `SELECT
    (SELECT COUNT(*) FROM sqlite_master
-     WHERE type='table' AND name IN (${placeholders})) AS table_count,
-   (${columns}) AS column_count`)
-   .bind(...RETURN_V2_REQUIRED_TABLES)
+     WHERE type='table' AND name IN (${tables})) AS table_count,
+   (${columns}) AS column_count`
+}
+export async function returnV2SchemaReadiness(db:D1Database){
+ const result=await db.prepare(returnV2SchemaReadinessSql())
    .first<{table_count:number;column_count:number}>()
  return {
    ready:toInt(result?.table_count,0)===RETURN_V2_REQUIRED_TABLES.length
