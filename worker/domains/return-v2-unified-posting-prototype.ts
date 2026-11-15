@@ -345,7 +345,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
                 SELECT COALESCE(SUM(later.contracted_quantity),0)
                 FROM return_v2_unified_lines later
                 JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
-                WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id)))
+                WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id))
         )`
       : `AND NOT EXISTS(SELECT 1 FROM return_v2_unified_lines prev
           WHERE prev.order_item_id=order_items.id)`
