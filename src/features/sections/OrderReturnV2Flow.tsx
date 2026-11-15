@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
 import {OrderReturnV2Cancellation} from './OrderReturnV2Cancellation'
+import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
@@ -19,8 +20,9 @@ type Props={
  order:{id:number;external_id:string}|null;
  formatMoney:(n:number)=>string;
  SmartPickerInput:any;paymentMethods:any[];
- onAvailability:(orderId:number,visible:boolean)=>void;
- onSaved:()=>void
+ onMode:(orderId:number,mode:ReturnV2UiMode)=>void;
+ onSaved:()=>void;
+ onBack:()=>void
 }
 type Intent='pending'|'warehouse'|'boutique'|'no_stock'
 
@@ -38,13 +40,13 @@ async function loadJson(res:Response){
  return payload
 }
 export function OrderReturnV2Flow({
- order,formatMoney,SmartPickerInput,paymentMethods,onAvailability,onSaved
+ order,formatMoney,SmartPickerInput,paymentMethods,onMode,onSaved,onBack
 }:Props){
  const orderId=Number(order?.id||0)
  const [preview,setPreview]=useState<Preview|null>(null)
  const [fetching,setFetching]=useState(false)
  const [eligible,setEligible]=useState(false)
- const [visible,setVisible]=useState(false)
+ const [viewMode,setViewMode]=useState<ReturnV2UiMode>('checking')
  const [error,setError]=useState('')
  const [selections,setSelections]=useState<Record<number,number>>({})
  const [intents,setIntents]=useState<Record<number,Intent>>({})
@@ -57,6 +59,7 @@ export function OrderReturnV2Flow({
  const requestRef=useRef('')
  const loadedOrderRef=useRef(0)
  const lines=preview?.evidence.lines||[]
+ const reviewCount=lines.filter(line=>line.requiresReview).length
  const maxRefund=preview?.finance.maxRefund||0
  const selectedLines=useMemo(()=>lines.filter(line=>
    !line.requiresReview && money(selections[line.orderItemId])>0
@@ -78,23 +81,32 @@ export function OrderReturnV2Flow({
  }
  const refresh=async(id:number,signal?:AbortSignal)=>{
    setFetching(true);setError('')
+   if(!preview){
+     setViewMode('checking')
+     onMode(id,'checking')
+   }
    try{
      const response=await fetch(`/api/orders/${id}/returns/v2/preview`,{
        credentials:'same-origin',cache:'no-store',signal
      })
      const body=await response.json()
      if(signal?.aborted||loadedOrderRef.current!==id)return
-     if(!response.ok||body.ok===false)throw new Error(String(body.message||'Не удалось проверить заказ.'))
-     if(!body.enabled){
-       setPreview(null);setVisible(false);setEligible(false)
-       onAvailability(id,false)
+     const nextMode=returnV2PreviewMode(body,response.ok)
+     if(nextMode==='error')throw new Error(String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
+     if(nextMode==='legacy'){
+       // Legacy mode is permitted ONLY when the server explicitly reports
+       // that Return V2 is disabled, never for an ineligible/malformed order.
+       setPreview(null);setViewMode('legacy');setEligible(false)
+       onMode(id,'legacy')
        return
      }
      const data=body as Preview
      setPreview(data)
-     setVisible(Boolean(data.eligible||data.exclusive))
+     setViewMode('v2')
      setEligible(Boolean(data.eligible))
-     onAvailability(id,Boolean(data.eligible||data.exclusive))
+     // Every enabled order gets a visible version-aware result, including
+     // review-only items. An unsafe fallback to V1 must never occur.
+     onMode(id,'v2')
      const selected:Record<number,number>={}
      const receipt:Record<number,Intent>={}
      for(const item of data.evidence.lines){
@@ -110,17 +122,18 @@ export function OrderReturnV2Flow({
    }catch(e){
      if(signal?.aborted||loadedOrderRef.current!==id)return
      setError(e instanceof Error?e.message:'Проверка заказа недоступна.')
-     setPreview(null);setVisible(false);setEligible(false)
-     onAvailability(id,false)
+     setPreview(null);setViewMode('error');setEligible(false)
+     // Failed previews must not silently expose a V1 write path.
+     onMode(id,'error')
    }finally{
      if(loadedOrderRef.current===id&&!signal?.aborted)setFetching(false)
    }
  }
  useEffect(()=>{
    loadedOrderRef.current=orderId
-   setCommitted(null);setUnknownResult(false);setPreview(null);setVisible(false)
+   setCommitted(null);setUnknownResult(false);setPreview(null);setViewMode('checking')
    setEligible(false);setError('');setRefundMethod('');requestRef.current=''
-   if(!orderId){onAvailability(0,false);return}
+   if(!orderId){onMode(0,'checking');return}
    const ac=new AbortController()
    void refresh(orderId,ac.signal)
    return ()=>ac.abort()
@@ -175,19 +188,50 @@ export function OrderReturnV2Flow({
      setUnknownResult(true)
    }finally{setBusy(false)}
  }
- if(!orderId||!visible)return null
+ if(!orderId||viewMode==='legacy')return null
+ if(viewMode==='checking')return <section className="mini-panel debt-form-panel" aria-label="Проверка Return V2" aria-busy="true">
+   <div className="mini-panel-head">
+     <div><h3>Проверка товаров и остатков</h3>
+       <p className="mini-panel-note">Проверяем фактическую отправку, резерв и деньги перед оформлением возврата.</p>
+     </div>
+     <button className="secondary compact" type="button" onClick={onBack}>Назад к заказам</button>
+   </div>
+ </section>
+ if(viewMode==='error')return <section className="mini-panel debt-form-panel" aria-label="Ошибка проверки Return V2">
+   <div className="mini-panel-head">
+     <div><h3>Возврат · требуется проверка</h3>
+       <p className="mini-panel-note">Новая форма не смогла проверить заказ. Старая форма не используется автоматически, чтобы не нарушить учёт.</p>
+     </div>
+     <button className="secondary compact" type="button" onClick={onBack}>Назад к заказам</button>
+   </div>
+   <div className="history-note is-danger" role="alert">
+     <strong>Не удалось проверить заказ №{order?.external_id||orderId}</strong>
+     <span>{error||'Проверьте соединение и повторите запрос.'}</span>
+   </div>
+   <button className="secondary compact" type="button" disabled={fetching}
+     onClick={()=>void refresh(orderId)}>{fetching?'Проверяем…':'Повторить проверку'}</button>
+ </section>
  return <section className="mini-panel debt-form-panel" aria-label="Новый возврат товаров">
    <div className="mini-panel-head">
      <div>
        <h3>Возврат товаров · новый учёт</h3>
        <p className="mini-panel-note">Отмена покупки и физическая приёмка — разные действия. Неотправленные товары уже находятся в остатке: их резерв снимается без повторного прихода.</p>
      </div>
-     <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
-       onClick={()=>void refresh(orderId)}>{fetching?'Проверяю…':'Обновить данные'}</button>
+     <div className="mini-panel-actions">
+       <button type="button" className="secondary compact" disabled={busy||Boolean(committed)||unknownResult||fetching}
+         onClick={()=>void refresh(orderId)}>{fetching?'Проверяю…':'Обновить данные'}</button>
+       <button type="button" className="secondary compact" onClick={onBack}>Назад к заказам</button>
+     </div>
    </div>
-   {!eligible?<div className="history-note is-danger"><strong>Операция требует проверки</strong>
-      <span>{preview?.reason||'В заказе нет подтверждённых товаров для нового возврата.'}</span>
+   {!eligible?<div className="history-note is-danger" role="alert">
+      <strong>Возврат пока нельзя провести</strong>
+      <span>{preview?.reason||'В заказе нет позиций с подтверждённой складской историей.'}</span>
+      <span>Проверьте сообщения у товаров ниже. Деньги и остатки не изменены.</span>
      </div>:null}
+   {reviewCount>0?<div className="history-note is-danger" role="status">
+     <strong>Не все товары можно обработать автоматически: требуется сверка {reviewCount} поз.</strong>
+     <span>Такие позиции показаны ниже, но не отмечены как возвращаемые. Проведение других подтверждённых товаров не исправит их историю.</span>
+   </div>:null}
    {preview?<div className="editor-summary-grid">
       <div><span>Стоимость оставшихся покупок</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
       <div><span>У магазина после прежних выплат</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
