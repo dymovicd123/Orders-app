@@ -150,9 +150,14 @@ jobs:
               if attempt==8:
                   raise SystemExit('STOP: active Branch2 deployment could not be verified.')
           print('PASS: reviewed test Worker version is now explicitly deployed at 100%.')
-          settings=require_ok('/settings')
-          matching_bindings(settings.get('bindings'))
-          print('PASS: active Branch2 settings have exact test D1 and feature flag=true.')
+          # /scripts/<name>/settings can reflect the LATEST uploaded draft,
+          # NOT the version receiving traffic. When those versions differ,
+          # checking this endpoint falsely reports missing feature bindings.
+          # Inspect the exact 100%-active version's immutable resources.
+          active_version=require_ok('/versions/'+expected_version)
+          matching_bindings((active_version.get('resources') or {}).get('bindings'))
+          print('PASS: 100%-ACTIVE Branch2 Worker version has exact test D1 and RETURN_V2_ENABLED=true.')
+          print('Note: global /settings may show a newer, undeployed draft; it is not used for UAT readiness.')
           print('No Worker code upload, Main Worker operation, Main D1 read/write, or test D1 data mutation.')
           PY
 
