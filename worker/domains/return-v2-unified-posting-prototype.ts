@@ -3,7 +3,7 @@
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
-import {noUnreversedDispatchSql} from './return-v2-dispatch-correction-proof.ts'
+import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
@@ -344,13 +344,13 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             AND r.status='fulfilled' AND r.quantity=?
         ) AND (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
              FROM order_dispatch_items di WHERE di.order_item_id=order_items.id)=?
+          AND ${noUnsafeCancelledDispatchSql('order_items.id')}
           AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
              WHERE di.order_item_id=order_items.id
-               AND (di.cancelled_quantity>0 OR
-                (di.source_type<>'workshop' AND di.movement_id IS NOT NULL
-                  AND NOT EXISTS(SELECT 1 FROM inventory_movements m
+               AND di.source_type<>'workshop' AND di.movement_id IS NOT NULL
+               AND NOT EXISTS(SELECT 1 FROM inventory_movements m
                      WHERE m.id=di.movement_id AND m.movement_type='sale'
-                       AND m.reference_type='order_dispatch'))))
+                       AND m.reference_type='order_dispatch'))
           AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
              WHERE r.order_item_id=order_items.id AND r.status IN ('active','unresolved'))`
       : `AND EXISTS(SELECT 1 FROM inventory_reservations r
