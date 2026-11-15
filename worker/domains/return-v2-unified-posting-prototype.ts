@@ -3,6 +3,7 @@
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
 import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {noUnreversedDispatchSql} from './return-v2-dispatch-correction-proof.ts'
 import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
@@ -315,8 +316,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
           WHERE id=? AND order_id=? AND order_item_id=?
             AND status=? AND quantity=? AND inventory_source=?
             AND variant_id IS ?
-            AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
-              WHERE di.order_item_id=inventory_reservations.order_item_id)`
+            AND ${noUnreversedDispatchSql('inventory_reservations.order_item_id')}`
       ).bind(line.quantity,line.quantity,line.quantity,line.quantity,stamp,stamp,
         r.id,wanted.orderId,line.orderItemId,r.status,r.quantity,
         r.inventory_source,r.variant_id))
@@ -356,8 +356,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       : `AND EXISTS(SELECT 1 FROM inventory_reservations r
           WHERE r.id=? AND r.order_item_id=order_items.id
             AND r.quantity=? AND r.status=?)
-         AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
-           WHERE di.order_item_id=order_items.id)`
+         AND ${noUnreversedDispatchSql('order_items.id')}`
     const guardArgs=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
       ? [] : line.action==='physical_return_pending'
       ? [line.originalQty,line.originalQty] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
