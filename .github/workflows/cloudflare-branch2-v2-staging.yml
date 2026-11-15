@@ -1,0 +1,206 @@
+name: Cloudflare Branch2 - Backup and Prepare Return V2
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Run backup FIRST, then migrate in a separate manual run"
+        type: choice
+        required: true
+        default: backup
+        options:
+          - backup
+          - migrate
+      confirmation:
+        description: "backup: BACKUP_BRANCH2 | migrate: MIGRATE_BRANCH2"
+        type: string
+        required: true
+      backup_run_id:
+        description: "Migrate only: successful backup run ID AFTER downloading its archive"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cloudflare-branch2-return-v2-staging
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    if: github.ref == 'refs/heads/main' && inputs.phase == 'backup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Confirm explicit backup request
+        env:
+          CONFIRM: ${{ inputs.confirmation }}
+          PRIVATE_REPO: ${{ github.event.repository.private }}
+        run: |
+          if [ "$PRIVATE_REPO" != "true" ]; then
+            echo "::error::Full D1 export is forbidden if this GitHub repo is public."
+            exit 2
+          fi
+          if [ "$CONFIRM" != "BACKUP_BRANCH2" ]; then
+            echo "::error::Type BACKUP_BRANCH2 to authorize a Branch2 D1 export."
+            exit 2
+          fi
+
+      - name: Checkout operations guard from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout tested Branch2 source
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Verify exact Branch2 D1 and unmigrated schema (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 .github/scripts/branch2_v2_stage_guard.py --stage stage --expected-index 0
+
+      - name: Install Wrangler from Branch2 lockfile
+        working-directory: stage
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Export ONLY Branch2 remote D1 into ephemeral file
+        working-directory: stage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --no-install wrangler d1 export orders_db_branch2_mirror_20261027 \
+            --config wrangler.jsonc --remote --skip-confirmation \
+            --output "$RUNNER_TEMP/branch2-before-return-v2.sql"
+          test -s "$RUNNER_TEMP/branch2-before-return-v2.sql"
+          python3 - <<'PY'
+          import os
+          path = os.environ['RUNNER_TEMP'] + '/branch2-before-return-v2.sql'
+          found = False
+          with open(path, encoding='utf-8') as f:
+              for line in f:
+                  if 'CREATE TABLE' in line:
+                      found = True
+                      break
+          if not found or os.path.getsize(path) < 1024:
+              raise SystemExit('STOP: backup export is empty or missing table schema.')
+          print('Branch2 backup created; size:', os.path.getsize(path), 'bytes.')
+          print('Backup contents are not printed in the job log.')
+          PY
+
+      - name: Store private repository backup for ONE day
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-d1-before-return-v2-${{ github.run_id }}
+          path: ${{ runner.temp }}/branch2-before-return-v2.sql
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 6
+
+      - name: Instructions for downloading the backup
+        run: |
+          echo '## Branch2 database export completed' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download the artifact from this run and save it securely outside GitHub.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'WARNING: it contains customer data; repository readers can download the artifact for 1 day.' >> "$GITHUB_STEP_SUMMARY"
+          echo "BACKUP_RUN_ID: $GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo 'No migrations, Worker deployment, or feature flag changes occurred.' >> "$GITHUB_STEP_SUMMARY"
+
+  migrate:
+    if: github.ref == 'refs/heads/main' && inputs.phase == 'migrate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Confirm migration and downloaded backup
+        env:
+          CONFIRM: ${{ inputs.confirmation }}
+          BACKUP_RUN: ${{ inputs.backup_run_id }}
+          PRIVATE_REPO: ${{ github.event.repository.private }}
+        run: |
+          if [ "$PRIVATE_REPO" != "true" ]; then
+            echo "::error::Branch2 backup artifact must stay in a private repository."
+            exit 2
+          fi
+          if [ "$CONFIRM" != "MIGRATE_BRANCH2" ]; then
+            echo "::error::Type MIGRATE_BRANCH2 ONLY after downloading the Branch2 backup."
+            exit 2
+          fi
+          if ! [[ "$BACKUP_RUN" =~ ^[0-9]+$ ]]; then
+            echo "::error::Supply the successful backup workflow run ID."
+            exit 2
+          fi
+
+      - name: Checkout operations guard from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout Branch2 migration source
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Verify backup artifact, target, and schema (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+        run: |
+          python3 .github/scripts/branch2_v2_stage_guard.py \
+            --stage stage --expected-index 0 --backup-run-id "$BACKUP_RUN_ID"
+          echo 'Fresh backup verified. Next stage will modify only Branch2 D1 schema.'
+
+      - name: Install Wrangler from Branch2 lockfile
+        working-directory: stage
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Apply migrations 0124-0132 with per-step schema checks
+        working-directory: stage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          migrations=(
+            0124_return_v2_prepared_journal.sql
+            0125_return_v2_contract_quantity_marker.sql
+            0126_return_v2_posting_prototype.sql
+            0127_return_v2_cancellation_prototype.sql
+            0128_return_v2_unified_posting_prototype.sql
+            0129_return_v2_unified_receipt_intent.sql
+            0130_return_v2_unified_cancel_prototype.sql
+            0131_return_v2_metadata_edits.sql
+            0132_return_v2_resumed_dispatch_prototype.sql
+          )
+          number=0
+          for filename in "${migrations[@]}"; do
+            echo "::group::Branch2 D1 migration $filename"
+            npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 \
+              --config wrangler.jsonc --remote --file "migrations/$filename" --yes
+            number=$((number + 1))
+            python3 ../.github/scripts/branch2_v2_stage_guard.py \
+              --stage . --expected-index "$number"
+            echo "::endgroup::"
+          done
+          echo 'PASS: Return V2 Branch2 D1 schema 9/9 tables and 10/10 columns.'
+          echo 'NO WORKER DEPLOY, NO FLAG CHANGE, NO MAIN DATABASE OPERATION.'
+
+      - name: Report schema-only outcome
+        if: success()
+        run: |
+          echo '## Return V2 schema applied to Branch2 D1 only' >> "$GITHUB_STEP_SUMMARY"
+          echo 'All 9 migrations 0124-0132 verified after each step.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Worker NOT deployed. V2 flag remains OFF. Main untouched.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Next gate: Branch2 Worker and browser acceptance; do not deploy Main.' >> "$GITHUB_STEP_SUMMARY"
