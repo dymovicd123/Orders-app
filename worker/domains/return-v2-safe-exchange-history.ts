@@ -38,18 +38,8 @@ export function unsafeActiveExchangeSql(orderIdSql:string):string {
                 OR oi.id IS NULL OR oi.order_id<>e.order_id
                 OR (ei.role='old' AND oi.quantity<>0 AND NOT EXISTS(
                   SELECT 1 FROM inventory_reservations ir
-                  JOIN orders original_order ON original_order.id=e.order_id
                   WHERE ir.order_item_id=oi.id AND ir.status='fulfilled'
-                    AND original_order.shipping_status='sent'
-                    AND ir.quantity=oi.quantity+ei.quantity+
-                      (SELECT COALESCE(SUM(ul.contracted_quantity),0)
-                       FROM return_v2_unified_lines ul
-                       JOIN return_v2_unified_postings up ON up.id=ul.posting_id
-                       JOIN returns ret ON ret.id=up.return_id
-                       WHERE ul.order_item_id=oi.id
-                         AND ul.action='physical_return_pending'
-                         AND ret.status='completed')
-                ))
+                    AND ir.quantity=oi.quantity+ei.quantity))
                 OR (ei.role='new' AND oi.quantity<0)
               ))
             AND NOT EXISTS(SELECT 1 FROM exchange_items ei
