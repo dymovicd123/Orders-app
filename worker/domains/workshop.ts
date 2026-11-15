@@ -529,6 +529,12 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
       wt.due_date,
       ${wtColumn('due_time')} AS due_time,
       wt.status,
+      EXISTS(SELECT 1 FROM return_v2_unified_action_overrides ao
+        JOIN return_v2_unified_postings up ON up.id=ao.posting_id
+        JOIN returns ret ON ret.id=up.return_id AND ret.status='completed'
+        WHERE ao.order_item_id=wt.order_item_id
+          AND ao.semantic_action='cancel_workshop_obligation'
+          AND up.order_id=wt.order_id) AS customer_refused,
       wt.created_at,
       wt.updated_at,
       o.order_date AS original_order_date,
@@ -618,6 +624,7 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
       dueDate: cleanText(row.due_date),
       dueTime: cleanText(row.due_time),
       status: cleanText(row.status),
+      customerRefused: Boolean(toInt(row.customer_refused, 0)),
       createdAt: cleanText(row.created_at),
       updatedAt: cleanText(row.updated_at),
       orderDate: cleanText(row.workshop_effective_date) || cleanText(row.original_order_date),
