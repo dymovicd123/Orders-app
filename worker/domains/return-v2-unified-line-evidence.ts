@@ -210,7 +210,9 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       action='cancel_unshipped_reservation'
       reasonCode='corrected_dispatch_restored_reservation'
       message='Отправка отменена, вещь возвращена в складской учёт и резерв восстановлен. При отмене покупки снимаем резерв без нового прихода.'
-    }else if(ds.length && ds.some(d=>d.cancelled_quantity>0)){
+    }else if(ds.length && ds.some(d=>d.cancelled_quantity>0 &&
+      !(d.cancelled_quantity===d.quantity && Number(d.movement_valid)===1
+        && Number(d.correction_valid)===1))){
       reasonCode='corrected_dispatch_requires_review'
       message='Есть отменённая отправка. Проверьте, где товар и что уже учтено.'
     }else if(dispatched>contractQuantity||dispatched>0&&dispatched<contractQuantity){
