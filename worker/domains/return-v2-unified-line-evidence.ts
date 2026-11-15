@@ -1,6 +1,7 @@
 // Stage 1 of the unified Return/Cancel flow. Read-only, not routed to employee UI.
 // A chosen line means "remove from the purchase", never "physically received".
 import { priorIssueEvidenceSql } from './order-prior-issued-origin.ts'
+import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export type ReturnV2LineAction =
   | 'physical_return_pending'
@@ -116,8 +117,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     ).bind(rawOrderId).all<DispatchRow>(),
     db.prepare(`SELECT
        (SELECT COUNT(*) FROM returns WHERE order_id=?) AS returns_count,
-       (SELECT COUNT(*) FROM exchanges WHERE order_id=?
-          AND COALESCE(status,'completed')<>'cancelled') AS exchanges_count`
+       (SELECT CASE WHEN ${unsafeActiveExchangeSql('?')} THEN 1 ELSE 0 END) AS exchanges_count`
     ).bind(rawOrderId,rawOrderId).first<{returns_count:number;exchanges_count:number}>(),
     db.prepare(`SELECT order_item_id,status,quantity FROM workshop_tasks
       WHERE order_id=? AND order_item_id IS NOT NULL ORDER BY order_item_id,id`)

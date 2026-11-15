@@ -4,6 +4,7 @@
 // Restores unshipped reservations ONLY when exact free physical capacity remains.
 // Cash recovery is recorded ONLY after explicit confirmation of actual receipt.
 import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export class ReturnV2UnifiedCancelConflict extends Error{
  readonly status=409
@@ -100,8 +101,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
     (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
       FROM payments pay WHERE pay.order_id=up.order_id) AS received_cash,
     (SELECT COUNT(*) FROM returns r2 WHERE r2.order_id=up.order_id) AS return_count,
-    (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=up.order_id
-      AND COALESCE(e.status,'completed')<>'cancelled') AS exchange_count,
+    (SELECT CASE WHEN ${unsafeActiveExchangeSql('up.order_id')} THEN 1 ELSE 0 END) AS exchange_count,
     (SELECT COUNT(*) FROM payments pay WHERE pay.order_id=up.order_id
       AND julianday(pay.created_at)>julianday(up.posted_at)) AS later_payments,
     (SELECT COUNT(*) FROM financial_events fe WHERE fe.order_id=up.order_id
@@ -254,8 +254,7 @@ export async function cancelUnifiedReturnV2Prototype(db:D1Database,input:Input){
            AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
                 FROM payments pay WHERE pay.order_id=o.id)=?
            AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id)=1
-           AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id
-             AND COALESCE(e.status,'completed')<>'cancelled')
+           AND NOT ${unsafeActiveExchangeSql('o.id')}
            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations uc WHERE uc.posting_id=up.id)
            AND NOT EXISTS(SELECT 1 FROM financial_events fe WHERE fe.order_id=o.id
               AND fe.event_at>up.posted_at

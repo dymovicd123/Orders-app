@@ -3,6 +3,7 @@
 // Legacy orders retain their unmodified current accounting until explicitly migrated.
 import { readOrderFinancialLedger } from './money.ts'
 import { toInt } from '../core/text.ts'
+import {unsafeActiveExchangeSql} from './return-v2-safe-exchange-history.ts'
 
 export class ReturnV2LedgerConflict extends Error {
   readonly status=409
@@ -44,8 +45,7 @@ export async function readVersionedReturnMoney(db:D1Database,orderId:number):Pro
        AND COALESCE(r.status,'completed')<>'cancelled'
        AND NOT EXISTS(SELECT 1 FROM return_v2_postings vp WHERE vp.return_id=r.id)
        AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings up WHERE up.return_id=r.id)) AS other_returns,
-    (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id
-       AND COALESCE(e.status,'completed')<>'cancelled') AS exchanges_count,
+    (SELECT CASE WHEN ${unsafeActiveExchangeSql('o.id')} THEN 1 ELSE 0 END) AS exchanges_count,
     (SELECT COUNT(*) FROM return_v2_postings vp
        LEFT JOIN returns r ON r.id=vp.return_id
        WHERE vp.order_id=o.id AND (

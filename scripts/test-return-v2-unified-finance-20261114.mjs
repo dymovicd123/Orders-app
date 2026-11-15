@@ -1214,5 +1214,90 @@ assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9996').get().
 
 
 
+// A completed exchange with no payment or refund must not block returning
+// the new current purchase. The retired old item stays at quantity 0.
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,
+  shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (10010,'V2U-ZERO-MONEY-EXCHANGE','2026-11-01',9501,'active','warehouse',
+  'ready','not_sent','itemized_v1',2000,?,?)`).run(workshopNow,workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (10011,10010,'RETIRED EXCHANGE ORIGINAL',0,0,0,0,
+  'warehouse','replaced_edit',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (10012,10010,'ACTIVE REPLACEMENT',1,2000,2000,0,
+  'warehouse','pending_reservation',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO exchanges
+ (order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,
+  new_source_type,status,financial_action,financial_amount,created_at)
+ VALUES (10010,'2026-11-01',10011,1,10012,'warehouse','completed','none',0,?)`).run(workshopNow)
+const zeroMoneyPreview=await callV2Http('GET','/api/orders/10010/returns/v2/preview')
+assert.equal(zeroMoneyPreview.eligible,true)
+assert.equal(zeroMoneyPreview.evidence.lines.length,1)
+assert.equal(zeroMoneyPreview.evidence.lines[0].proposedAction,'cancel_unreserved_obligation')
+const beforeZeroExchange=sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock'
+).get()
+const zeroExchangeReturned=await callV2Http('POST','/api/orders/10010/returns/v2',{
+ requestId:'v2u-zero-money-exchange-return-0001',
+ expectedOrderVersion:zeroMoneyPreview.evidence.orderVersion,
+ items:[{orderItemId:10012,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(zeroExchangeReturned.remainingSale,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10011').get().quantity,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10012').get().quantity,0)
+assert.deepEqual(sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock'
+).get(),beforeZeroExchange)
+assert.equal((await readVersionedReturnMoney(DB,10010)).customerDebt,0)
+const zeroExchangeCancelled=await cancelUnifiedReturnV2Prototype(DB,{
+ postingId:zeroExchangeReturned.postingId,requestId:'v2u-zero-money-exchange-undo-0001',
+ reason:'Проверка отмены',shippedGoodsUnreceivedConfirmed:false,
+ reservationsRestoreConfirmed:false,refundRecoveredConfirmed:false
+})
+assert.equal(zeroExchangeCancelled.cancelled,true)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10012').get().quantity,1)
+assert.deepEqual(sql.prepare(
+ 'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock'
+).get(),beforeZeroExchange)
+
+// A financially consequential exchange is still rejected, even if it has
+// matching itemized prices and a current line without a stock reservation.
+sql.prepare(`INSERT INTO orders
+ (id,external_id,order_date,manager_id,order_status,source_type,workshop_status,
+  shipping_status,pricing_mode,total_amount,created_at,updated_at)
+ VALUES (10020,'V2U-MONEY-EXCHANGE-BLOCK','2026-11-01',9501,'active','warehouse',
+  'ready','not_sent','itemized_v1',2000,?,?)`).run(workshopNow,workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (10021,10020,'OLD PAID EXCHANGE ITEM',0,0,0,0,
+  'warehouse','replaced_edit',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO order_items
+ (id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,
+  source_type,stock_writeoff_status,created_at)
+ VALUES (10022,10020,'NEW PAID EXCHANGE ITEM',1,2000,2000,0,
+  'warehouse','pending_reservation',?)`).run(workshopNow)
+sql.prepare(`INSERT INTO exchanges
+ (order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,
+  new_source_type,status,financial_action,financial_amount,created_at)
+ VALUES (10020,'2026-11-01',10021,1,10022,'warehouse','completed','refund',500,?)`).run(workshopNow)
+const moneyExchangePreview=await callV2Http('GET','/api/orders/10020/returns/v2/preview')
+assert.equal(moneyExchangePreview.eligible,false)
+assert.equal(moneyExchangePreview.evidence.lines[0].reasonCode,'exchange_history_requires_migration')
+await assert.rejects(postUnifiedReturnV2Prototype(DB,{
+ requestId:'v2u-financial-exchange-forbidden-0001',
+ orderId:10020,expectedOrderVersion:moneyExchangePreview.evidence.orderVersion,
+ items:[{orderItemId:10022,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0
+}),/изменились|выбранная позиция|Товар требует|проверки|сверк|позиция/i)
+assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=10020').get().total_amount,2000)
+
+
 sql.close()
 console.log('RETURN_V2_UNIFIED_FINANCE_SQLITE_PASS: original 75 intake tests plus V2 and legacy net-held ledger;  original UI stock-now choice retained as explicit V2 intent; shipped-only immediate warehouse +2 once, unsent reserve no +stock, no_stock acceptance, old shipment and receipt idempotence, freshness checkpoint blocks +1 until already_counted; all initial posting isolated')
