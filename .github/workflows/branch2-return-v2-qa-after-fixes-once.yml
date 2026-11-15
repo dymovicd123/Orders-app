@@ -19,6 +19,53 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Inspect only blocked QA exchange and historical return provenance (read only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          root='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/0904a573-21ff-44d8-93b0-c9200f771702'
+          headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'}
+          with urllib.request.urlopen(urllib.request.Request(root,headers=headers),timeout=25) as response:
+            meta=json.load(response)
+          if not meta.get('success') or meta['result']['name']!='orders_db_branch2_mirror_20261027':
+            raise SystemExit('STOP: unexpected target database')
+          sqls={
+           'QA_EXCHANGES':"""SELECT e.order_id,e.id,e.status,e.financial_action,e.financial_amount,
+              e.payment_id,e.refund_return_id,e.old_order_item_id,e.new_order_item_id,
+              (SELECT quantity FROM order_items WHERE id=e.old_order_item_id) AS old_qty,
+              (SELECT quantity FROM order_items WHERE id=e.new_order_item_id) AS new_qty
+              FROM exchanges e WHERE e.order_id IN (2196,2198,2199) ORDER BY e.order_id,e.id""",
+           'QA_OLD_RETURNS':"""SELECT r.order_id,r.id AS return_id,r.status,r.amount AS payout,
+              ri.order_item_id,ri.quantity AS return_qty,ri.amount AS item_value,
+              ri.contract_quantity_applied
+              FROM returns r LEFT JOIN return_items ri ON ri.return_id=r.id
+              WHERE r.order_id IN (2196,2197,2198,2205)
+              ORDER BY r.order_id,r.id,ri.id""",
+           'QA_REMAINING':"""SELECT oi.order_id,oi.id AS item_id,oi.quantity,oi.unit_price,oi.line_total,
+              oi.stock_writeoff_status,oi.is_workshop,
+              (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
+               FROM order_dispatch_items di WHERE di.order_item_id=oi.id) AS sent,
+              (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+               WHERE r.order_item_id=oi.id AND r.status='active') AS reserved
+              FROM order_items oi WHERE oi.order_id IN (2196,2197,2198,2199,2205)
+                AND oi.quantity>0 ORDER BY oi.order_id,oi.id"""
+          }
+          for label,sql in sqls.items():
+            if not sql.lstrip().upper().startswith('SELECT '):raise SystemExit('Only SELECT permitted')
+            req=urllib.request.Request(root+'/query',method='POST',headers=headers,
+              data=json.dumps({'sql':sql,'params':[]}).encode())
+            with urllib.request.urlopen(req,timeout=30) as response:obj=json.load(response)
+            if not obj.get('success'):raise SystemExit('STOP: D1 SELECT error')
+            for entry in obj.get('result',[]):
+              if int(entry.get('meta',{}).get('changes',0))!=0:raise SystemExit('Unexpected write')
+              print(label+': '+json.dumps(entry.get('results',[]),ensure_ascii=False))
+          print('PASS: historical QA only; no database writes')
+          PY
       - name: Evaluate exact server-side Return V2 preview against QA test DB (SELECT only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
