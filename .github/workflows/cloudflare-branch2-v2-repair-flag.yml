@@ -62,7 +62,7 @@ jobs:
               request_body=None
               if payload is not None:
                   boundary='branch2-v2-'+secrets.token_hex(12)
-                  part=json.dumps({'bindings':payload},separators=(',',':')).encode()
+                  part=json.dumps(payload,separators=(',',':')).encode()
                   request_body=(
                       ('--'+boundary+'\r\n'
                        'Content-Disposition: form-data; name="settings"\r\n'
@@ -112,7 +112,15 @@ jobs:
           print('Main Worker and D1 excluded from the PATCH target.')
           approved=old_bindings+[{'type':'plain_text','name':'RETURN_V2_ENABLED','text':'true'}]
 
-          status,patched=call('PATCH',approved)
+          # Preserve editable version annotations. They are not inherited
+          # when Cloudflare updates version settings.
+          original_annotations=(before.get('annotations') or {})
+          preserve_annotations={key:original_annotations[key] for key in
+              ('workers/message','workers/tag') if original_annotations.get(key)}
+          patch_payload={'bindings':approved}
+          if preserve_annotations:
+              patch_payload['annotations']=preserve_annotations
+          status,patched=call('PATCH',patch_payload)
           if status not in (200,201) or not patched.get('success'):
               errors=[str(x.get('code','unknown')) for x in patched.get('errors',[])]
               raise SystemExit('STOP: Cloudflare refused Branch2 settings PATCH, HTTP %s, codes %s.'%
