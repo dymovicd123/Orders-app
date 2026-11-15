@@ -1520,7 +1520,7 @@ await api('POST','/api/orders/10140/shipping/dispatches',{
  items:[{orderItemId:10141,quantity:1}]
 })
 sql.prepare('UPDATE order_dispatch_corrections SET stock_restored=0 WHERE dispatch_item_id=?').run(priorUnsafe.id)
-sql.prepare('UPDATE order_dispatch_corrections SET quantity=0 WHERE dispatch_item_id=?').run(priorUnsafe.id)
+sql.prepare('UPDATE order_dispatch_corrections SET quantity=2 WHERE dispatch_item_id=?').run(priorUnsafe.id)
 const missingCorrectionProof=await callV2Http('GET','/api/orders/10140/returns/v2/preview')
 assert.equal(missingCorrectionProof.eligible,false)
 assert.equal(missingCorrectionProof.evidence.lines[0].reasonCode,'corrected_dispatch_requires_review')
