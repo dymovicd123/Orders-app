@@ -38,7 +38,7 @@ jobs:
             if(!/^\s*SELECT\b/i.test(sql))throw new Error('Non-SELECT rejected');
             const res=await fetch(base+'/query',{method:'POST',headers,
               body:JSON.stringify({sql,params})});
-            if(!res.ok)throw new Error('D1 query HTTP '+res.status);
+            if(!res.ok)throw new Error('D1 query HTTP '+res.status+' '+(await res.text()).slice(0,1000));
             const body=await res.json();
             if(!body.success)throw new Error('D1 SELECT failed '+JSON.stringify(body.errors));
             const page=body.result?.[0];
