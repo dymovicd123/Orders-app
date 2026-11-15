@@ -85,7 +85,7 @@ jobs:
         working-directory: stage
         run: |
           npx --no-install wrangler deploy --config wrangler.v2-off.jsonc \
-            --name orders-app-branch2 --dry-run
+            --name orders-app-branch2 --strict --dry-run
 
       - name: Deploy only Branch2 Worker with Return V2 OFF
         working-directory: stage
@@ -94,7 +94,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npx --no-install wrangler deploy --config wrangler.v2-off.jsonc \
-            --name orders-app-branch2
+            --name orders-app-branch2 --strict
           echo 'Deployed ONLY orders-app-branch2 with D1 test and Return V2 disabled.'
 
       - name: Verify remote Branch2 Worker binding and feature flag (READ ONLY)
