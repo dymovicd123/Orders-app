@@ -59,6 +59,7 @@ export function OrderReturnV2Flow({
  const requestRef=useRef('')
  const loadedOrderRef=useRef(0)
  const lines=preview?.evidence.lines||[]
+ const reviewCount=lines.filter(line=>line.requiresReview).length
  const maxRefund=preview?.finance.maxRefund||0
  const selectedLines=useMemo(()=>lines.filter(line=>
    !line.requiresReview && money(selections[line.orderItemId])>0
@@ -227,6 +228,10 @@ export function OrderReturnV2Flow({
       <span>{preview?.reason||'В заказе нет позиций с подтверждённой складской историей.'}</span>
       <span>Проверьте сообщения у товаров ниже. Деньги и остатки не изменены.</span>
      </div>:null}
+   {reviewCount>0?<div className="history-note is-danger" role="status">
+     <strong>Не все товары можно обработать автоматически: требуется сверка {reviewCount} поз.</strong>
+     <span>Такие позиции показаны ниже, но не отмечены как возвращаемые. Проведение других подтверждённых товаров не исправит их историю.</span>
+   </div>:null}
    {preview?<div className="editor-summary-grid">
       <div><span>Стоимость оставшихся покупок</span><strong>{formatMoney(preview.finance.currentSale)} ₸</strong></div>
       <div><span>У магазина после прежних выплат</span><strong>{formatMoney(preview.finance.netHeld)} ₸</strong></div>
