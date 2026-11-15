@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
 import {OrderReturnV2Cancellation} from './OrderReturnV2Cancellation'
+import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
@@ -19,7 +20,7 @@ type Props={
  order:{id:number;external_id:string}|null;
  formatMoney:(n:number)=>string;
  SmartPickerInput:any;paymentMethods:any[];
- onMode:(orderId:number,mode:'checking'|'legacy'|'v2'|'error')=>void;
+ onMode:(orderId:number,mode:ReturnV2UiMode)=>void;
  onSaved:()=>void;
  onBack:()=>void
 }
@@ -45,7 +46,7 @@ export function OrderReturnV2Flow({
  const [preview,setPreview]=useState<Preview|null>(null)
  const [fetching,setFetching]=useState(false)
  const [eligible,setEligible]=useState(false)
- const [viewMode,setViewMode]=useState<'checking'|'legacy'|'v2'|'error'>('checking')
+ const [viewMode,setViewMode]=useState<ReturnV2UiMode>('checking')
  const [error,setError]=useState('')
  const [selections,setSelections]=useState<Record<number,number>>({})
  const [intents,setIntents]=useState<Record<number,Intent>>({})
@@ -89,8 +90,9 @@ export function OrderReturnV2Flow({
      })
      const body=await response.json()
      if(signal?.aborted||loadedOrderRef.current!==id)return
-     if(!response.ok||body.ok===false)throw new Error(String(body.message||'Не удалось проверить заказ.'))
-     if(!body.enabled){
+     const nextMode=returnV2PreviewMode(body,response.ok)
+     if(nextMode==='error')throw new Error(String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
+     if(nextMode==='legacy'){
        // Legacy mode is permitted ONLY when the server explicitly reports
        // that Return V2 is disabled, never for an ineligible/malformed order.
        setPreview(null);setViewMode('legacy');setEligible(false)
