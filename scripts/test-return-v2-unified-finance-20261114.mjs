@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
+import {spawnSync} from 'node:child_process'
 import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
@@ -16,7 +17,23 @@ import { deleteOrderSafely } from '../worker/domains/order-delete.ts'
 import { fulfillOrderReservationsV2, confirmItemStillHere, reconcileIssuedBeforeCheckpoint } from '../worker/domains/order-reservations.ts'
 import { confirmRetiredOrderItemDelivered } from '../worker/domains/retired-item-handover.ts'
 import { dispatchRestoredReturnV2ReservationPrototype } from '../worker/domains/return-v2-resumed-shipment-prototype.ts'
+import {handleOrderReturnV2Route,returnV2SchemaReadiness,RETURN_V2_REQUIRED_TABLES,RETURN_V2_REQUIRED_COLUMNS} from '../worker/routes/order-return-v2.ts'
 
+// Validate the runnable, no-network Branch2 preflight against the COMPLETE
+// migration chain in CI, not just individual Worker SQL statements.
+const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-branch2-readiness.mjs'],{
+ encoding:'utf8',timeout:90000
+})
+assert.equal(stagePreflight.status,0,
+ 'Read-only Branch2 local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
+const stageReport=JSON.parse(stagePreflight.stdout)
+assert.equal(stageReport.mode,'local-in-memory')
+assert.equal(stageReport.target,'orders-app-branch2')
+assert.equal(stageReport.schema.ready,true)
+assert.equal(stageReport.schema.expectedTables,9)
+assert.equal(stageReport.schema.expectedColumns,10)
+assert.equal(stageReport.remoteMigrationPerformed,false)
+assert.equal(stageReport.remoteDeploymentPerformed,false)
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
   sql.exec(fs.readFileSync('migrations/'+m,'utf8'))
@@ -830,6 +847,43 @@ assert.equal(preMigrations.v2SchemaReady,false)
 oldSql.exec('CREATE TABLE return_v2_postings(order_id INTEGER)')
 await assert.rejects(readReturnV2LegacyMutationGate(oldDb,11),/не полностью/)
 oldSql.close()
+// The feature flag is not sufficient to make a partially migrated D1 safe.
+// Check a clean local DB AND a synthetic nearly-complete schema missing
+// exactly one mandatory receipt field. The rejection is read-only.
+const completeReadiness=await returnV2SchemaReadiness(DB)
+assert.equal(completeReadiness.ready,true)
+assert.equal(completeReadiness.foundTables,completeReadiness.expectedTables)
+assert.equal(completeReadiness.foundColumns,completeReadiness.expectedColumns)
+const unfinishedSql=new DatabaseSync(':memory:')
+for(const table of RETURN_V2_REQUIRED_TABLES){
+ const columns=RETURN_V2_REQUIRED_COLUMNS.filter(([t,column])=>
+  t===table && !(t==='return_v2_unified_lines'&&column==='receipt_intent'))
+  .map(([,column])=>column+' TEXT')
+ unfinishedSql.exec('CREATE TABLE '+table+'(id INTEGER PRIMARY KEY'+
+  (columns.length?', '+columns.join(', '):'')+')')
+}
+unfinishedSql.exec('CREATE TABLE return_items(contract_quantity_applied INTEGER)')
+const unfinishedDb={prepare:q=>({
+ async first(){return unfinishedSql.prepare(q).get()??null}
+})}
+const missingReceipt=await returnV2SchemaReadiness(unfinishedDb)
+assert.equal(missingReceipt.foundTables,missingReceipt.expectedTables)
+assert.equal(missingReceipt.foundColumns,missingReceipt.expectedColumns-1)
+assert.equal(missingReceipt.ready,false)
+const beforeIncomplete=unfinishedSql.prepare('SELECT COUNT(*) AS n FROM return_v2_unified_postings').get().n
+const notAvailable=await handleOrderReturnV2Route(unfinishedDb,
+ new Request('https://test-only.invalid/api/orders/9953/returns/v2/preview'),
+ '/api/orders/9953/returns/v2/preview',true,'admin')
+assert.equal(notAvailable?.status,503)
+assert.equal((await notAvailable.json()).code,'return_v2_schema_unavailable')
+const noWriteOnPartial=await handleOrderReturnV2Route(unfinishedDb,
+ new Request('https://test-only.invalid/api/orders/9953/returns/v2',{
+  method:'POST',headers:{'Content-Type':'application/json'},body:'{}'
+ }),'/api/orders/9953/returns/v2',true,'manager')
+assert.equal(noWriteOnPartial?.status,503)
+assert.equal((await noWriteOnPartial.json()).code,'return_v2_schema_unavailable')
+assert.equal(unfinishedSql.prepare('SELECT COUNT(*) AS n FROM return_v2_unified_postings').get().n,beforeIncomplete)
+unfinishedSql.close()
 // Integrated, authenticated HTTP Return V2 must remain OFF by default;
 // it is callable only on a fully migrated schema and with explicit rollout.
 const v2Endpoint='/api/orders/9953/returns/v2'

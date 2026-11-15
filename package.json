@@ -15,6 +15,7 @@
     "check": "npm run release:check",
     "release:check": "node scripts/test-main-current-business-release-20261031.mjs",
     "verify:db-safety": "node scripts/verify-database-safety.mjs",
+    "verify:return-v2-branch2": "node scripts/return-v2-branch2-readiness.mjs",
     "test:d1-read-budget-r5-7": "node scripts/test-d1-read-budget-r5-7.mjs",
     "test:d1-read-budget-r5-8": "node scripts/test-d1-read-budget-r5-8.mjs",
     "test:d1-read-budget-r5-9": "node scripts/test-d1-read-budget-r5-9.mjs",
