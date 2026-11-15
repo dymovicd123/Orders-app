@@ -204,7 +204,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     <div>
                       <span className="intake-queue-kicker">Нужно принять</span>
                       <h3>Товары едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно. Очередь показывает все ожидающие вещи, независимо от поиска ниже; самые старые — первыми.</p>
+                      <p>Здесь только товары, которые ещё ожидают получения. После фактического поступления выберите место хранения и подтвердите приёмку.</p>
                     </div>
                     <strong className="intake-queue-count">{returnPendingInbox.pendingQuantity} шт.</strong>
                   </div>
@@ -261,7 +261,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Первая страница ожидающих ещё загружается. Если вещь не видна, откройте следующие ожидающие.</span>
+                      <span>Если нужного товара нет в списке, загрузите следующую страницу.</span>
                       <button className="secondary compact" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
@@ -630,7 +630,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                 <div className="mini-panel-head history-section-head">
                   <div>
                     <h3>История возвратов</h3>
-                    <p className="mini-panel-note">Последние возвраты загружаются сами. Поиск работает по всей истории, а подробности открываются только у нужной операции.</p>
+                    <p className="mini-panel-note">Все проведённые и отменённые операции. Для приёмки товаров откройте отдельную вкладку.</p>
                   </div>
                   <button className="secondary compact" type="button" onClick={() => void loadReturnHistory()} disabled={returnHistoryBusy}>Обновить</button>
                 </div>
@@ -682,31 +682,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 <span>{formatReturnItemCharacteristics(item)}</span>
                                 {entry.operationType === 'order_return' ? <em>{returnPhysicalStatus(item)}</em> : null}
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
-                                  <div className="mini-panel-actions">
-                                    <select
-                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
-                                      onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
-                                      disabled={returnBusy}
-                                    >
-                                      <option value="warehouse">Склад</option>
-                                      <option value="boutique">Бутик</option>
-                                      <option value="no_stock">Без добавления в остаток</option>
-                                    </select>
-                                    <button
-                                      className="primary compact"
-                                      type="button"
-                                      disabled={returnBusy}
-                                      onClick={() => void receiveReturnedItemAction({
-                                        operationType: 'return',
-                                        operationId: entry.id,
-                                        operationItemId: item.id,
-                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
-                                        productName: item.productName,
-                                        externalId: entry.externalId,
-                                      })}
-                                    >
-                                      Товар пришёл
-                                    </button>
+                                  <div className="return-history-intake-hint">
+                                    <strong>Товар ещё не принят</strong>
+                                    <button type="button" className="secondary compact" onClick={() => setActiveView('intake')}>Перейти к приёмке</button>
                                   </div>
                                 ) : null}
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnKnownIntakePending(item) ? (
@@ -755,7 +733,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     {returnHistoryHasMore ? <button className="secondary history-load-more" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>{returnHistoryBusy ? 'Загружаю…' : 'Показать ещё'}</button> : null}
                   </div>
                 ) : (
-                  <div className="history-load-state"><strong>Возвратов по выбранным условиям нет.</strong><span>Это нормальный пустой результат, а не ошибка загрузки.</span></div>
+                  <div className="history-load-state"><strong>Возвратов по выбранным условиям нет.</strong><span>Измените фильтры или проверьте другой период.</span></div>
                 )}
               </section>:null}
             </article>
