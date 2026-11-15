@@ -101,7 +101,16 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         FROM inventory_reservations WHERE order_item_id=?`
     ).bind(line.orderItemId).all<Res>()).results||[]
     let reservation:Res|null=null
-    if(act==='physical_return_pending'){
+    if(act==='cancel_workshop_obligation'){
+      if(result.length!==0||line.dispatchedQuantity!==0)
+        reject('Отказ клиента от цехового изделия не должен изменять складские резервы или отправку.')
+      const task=(await db.prepare(
+        `SELECT COUNT(*) AS count FROM workshop_tasks
+          WHERE order_id=? AND order_item_id=?
+            AND status IN ('active','invoice','ready','done')`
+      ).bind(wanted.orderId,line.orderItemId).first<{count:number}>())
+      if(!task?.count)reject('Связанное цеховое задание не найдено.')
+    }else if(act==='physical_return_pending'){
       if(result.length!==1||result[0].status!=='fulfilled'
         ||result[0].quantity!==line.contractQuantity
         ||line.dispatchedQuantity!==line.contractQuantity)
@@ -114,11 +123,12 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reservation=result[0]
     }
     const actual=await db.prepare(
-      `SELECT quantity,unit_price,stock_writeoff_status,source_type,variant_id
+      `SELECT quantity,unit_price,stock_writeoff_status,source_type,variant_id,is_workshop
         FROM order_items WHERE id=? AND order_id=?`
     ).bind(line.orderItemId,wanted.orderId).first<{quantity:number;unit_price:number;
-      stock_writeoff_status:string;source_type:string;variant_id:number|null}>()
-    if(!actual||actual.quantity!==line.contractQuantity||actual.unit_price!==line.soldUnitPrice)
+      stock_writeoff_status:string;source_type:string;variant_id:number|null;is_workshop:number}>()
+    if(!actual||actual.quantity!==line.contractQuantity||actual.unit_price!==line.soldUnitPrice
+      ||(act==='cancel_workshop_obligation'&&Number(actual.is_workshop)!==1))
       reject('Количество или цена позиции уже изменились.')
     // Repeating an UNSHIPPED reserve cancellation is safe only if every
     // historical reduction on this exact item used the SAME reservation,
@@ -306,7 +316,16 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         r.inventory_source,r.variant_id))
       statements.push(changed(db,'release_item_reservation'))
     }
-    const guard=line.action==='physical_return_pending'
+    const guard=line.action==='cancel_workshop_obligation'
+      ? `AND is_workshop=1
+          AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+            WHERE r.order_item_id=order_items.id)
+          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+            WHERE di.order_item_id=order_items.id)
+          AND EXISTS(SELECT 1 FROM workshop_tasks wt
+            WHERE wt.order_id=order_items.order_id AND wt.order_item_id=order_items.id
+              AND wt.status IN ('active','invoice','ready','done'))`
+      : line.action==='physical_return_pending'
       ? `AND EXISTS(
           SELECT 1 FROM inventory_reservations r WHERE r.order_item_id=order_items.id
             AND r.status='fulfilled' AND r.quantity=?
@@ -326,7 +345,8 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             AND r.quantity=? AND r.status=?)
          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
            WHERE di.order_item_id=order_items.id)`
-    const guardArgs=line.action==='physical_return_pending'
+    const guardArgs=line.action==='cancel_workshop_obligation'
+      ? [] : line.action==='physical_return_pending'
       ? [line.originalQty,line.originalQty] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
         line.quantity===r!.quantity?'released':r!.status]
     const sameItemHistoryGuard=line.action==='cancel_unshipped_reservation'
@@ -351,7 +371,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
           WHERE prev.order_item_id=order_items.id)`
     statements.push(db.prepare(
       `UPDATE order_items SET quantity=quantity-?,line_total=(quantity-?)*unit_price,
-       stock_writeoff_status=CASE WHEN quantity=? AND ?<>'physical_return_pending'
+       stock_writeoff_status=CASE WHEN quantity=? AND ? NOT IN ('physical_return_pending','cancel_workshop_obligation')
          THEN 'reservation_released' ELSE stock_writeoff_status END
        WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
          AND stock_writeoff_status=? AND line_total=quantity*unit_price
