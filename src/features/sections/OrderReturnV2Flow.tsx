@@ -103,6 +103,7 @@ export function OrderReturnV2Flow({
      }
      const data=body as Preview
      setPreview(data)
+     setUnknownResult(false)
      setViewMode('v2')
      setEligible(Boolean(data.eligible))
      // Every enabled order gets a visible version-aware result, including
@@ -174,6 +175,16 @@ export function OrderReturnV2Flow({
          refundAmount,refundMethod
        })
      })
+     if(res.status===409){
+       const rejected=await res.clone().json().catch(()=>null)
+       if(rejected?.code==='return_v2_not_eligible'){
+         requestRef.current=''
+         setEligible(false)
+         setUnknownResult(false)
+         setError('Заказ изменился в другой вкладке или после операции. Нажмите «Обновить данные», чтобы увидеть актуальный состав покупки. Ничего повторно не сохранено.')
+         return
+       }
+     }
      const saved=await loadJson(res)
      if(saved.contractPosted===true){
        setCommitted(saved)
