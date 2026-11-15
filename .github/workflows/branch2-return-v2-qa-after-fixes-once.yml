@@ -40,6 +40,14 @@ jobs:
               (SELECT quantity FROM order_items WHERE id=e.old_order_item_id) AS old_qty,
               (SELECT quantity FROM order_items WHERE id=e.new_order_item_id) AS new_qty
               FROM exchanges e WHERE e.order_id IN (2196,2198,2199) ORDER BY e.order_id,e.id""",
+           'QA_EXCHANGE_ITEMS':"""SELECT e.order_id,e.id AS exchange_id,e.status,e.financial_action,
+              ei.id AS exchange_item_id,ei.role,ei.order_item_id,ei.quantity AS exchange_quantity,
+              oi.order_id AS actual_order_id,oi.quantity AS current_qty,oi.stock_writeoff_status AS current_status,
+              oi.unit_price AS current_price
+              FROM exchanges e LEFT JOIN exchange_items ei ON ei.exchange_id=e.id
+              LEFT JOIN order_items oi ON oi.id=ei.order_item_id
+              WHERE e.order_id IN (2196,2198,2199)
+              ORDER BY e.order_id,e.id,ei.id""",
            'QA_OLD_RETURNS':"""SELECT r.order_id,r.id AS return_id,r.status,r.amount AS payout,
               ri.order_item_id,ri.quantity AS return_qty,ri.amount AS item_value,
               ri.contract_quantity_applied
