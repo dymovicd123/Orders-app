@@ -193,25 +193,34 @@ jobs:
           MODE: ${{ env.BRANCH2_MODE }}
         run: |
           python3 - <<'PY'
-          import json,os,urllib.request
+          import json,os,time,urllib.request
           token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
           account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
           url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
-          with urllib.request.urlopen(urllib.request.Request(url,headers={
-            'Authorization':'Bearer '+token,'Accept':'application/json'}),timeout=30) as resp:
-              body=json.load(resp)
-          if not body.get('success'):raise SystemExit('STOP: cannot confirm Branch2 settings.')
-          bindings=body.get('result',{}).get('bindings',[])
-          flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
-          dbs=[x for x in bindings if x.get('name')=='DB']
           target='true' if os.environ['MODE']=='enable' else 'false'
-          if len(flags)!=1 or flags[0].get('type')!='plain_text' or flags[0].get('text')!=target:
-              raise SystemExit('STOP: Return V2 flag post-deploy is not confirmed; inspect test Worker.')
-          if len(dbs)!=1 or dbs[0].get('type')!='d1' or (
-             (dbs[0].get('database_id') or dbs[0].get('id'))!='0904a573-21ff-44d8-93b0-c9200f771702'):
-              raise SystemExit('STOP: wrong D1 binding after test deployment.')
-          print('PASS: Worker orders-app-branch2 / D1 Branch2 verified; RETURN_V2_ENABLED='+target)
-          print('Main Worker and Main D1 were not modified.')
+          expected_db='0904a573-21ff-44d8-93b0-c9200f771702'
+          for attempt in range(1,9):
+              with urllib.request.urlopen(urllib.request.Request(url,headers={
+                'Authorization':'Bearer '+token,'Accept':'application/json'}),timeout=30) as resp:
+                  body=json.load(resp)
+              if not body.get('success'):
+                  raise SystemExit('STOP: cannot confirm Branch2 Worker settings.')
+              bindings=body.get('result',{}).get('bindings',[])
+              flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
+              dbs=[x for x in bindings if x.get('name')=='DB']
+              if len(dbs)!=1 or dbs[0].get('type')!='d1' or (
+                 (dbs[0].get('database_id') or dbs[0].get('id'))!=expected_db):
+                  raise SystemExit('STOP: wrong D1 binding after test deployment.')
+              if len(flags)==1 and flags[0].get('type')=='plain_text' and flags[0].get('text')==target:
+                  print('PASS: exact Branch2 D1 and requested V2 flag verified at attempt',attempt)
+                  print('RETURN_V2_ENABLED='+target+'; Main untouched.')
+                  break
+              if attempt==8:
+                  observed=[f.get('text') for f in flags if f.get('type')=='plain_text']
+                  print('Flag values returned by test Worker settings (nonsecret):',observed)
+                  raise SystemExit('STOP: test Worker feature flag still not confirmed after retries.')
+              print('Cloudflare settings may lag deployment; retrying only the read-only settings GET.',attempt)
+              time.sleep(5)
           PY
 
       - name: External public Branch2 GET is an independent warning (READ ONLY)
