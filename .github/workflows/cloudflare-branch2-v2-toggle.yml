@@ -1,0 +1,277 @@
+name: Cloudflare Branch2 - Return V2 Test Mode (ON or OFF)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Enable for Branch2 UAT, or disable to restore old behavior"
+        required: true
+        type: choice
+        default: enable
+        options:
+          - enable
+          - disable
+      confirmation:
+        description: "enable: ENABLE_BRANCH2_RETURN_V2 | disable: DISABLE_BRANCH2_RETURN_V2"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cloudflare-branch2-return-v2-staging
+  cancel-in-progress: false
+
+jobs:
+  toggle:
+    name: Branch2-only Return V2 feature switch
+    # Issue commands allow the connected GitHub owner account to trigger UAT
+    # without needing interactive workflow_dispatch privileges. Every command
+    # is pinned to this one issue, its owner, and one exact string.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.number == 864 &&
+          github.event.comment.user.login == 'dymovicd123' &&
+          !github.event.issue.pull_request &&
+          (
+            github.event.comment.body == 'BRANCH2_RETURN_V2_ENABLE_UAT_20261115' ||
+            github.event.comment.body == 'BRANCH2_RETURN_V2_DISABLE_UAT_20261115'
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BRANCH2_MODE: ${{ github.event_name == 'issue_comment' && (github.event.comment.body == 'BRANCH2_RETURN_V2_ENABLE_UAT_20261115' && 'enable' || 'disable') || inputs.mode }}
+      BRANCH2_CONFIRM: ${{ github.event_name == 'issue_comment' && (github.event.comment.body == 'BRANCH2_RETURN_V2_ENABLE_UAT_20261115' && 'ENABLE_BRANCH2_RETURN_V2' || 'DISABLE_BRANCH2_RETURN_V2') || inputs.confirmation }}
+    steps:
+      - name: Explicitly authorize the selected TEST Worker operation
+        env:
+          MODE: ${{ env.BRANCH2_MODE }}
+          CONFIRMATION: ${{ env.BRANCH2_CONFIRM }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            enable)
+              test "$CONFIRMATION" = "ENABLE_BRANCH2_RETURN_V2" || {
+                echo "::error::To enable Return V2 for Branch2 UAT, type ENABLE_BRANCH2_RETURN_V2."
+                exit 2
+              }
+              ;;
+            disable)
+              test "$CONFIRMATION" = "DISABLE_BRANCH2_RETURN_V2" || {
+                echo "::error::To disable Return V2 for Branch2, type DISABLE_BRANCH2_RETURN_V2."
+                exit 2
+              }
+              ;;
+            *)
+              echo "::error::Unrecognized feature mode."
+              exit 2
+              ;;
+          esac
+
+      - name: Checkout guard from GitHub main (operations only)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout Branch2 application (never Main application)
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Assert exact distinct Main and Branch2 IDs and fully migrated test D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/branch2_v2_stage_guard.py \
+            --stage stage --expected-index 9
+          # Existing preflight validates:
+          # main Worker/D1 UUID != Branch2 Worker/D1 UUID;
+          # exact approved 0124-0132 migration bytes;
+          # live exact Branch2 D1 target and complete schema.
+          echo 'PASS: production/Main isolation and Return V2 schema 9/9, 10/10.'
+
+      - name: Validate remote test Worker has only expected DB binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODE: ${{ env.BRANCH2_MODE }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          base='https://api.cloudflare.com/client/v4/accounts/'
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          url=base+account+'/workers/scripts/orders-app-branch2/settings'
+          req=urllib.request.Request(url,headers={
+              'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as resp:
+              obj=json.load(resp)
+          if not obj.get('success'):raise SystemExit('STOP: cannot verify Branch2 Worker settings.')
+          bindings=obj.get('result',{}).get('bindings',[])
+          dbs=[x for x in bindings if x.get('name')=='DB']
+          expected='0904a573-21ff-44d8-93b0-c9200f771702'
+          if (len(dbs)!=1 or dbs[0].get('type')!='d1'
+              or (dbs[0].get('database_id') or dbs[0].get('id'))!=expected):
+              raise SystemExit('STOP: remote Branch2 Worker has an unexpected D1 binding.')
+          flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
+          if len(flags)!=1 or flags[0].get('type')!='plain_text':
+              raise SystemExit('STOP: existing Return V2 flag is missing or not plain text.')
+          current=flags[0].get('text')
+          if current not in ('true','false'):
+              raise SystemExit('STOP: remote Return V2 flag is not a known boolean string.')
+          mode=os.environ['MODE']
+          print('Verified existing Branch2 Worker DB binding, Return V2 flag:',current)
+          print('Requested Branch2 UAT feature mode:',mode)
+          print('No Main Worker or Main database API call was made.')
+          PY
+
+      - name: Generate temporary Branch2-only Wrangler config with requested flag
+        env:
+          MODE: ${{ env.BRANCH2_MODE }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          cfg=json.loads(Path('stage/wrangler.jsonc').read_text())
+          expected='0904a573-21ff-44d8-93b0-c9200f771702'
+          assert cfg['name']=='orders-app-branch2'
+          assert len(cfg['d1_databases'])==1
+          assert cfg['d1_databases'][0]['binding']=='DB'
+          assert cfg['d1_databases'][0]['database_id']==expected
+          assert cfg['d1_databases'][0]['database_name']=='orders_db_branch2_mirror_20261027'
+          assert 'env' not in cfg
+          assert str(cfg.get('vars',{}).get('RETURN_V2_ENABLED','false')).lower()!='true'
+          mode=os.environ['MODE']
+          assert mode in ('enable','disable')
+          cfg['vars']={**cfg.get('vars',{}),'RETURN_V2_ENABLED':'true' if mode=='enable' else 'false'}
+          Path('stage/wrangler.v2-uat.jsonc').write_text(json.dumps(cfg,indent=2)+'\n')
+          print('Prepared ONLY',cfg['name'],'against',cfg['d1_databases'][0]['database_name'])
+          print('Temporary flag:',cfg['vars']['RETURN_V2_ENABLED'])
+          PY
+
+      - name: Install and build tested Branch2 application
+        working-directory: stage
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Wrangler dry-run to prove target and bundle without modifying Cloudflare
+        working-directory: stage
+        run: |
+          npx --no-install wrangler deploy \
+            --config wrangler.v2-uat.jsonc --name orders-app-branch2 \
+            --strict --dry-run
+
+      - name: Publish only Branch2 UAT flag using same tested application source
+        working-directory: stage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --no-install wrangler deploy \
+            --config wrangler.v2-uat.jsonc --name orders-app-branch2 --strict
+
+      - name: Verify deployed Branch2 D1 binding AND requested feature state
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODE: ${{ env.BRANCH2_MODE }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
+          with urllib.request.urlopen(urllib.request.Request(url,headers={
+            'Authorization':'Bearer '+token,'Accept':'application/json'}),timeout=30) as resp:
+              body=json.load(resp)
+          if not body.get('success'):raise SystemExit('STOP: cannot confirm Branch2 settings.')
+          bindings=body.get('result',{}).get('bindings',[])
+          flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
+          dbs=[x for x in bindings if x.get('name')=='DB']
+          target='true' if os.environ['MODE']=='enable' else 'false'
+          if len(flags)!=1 or flags[0].get('type')!='plain_text' or flags[0].get('text')!=target:
+              raise SystemExit('STOP: Return V2 flag post-deploy is not confirmed; inspect test Worker.')
+          if len(dbs)!=1 or dbs[0].get('type')!='d1' or (
+             (dbs[0].get('database_id') or dbs[0].get('id'))!='0904a573-21ff-44d8-93b0-c9200f771702'):
+              raise SystemExit('STOP: wrong D1 binding after test deployment.')
+          print('PASS: Worker orders-app-branch2 / D1 Branch2 verified; RETURN_V2_ENABLED='+target)
+          print('Main Worker and Main D1 were not modified.')
+          PY
+
+      - name: External public Branch2 GET is an independent warning (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import urllib.error,urllib.request
+          url='https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status'
+          req=urllib.request.Request(url,headers={
+            'User-Agent':'Mozilla/5.0 (compatible; Orders-app-UAT/1.0)',
+            'Accept':'application/json'})
+          try:
+              with urllib.request.urlopen(req,timeout=20) as resp:
+                  print('Public Branch2 auth-status GET HTTP:',resp.status)
+          except urllib.error.HTTPError as exc:
+              if exc.code in (401,403):
+                  print('::warning::GitHub runner cannot reach public Branch2 auth-status (HTTP %s).' % exc.code)
+                  print('Cloudflare Worker deployment was independently verified. Browser access still needs UAT.')
+              else:
+                  raise SystemExit('Public Branch2 GET unexpected HTTP %s' % exc.code)
+          PY
+
+      - name: Record explicit test mode in GitHub summary
+        if: success()
+        env:
+          MODE: ${{ env.BRANCH2_MODE }}
+        run: |
+          echo "## Branch2 Return V2 mode: $MODE" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Exact Branch2 D1, script and feature flag verified after deploy.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Main Worker and D1 untouched. No employee business data was changed by CI.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Next: employee browser acceptance on Branch2, NOT Main.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report controlled Branch2-only action back to tracking issue
+        if: always() && github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ job.status }}
+          MODE: ${{ env.BRANCH2_MODE }}
+          REPOSITORY: ${{ github.repository }}
+          ACTION_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.error,urllib.request
+          mode=os.environ['MODE']
+          result=os.environ['OUTCOME']
+          url=os.environ['ACTION_URL']
+          assert mode in ('enable','disable')
+          description = ('PASS: staging feature switch and remote Cloudflare binding checks passed.'
+                         if result=='success' else
+                         'FAILED or cancelled: feature state is UNCONFIRMED. Inspect the run BEFORE retrying.')
+          body=('Return V2 Branch2 UAT feature switch: **'+mode+'** — **'+result+'**.\\n\\n'+
+                description+'\\n\\n'+url+
+                '\\n\\nMain Worker and production D1 are not workflow targets.')
+          req=urllib.request.Request(
+              'https://api.github.com/repos/'+os.environ['REPOSITORY']+'/issues/864/comments',
+              data=json.dumps({'body':body}).encode('utf-8'),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json',
+                       'Content-Type':'application/json'},
+              method='POST')
+          with urllib.request.urlopen(req,timeout=30) as response:
+              assert response.status==201
+          print('Posted execution result to Issue #864; no Cloudflare credentials shown.')
+          PY
