@@ -1,0 +1,192 @@
+name: Cloudflare Branch2 - Repair Missing Return V2 Flag
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cloudflare-branch2-return-v2-staging
+  cancel-in-progress: false
+
+jobs:
+  repair-branch2-flag:
+    name: Repair ONLY Branch2 plain-text feature flag
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.issue.number == 864 &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login == 'dymovicd123' &&
+      github.event.comment.body == 'BRANCH2_RETURN_V2_PATCH_FLAG_20261115'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted Main identity guard (NO Main deploy)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Checkout Branch2 identity and schema evidence
+        uses: actions/checkout@v4
+        with:
+          ref: branch2
+          path: stage
+          persist-credentials: false
+
+      - name: Verify exact separate Main and Branch2 identities and test D1 schema (READ ONLY)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 .github/scripts/branch2_v2_stage_guard.py --stage stage --expected-index 9
+
+      - name: Add only missing Return V2 plain-text binding to test Worker settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json,os,secrets,time,urllib.error,urllib.request
+
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          endpoint=('https://api.cloudflare.com/client/v4/accounts/'+account+
+                    '/workers/scripts/orders-app-branch2/settings')
+          expected_db='0904a573-21ff-44d8-93b0-c9200f771702'
+
+          def call(method='GET',payload=None):
+              headers={'Authorization':'Bearer '+token,'Accept':'application/json'}
+              request_body=None
+              if payload is not None:
+                  boundary='branch2-v2-'+secrets.token_hex(12)
+                  part=json.dumps({'bindings':payload},separators=(',',':')).encode()
+                  request_body=(
+                      ('--'+boundary+'\r\n'
+                       'Content-Disposition: form-data; name="settings"\r\n'
+                       'Content-Type: application/json\r\n\r\n').encode()
+                      +part+('\r\n--'+boundary+'--\r\n').encode())
+                  headers['Content-Type']='multipart/form-data; boundary='+boundary
+              req=urllib.request.Request(endpoint,method=method,data=request_body,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=35) as response:
+                      return response.status,json.load(response)
+              except urllib.error.HTTPError as error:
+                  try:
+                      body=json.loads(error.read().decode('utf-8'))
+                  except (ValueError,UnicodeError):
+                      body={}
+                  return error.code,body
+
+          def inspect(result,expected_flag):
+              settings=result.get('result') or {}
+              bindings=settings.get('bindings') or []
+              dbs=[v for v in bindings if v.get('name')=='DB']
+              assets=[v for v in bindings if v.get('type')=='assets']
+              flags=[v for v in bindings if v.get('name')=='RETURN_V2_ENABLED']
+              if len(dbs)!=1 or dbs[0].get('type')!='d1' or (
+                 (dbs[0].get('database_id') or dbs[0].get('id'))!=expected_db):
+                  raise SystemExit('STOP: unexpected remote D1 binding; refusing mutation.')
+              if len(assets)!=1 or not assets[0].get('name'):
+                  raise SystemExit('STOP: unknown/missing assets binding; refusing mutation.')
+              if len(bindings)!=2+int(expected_flag) or (
+                  len(flags)!=int(expected_flag)):
+                  raise SystemExit('STOP: unexpected remote binding set; refusing mutation.')
+              if expected_flag and (
+                  flags[0].get('type')!='plain_text' or flags[0].get('text')!='true'):
+                  raise SystemExit('STOP: feature flag is not confirmed to be true.')
+              return settings,bindings
+
+          status,current=call()
+          if status!=200 or not current.get('success'):
+              raise SystemExit('STOP: cannot read Branch2 Worker settings (HTTP %s).' % status)
+          current_bindings=(current.get('result') or {}).get('bindings') or []
+          existing_flags=[x for x in current_bindings if x.get('name')=='RETURN_V2_ENABLED']
+          if existing_flags:
+              print('STOP: Return V2 variable already exists; do not overwrite it blindly.')
+              raise SystemExit(2)
+          before,old_bindings=inspect(current,False)
+          print('PASS: two expected Branch2 bindings only (D1 and assets).')
+          print('Main Worker and D1 excluded from the PATCH target.')
+          approved=old_bindings+[{'type':'plain_text','name':'RETURN_V2_ENABLED','text':'true'}]
+
+          status,patched=call('PATCH',approved)
+          if status not in (200,201) or not patched.get('success'):
+              errors=[str(x.get('code','unknown')) for x in patched.get('errors',[])]
+              raise SystemExit('STOP: Cloudflare refused Branch2 settings PATCH, HTTP %s, codes %s.'%
+                               (status,','.join(errors) or 'n/a'))
+          print('Cloudflare accepted Branch2-only binding PATCH.')
+
+          for attempt in range(1,9):
+              time.sleep(3)
+              status,after=call()
+              if status!=200 or not after.get('success'):
+                  continue
+              try:
+                  after_settings,after_bindings=inspect(after,True)
+              except SystemExit:
+                  continue
+              unchanged=('compatibility_date','compatibility_flags','observability')
+              if any(before.get(key)!=after_settings.get(key) for key in unchanged):
+                  raise SystemExit('STOP: unexpected non-binding settings change after PATCH.')
+              # The existing assets and test-D1 bindings must be byte-for-byte
+              # equal to the GET snapshot; only the new single flag may differ.
+              old_by_name={x['name']:x for x in old_bindings}
+              actual_by_name={x['name']:x for x in after_bindings}
+              if any(actual_by_name.get(name)!=binding for name,binding in old_by_name.items()):
+                  raise SystemExit('STOP: existing test Worker binding changed unexpectedly.')
+              print('PASS: live Branch2 settings include RETURN_V2_ENABLED=true.')
+              print('PASS: exact D1, assets, compatibility and observability preserved.')
+              print('NO Worker code upload, Main API call or D1 write.')
+              break
+          else:
+              raise SystemExit('STOP: Cloudflare PATCH accepted, but target flag not verified. Inspect before retry.')
+
+          PY
+
+      - name: Public Branch2 auth status smoke (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import urllib.error,urllib.request
+          req=urllib.request.Request(
+            'https://orders-app-branch2.orders-clothes.workers.dev/api/auth/status',
+            headers={'Accept':'application/json','User-Agent':'Mozilla/5.0 (Orders-app-UAT)'})
+          try:
+              with urllib.request.urlopen(req,timeout=25) as resp:
+                  print('Branch2 public auth status GET HTTP',resp.status)
+                  if resp.status!=200:
+                      raise SystemExit('Unexpected Branch2 GET response.')
+          except urllib.error.HTTPError as exc:
+              if exc.code not in (401,403):
+                  raise
+              print('::warning::CI runner received HTTP',exc.code,'for public Branch2; independent binding check passed.')
+          PY
+
+      - name: Record exact repair result for Issue 864
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          success=os.environ['OUTCOME']=='success'
+          msg=('Branch2 Return V2 plain-text flag repair: **'+os.environ['OUTCOME']+'**.\n\n'+
+               ('Verified exact Branch2 D1 + assets, return flag=true, and unchanged Worker settings.'
+                if success else
+                'The required flag has NOT been reliably verified. Inspect the run and do not retry blindly.')+
+               '\n\n'+os.environ['RUN_URL']+
+               '\n\nNo Main or production D1 operation was authorized.')
+          req=urllib.request.Request(
+            'https://api.github.com/repos/'+os.environ['REPO']+'/issues/864/comments',
+            data=json.dumps({'body':msg}).encode(),
+            headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                     'Accept':'application/vnd.github+json',
+                     'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=25) as resp:
+              assert resp.status==201
+          PY
