@@ -1734,8 +1734,8 @@ const undoOldPartialExchange=await cancelUnifiedReturnV2Prototype(DB,{
  refundRecoveredConfirmed:false
 })
 assert.equal(undoOldPartialExchange.cancelled,true)
-assert.deepEqual(sql.prepare('SELECT id,quantity FROM order_items WHERE order_id=10430 ORDER BY id').all(),
- [{id:10431,quantity:1},{id:10432,quantity:1}])
+assert.deepEqual(sql.prepare('SELECT id,quantity FROM order_items WHERE order_id=10430 ORDER BY id')
+ .all().map(x=>[x.id,x.quantity]),[[10431,1],[10432,1]])
 assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10451').get(),exchangeStockBefore)
 
 
