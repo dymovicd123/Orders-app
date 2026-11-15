@@ -1302,8 +1302,20 @@ assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=10020').get()
 // Verified reversal of a real dispatched warehouse item must let the manager
 // cancel its remaining customer obligation without repeating physical +1.
 // A missing correction proof leaves the same position blocked.
-addOrder(10030,10031,'V2U-RESTORED-DISPATCH',1200)
-const restoredBefore=stock('warehouse')
+// Do not reuse the shared 9531 SKU: earlier regression fixtures intentionally
+// place a future-dated stocktake on it to prove freshness blocking.
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(10050,9521,'МУЖ','ТЕМНО-КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','50','adult',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(10051,'warehouse',9521,10050,'V2U-CORRECTED-TEST','МУЖ','ТЕМНО-КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','50',5,0)").run()
+function addCorrectedFixture(orderId,itemId,label,price){
+ addOrder(orderId,itemId,label,price)
+ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE id=9541').run()
+ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=10051').run()
+ sql.prepare('UPDATE order_items SET variant_id=10050 WHERE id=?').run(itemId)
+ sql.prepare('UPDATE inventory_reservations SET variant_id=10050 WHERE order_item_id=?').run(itemId)
+}
+const correctedStock=()=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10051').get()
+addCorrectedFixture(10030,10031,'V2U-RESTORED-DISPATCH',1200)
+const restoredBefore=correctedStock()
 await api('POST','/api/orders/10030/shipping/dispatches',{
  requestId:'v2u-restored-dispatch-original-0001',
  items:[{orderItemId:10031,quantity:1}]
@@ -1323,7 +1335,7 @@ const correctedRow=sql.prepare(
 assert.equal(correctedRow.cancelled_quantity,correctedRow.quantity)
 assert.equal(correctedRow.stock_restored,1)
 assert.equal(correctedRow.fix_qty,correctedRow.quantity)
-assert.deepEqual(stock('warehouse'),restoredBefore,
+assert.deepEqual(correctedStock(),restoredBefore,
  'The correction restored the original physical and reserved stock')
 const restoredPreview=await callV2Http('GET','/api/orders/10030/returns/v2/preview')
 assert.equal(restoredPreview.eligible,true)
@@ -1336,9 +1348,9 @@ const restoredPost=await callV2Http('POST','/api/orders/10030/returns/v2',{
  refundAmount:0,refundMethod:''
 },201)
 assert.equal(restoredPost.remainingSale,0)
-assert.equal(stock('warehouse').quantity,restoredBefore.quantity,
+assert.equal(correctedStock().quantity,restoredBefore.quantity,
  'Return after a corrected shipment must not create stock +1')
-assert.equal(stock('warehouse').reserved_quantity,restoredBefore.reserved_quantity-1)
+assert.equal(correctedStock().reserved_quantity,restoredBefore.reserved_quantity-1)
 const restoredUndo=await cancelUnifiedReturnV2Prototype(DB,{
  postingId:restoredPost.postingId,requestId:'v2u-restored-dispatch-undo-0001',
  reason:'Проверка обратной операции',
@@ -1347,9 +1359,9 @@ const restoredUndo=await cancelUnifiedReturnV2Prototype(DB,{
 })
 assert.equal(restoredUndo.cancelled,true)
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10031').get().quantity,1)
-assert.deepEqual(stock('warehouse'),restoredBefore)
+assert.deepEqual(correctedStock(),restoredBefore)
 
-addOrder(10040,10041,'V2U-MISSING-CORRECTION',1300)
+addCorrectedFixture(10040,10041,'V2U-MISSING-CORRECTION',1300)
 await api('POST','/api/orders/10040/shipping/dispatches',{
  requestId:'v2u-invalid-correction-original-0001',
  items:[{orderItemId:10041,quantity:1}]
