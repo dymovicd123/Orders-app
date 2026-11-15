@@ -359,6 +359,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                     <td>
                       <div className="order-cell-stack workshop-order-ref">
                         <strong>{task.externalOrderId}</strong>
+                        {task.customerRefused ? <span className="status-pill status-warning" title="Клиентская покупка отменена; цеховое задание и расчёт с цехом сохранены.">Отказ клиента · работа цеха сохранена</span> : null}
                         <span>{formatDateShort(task.orderDate)}</span>
                         <span>{task.managerName || '—'}</span>
                       </div>

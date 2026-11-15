@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
+import {listWorkshopTasks} from '../worker/domains/workshop.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
 import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2ReceiptPrototype } from '../worker/domains/return-v2-unified-immediate-intake-prototype.ts'
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
@@ -1115,6 +1116,10 @@ assert.equal(sql.prepare('SELECT debt_amount FROM orders WHERE id=9991').get().d
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=9992').get().n,0)
 assert.deepEqual(sql.prepare('SELECT id,status,quantity,order_item_id FROM workshop_tasks WHERE id=9993').get(),workshopTaskBefore)
 assert.deepEqual(sql.prepare('SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM(reserved_quantity),0) AS r FROM inventory_stock').get(),workshopStockBefore)
+const refusedWorkshopList=await listWorkshopTasks(DB,
+ new URL('https://test-only.invalid/api/workshop/tasks?view=done&period=all&includeCounts=0'))
+assert.equal(refusedWorkshopList.tasks.find(t=>t.id===9993)?.customerRefused,true,
+ 'Client refusal is visible while ready production remains in the workshop')
 const workshopCancel=await cancelUnifiedReturnV2Prototype(DB,{
  postingId:workshopPosted.postingId,
  requestId:'workshop-refusal-cancel-0001',
@@ -1126,6 +1131,10 @@ const workshopCancel=await cancelUnifiedReturnV2Prototype(DB,{
 assert.equal(workshopCancel.cancelled,true)
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=9992').get().quantity,1)
 assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=9991').get().total_amount,6000)
+const restoredWorkshopList=await listWorkshopTasks(DB,
+ new URL('https://test-only.invalid/api/workshop/tasks?view=done&period=all&includeCounts=0'))
+assert.equal(restoredWorkshopList.tasks.find(t=>t.id===9993)?.customerRefused,false,
+ 'Cancelling Return V2 removes customer refusal flag without changing the task')
 assert.deepEqual(sql.prepare('SELECT id,status,quantity,order_item_id FROM workshop_tasks WHERE id=9993').get(),workshopTaskBefore)
 assert.deepEqual(sql.prepare('SELECT COALESCE(SUM(quantity),0) AS q,COALESCE(SUM(reserved_quantity),0) AS r FROM inventory_stock').get(),workshopStockBefore)
 
