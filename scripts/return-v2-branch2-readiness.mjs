@@ -52,7 +52,7 @@ function evaluate(row){
  assert(Number.isSafeInteger(tableCount)&&Number.isSafeInteger(columnCount),
    'D1 returned non-integer schema capability counts.')
  return {ready:tableCount===expected.expectedTables &&
-   columnCount===expected.expectedColumns && workshopActionCount===1,
+   columnCount===expected.expectedColumns && workshopActionCount===2,
    foundTables:tableCount,foundColumns:columnCount,...expected}
 }
 const sql=returnV2SchemaReadinessSql()
