@@ -43,7 +43,8 @@ type ItemRow = {
   id:number;product_name_snapshot:string;quantity:number;unit_price:number
   line_total:number;stock_writeoff_status:string|null;source_type:string
   is_workshop:number;variant_id:number|null;prior_issued_evidence:number
-  old_returned_quantity:number
+  old_returned_quantity:number;exchanged_old_qty:number;
+  posted_physical_v2_qty:number;baselined_old_qty:number
 }
 type ReservationRow = {
   order_item_id:number;quantity:number;status:string
@@ -98,7 +99,20 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
             WHERE lb.return_item_id=ri.id)
           AND NOT EXISTS(SELECT 1 FROM exchanges e
             WHERE e.refund_return_id=ret.id AND COALESCE(e.status,'completed')<>'cancelled')
-       ),0) AS old_returned_quantity
+       ),0) AS old_returned_quantity,
+       COALESCE((SELECT SUM(ei.quantity)
+         FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+         WHERE ei.order_item_id=oi.id AND ei.role='old'
+           AND ex.order_id=oi.order_id AND COALESCE(ex.status,'completed')='completed'),0)
+         AS exchanged_old_qty,
+       COALESCE((SELECT SUM(ul.contracted_quantity)
+         FROM return_v2_unified_lines ul
+         JOIN return_v2_unified_postings up ON up.id=ul.posting_id
+         JOIN returns ret ON ret.id=up.return_id
+         WHERE ul.order_item_id=oi.id AND ul.action='physical_return_pending'
+           AND ret.status='completed'),0) AS posted_physical_v2_qty,
+       COALESCE((SELECT SUM(lb.quantity) FROM return_v2_legacy_baseline_items lb
+         WHERE lb.order_item_id=oi.id),0) AS baselined_old_qty
       FROM order_items oi WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`
     ).bind(rawOrderId).all<ItemRow>(),
     db.prepare(`SELECT order_item_id,quantity,status,inventory_source,variant_id
@@ -185,8 +199,14 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
     const tasks=workshopTasks.get(id)||[]
+    const expectedHistoricalFulfillment=contractQuantity
+      +(amount(item.exchanged_old_qty)??0)
+      +(amount(item.posted_physical_v2_qty)??0)
+      +(amount(item.baselined_old_qty)??0)
     const legacySentIssued=!isWorkshop&&String(order.shipping_status)==='sent'
-      &&ds.length===0&&fulfilled.length===1&&fulfilledQty===contractQuantity
+      &&ds.length===0&&fulfilled.length===1
+      &&Number.isSafeInteger(expectedHistoricalFulfillment)
+      &&fulfilledQty===expectedHistoricalFulfillment
       &&activeQty===0&&unresolvedQty===0&&nonCurrent.length===0
       &&stockStatus==='fulfilled'&&['warehouse','boutique'].includes(source)
     const dispatchFullyReversed=ds.length>0&&ds.every(d=>
