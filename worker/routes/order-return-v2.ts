@@ -81,12 +81,15 @@ async function preview(db:D1Database,orderId:number){
      (SELECT COUNT(*) FROM returns r WHERE r.order_id=?
        AND COALESCE(r.status,'completed')='completed') AS returns_count,
      (SELECT COUNT(*) FROM return_v2_unified_postings up WHERE up.order_id=?) AS unified_count,
+     (SELECT COUNT(*) FROM return_v2_unified_postings up
+       JOIN returns r ON r.id=up.return_id
+       WHERE up.order_id=? AND r.status='completed') AS active_unified_count,
      (SELECT COUNT(*) FROM return_v2_postings vp WHERE vp.order_id=?) AS old_v2_count,
      (SELECT COUNT(*) FROM return_v2_unified_cancellations c
        JOIN return_v2_unified_postings up ON up.id=c.posting_id
        WHERE up.order_id=?) AS cancel_count`)
-     .bind(orderId,orderId,orderId,orderId).first<{
-      returns_count:number;unified_count:number;
+     .bind(orderId,orderId,orderId,orderId,orderId).first<{
+      returns_count:number;unified_count:number;active_unified_count:number;
       old_v2_count:number;cancel_count:number
      }>(),
    readOldReturnBaseline(db,orderId),
@@ -116,9 +119,10 @@ async function preview(db:D1Database,orderId:number){
    }>()
  const hasUnsupported=toInt(history?.old_v2_count,0)>0
    ||unsafeExchange
-   ||toInt(history?.cancel_count,0)>0
-   ||toInt(history?.returns_count,0)!==toInt(history?.unified_count,0)
+   ||toInt(history?.returns_count,0)!==toInt(history?.active_unified_count,0)
      +baseline.alreadyBaselined+baseline.returns.length
+   ||toInt(history?.unified_count,0)!==toInt(history?.active_unified_count,0)
+     +toInt(history?.cancel_count,0)
  const provenLines=lineEvidence.lines.filter(l=>!l.requiresReview&&l.availableQuantity>0)
  const eligible=!hasUnsupported&&provenLines.length>0
  const paidIn=financial.kind==='return_v2'
@@ -142,7 +146,7 @@ async function preview(db:D1Database,orderId:number){
    &&financial.kind==='return_v2'
    &&financial.orderVersion===recent.posted_at)
  return {ok:true,enabled:true,eligible,exclusive:financial.kind==='return_v2',
-   cancellation:recent?{
+   cancellation:recent?.return_status==='completed'?{
      postingId:recent.posting_id,returnId:recent.return_id,
      refundAmount:recent.cash_refund,
      hasSent:recent.shipped_count>0,

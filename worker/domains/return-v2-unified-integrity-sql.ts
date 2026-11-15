@@ -47,27 +47,24 @@ export const RETURN_V2_UNIFIED_INTEGRITY_QUERIES:readonly string[]=[
      JOIN return_v2_unified_postings up ON up.order_id=o.id
      LEFT JOIN returns ret ON ret.id=up.return_id
      WHERE o.id=? AND (
-         (ret.status='completed' AND NOT EXISTS(
-              SELECT 1 FROM return_v2_unified_postings newer
+         (NOT EXISTS(SELECT 1 FROM return_v2_unified_postings newer
               WHERE newer.order_id=up.order_id AND newer.id>up.id)
-              AND up.final_total<>o.total_amount)
-         OR (ret.status='cancelled' AND up.initial_total<>o.total_amount)
-         OR (ret.status='cancelled' AND EXISTS(
-              SELECT 1 FROM return_v2_unified_postings newer
-              WHERE newer.order_id=up.order_id AND newer.id>up.id))
+           AND ((ret.status='completed' AND up.final_total<>o.total_amount)
+             OR (ret.status='cancelled' AND up.initial_total<>o.total_amount)))
          OR EXISTS(
               SELECT 1 FROM return_v2_unified_postings prev
+              JOIN returns old_ret ON old_ret.id=prev.return_id
               WHERE prev.id=(SELECT MAX(older.id) FROM return_v2_unified_postings older
                 WHERE older.order_id=up.order_id AND older.id<up.id)
-                AND (prev.final_total<>up.initial_total
-                   OR EXISTS(SELECT 1 FROM returns old_ret
-                     WHERE old_ret.id=prev.return_id AND old_ret.status<>'completed')))
+                AND ((old_ret.status='completed' AND prev.final_total<>up.initial_total)
+                  OR (old_ret.status='cancelled' AND prev.initial_total<>up.initial_total)
+                  OR old_ret.status NOT IN ('completed','cancelled')))
      )`,
   `SELECT COUNT(*) AS invalid_count FROM orders o
      JOIN return_v2_unified_postings up ON up.order_id=o.id
      LEFT JOIN returns ret ON ret.id=up.return_id
      WHERE o.id=? AND (
-         (up.full_termination=1 AND EXISTS(
+         (ret.status='completed' AND up.full_termination=1 AND EXISTS(
               SELECT 1 FROM return_v2_unified_postings newer
               WHERE newer.order_id=up.order_id AND newer.id>up.id))
          OR (SELECT COALESCE(SUM(ul.contract_reduction),0)

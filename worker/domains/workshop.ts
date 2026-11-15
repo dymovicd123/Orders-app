@@ -699,7 +699,7 @@ export async function updateWorkshopTask(db: D1Database, id: number, input: { st
   const linkedItem = orderItemId > 0
     ? await db.prepare(
       `SELECT
-         oi.id, oi.order_id, oi.product_id, oi.product_name_snapshot, oi.is_workshop, oi.stock_writeoff_status, oi.source_type,
+         oi.id, oi.order_id, oi.quantity, oi.product_id, oi.product_name_snapshot, oi.is_workshop, oi.stock_writeoff_status, oi.source_type,
          COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv.gender, '')) AS resolved_gender,
          COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv.color, '')) AS resolved_color,
          COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv.material, '')) AS resolved_material,
@@ -707,7 +707,15 @@ export async function updateWorkshopTask(db: D1Database, id: number, input: { st
          COALESCE(NULLIF(oi.size_snapshot, ''), NULLIF(cv.size_label, '')) AS resolved_size
        FROM order_items oi
        LEFT JOIN catalog_variants cv ON cv.id = oi.variant_id
-       WHERE oi.id = ? AND oi.order_id = ? AND oi.quantity > 0`
+       WHERE oi.id = ? AND oi.order_id = ? AND (oi.quantity > 0 OR (
+         oi.quantity = 0 AND oi.is_workshop = 1 AND EXISTS (
+           SELECT 1 FROM return_v2_unified_action_overrides ao
+           JOIN return_v2_unified_postings up ON up.id = ao.posting_id
+           JOIN returns ret ON ret.id = up.return_id AND ret.status = 'completed'
+           WHERE ao.order_item_id = oi.id AND up.order_id = oi.order_id
+             AND ao.semantic_action = 'cancel_workshop_obligation'
+         )
+       ))`
     ).bind(orderItemId, orderId).first<Record<string, unknown>>()
     : null;
   const validLinkedItem = Boolean(linkedItem?.id);
@@ -725,7 +733,8 @@ export async function updateWorkshopTask(db: D1Database, id: number, input: { st
     || toInt(existing.urgent, 0) !== nextUrgent
     || currentDueDate !== cleanText(nextDueDate)
     || currentComment !== nextComment;
-  const liveLinkedTask = validLinkedItem && ['active', 'ready', 'done'].includes(nextStatus);
+  const liveLinkedTask = validLinkedItem && toInt(linkedItem?.quantity, 0) > 0
+    && ['active', 'ready', 'done'].includes(nextStatus);
   const stockStatus = cleanText(linkedItem?.stock_writeoff_status);
   const itemNeedsRepair = liveLinkedTask && (
     toInt(linkedItem?.is_workshop, 0) !== 1

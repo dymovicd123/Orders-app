@@ -128,7 +128,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       if(result.length!==1||result[0].status!=='fulfilled'
         ||result[0].quantity!==line.fulfilledQuantity
         ||(isLegacy?line.dispatchedQuantity!==0
-          :line.dispatchedQuantity!==line.contractQuantity))
+          :line.dispatchedQuantity!==line.contractQuantity+line.postedV2PhysicalQuantity))
         reject('Выдача позиции перестала соответствовать журналу отправок.')
     }else{
       if(result.length!==1||result[0].status!==(act==='cancel_unshipped_reservation'?'active':'unresolved')
@@ -158,6 +158,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
         (SELECT COALESCE(SUM(later.contracted_quantity),0)
          FROM return_v2_unified_lines later
          JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+         JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
          WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id)
          AS reduction_from_this_post
        FROM return_v2_unified_lines prev
@@ -170,16 +171,22 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       stock_quantity_change:number;order_id:number;return_status:string;
       reduction_from_this_post:number
     }>()).results||[]
-    if(earlier.length&&(act!=='cancel_unshipped_reservation'
-      ||!reservation || earlier.some(prev=>
-        prev.order_id!==wanted.orderId||prev.return_status!=='completed'
-        ||prev.action!=='cancel_unshipped_reservation'
+    const activeEarlier=earlier.filter(prev=>prev.return_status==='completed')
+    if(earlier.some(prev=>prev.return_status!=='completed'&&prev.return_status!=='cancelled')
+      ||activeEarlier.some(prev=>
+        prev.order_id!==wanted.orderId
         ||prev.sold_unit_price!==line.soldUnitPrice
-        ||prev.reservation_id!==reservation.id
-        ||prev.reservation_release!==prev.contracted_quantity
         ||prev.stock_quantity_change!==0
-        ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post)))
-      reject('Эта позиция уже участвовала в другом возврате. Для повторной отмены нужен точный остаток того же резерва.')
+        ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post
+        ||(act==='cancel_unshipped_reservation'
+          ?(!reservation||prev.action!=='cancel_unshipped_reservation'
+            ||prev.reservation_id!==reservation.id
+            ||prev.reservation_release!==prev.contracted_quantity)
+          :(act==='physical_return_pending'
+            ?(prev.action!=='physical_return_pending'
+              ||prev.reservation_id!==null||prev.reservation_release!==0)
+            :true))))
+      reject('Предыдущие операции с этой позицией не согласованы. Обновите данные и проверьте историю.')
 
     const effectiveQty=line.contractQuantity-(baselineQtyByItem.get(line.orderItemId)||0)
     if(effectiveQty<requested.quantity||effectiveQty<=0)
@@ -277,12 +284,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
           AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
             AND COALESCE(r.status,'completed')='completed')=?
           AND NOT EXISTS(SELECT 1 FROM return_v2_postings old WHERE old.order_id=o.id)
-          AND NOT EXISTS(SELECT 1 FROM return_v2_unified_cancellations c
-            JOIN return_v2_unified_postings old ON old.id=c.posting_id
-            WHERE old.order_id=o.id)
-          AND COALESCE((SELECT old.final_total
-            FROM return_v2_unified_postings old WHERE old.order_id=o.id
-            ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
+          AND COALESCE((SELECT CASE
+              WHEN r.status='completed' THEN old.final_total
+              WHEN r.status='cancelled' AND EXISTS(
+                SELECT 1 FROM return_v2_unified_cancellations c WHERE c.posting_id=old.id)
+                THEN old.initial_total
+              ELSE -1 END
+            FROM return_v2_unified_postings old
+            JOIN returns r ON r.id=old.return_id
+            WHERE old.order_id=o.id ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
           AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
             WHERE r.order_id=o.id AND r.status='completed')=?
        AND NOT EXISTS(
@@ -450,15 +460,15 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          AND ${noUnreversedDispatchSql('order_items.id')}`
     const guardArgs=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
       ? [] : line.action==='physical_return_pending'
-      ? (line.legacyUnloggedShipping?[line.fulfilledQty]:[line.originalQty,line.originalQty]) : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
+      ? [line.fulfilledQty,...(line.legacyUnloggedShipping?[]:[line.fulfilledQty])] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
         line.quantity===r!.quantity?'released':r!.status]
     const sameItemHistoryGuard=line.action==='cancel_unshipped_reservation'
       ? `AND NOT EXISTS(
           SELECT 1 FROM return_v2_unified_lines prev
           JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
           JOIN returns prev_return ON prev_return.id=pp.return_id
-          WHERE prev.order_item_id=order_items.id
-            AND (pp.order_id<>order_items.order_id OR prev_return.status<>'completed'
+          WHERE prev.order_item_id=order_items.id AND prev_return.status='completed'
+            AND (pp.order_id<>order_items.order_id
               OR prev.action<>'cancel_unshipped_reservation'
               OR prev.reservation_id IS NOT ?
               OR prev.sold_unit_price<>order_items.unit_price
@@ -468,10 +478,38 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
                 SELECT COALESCE(SUM(later.contracted_quantity),0)
                 FROM return_v2_unified_lines later
                 JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+                JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
+                WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id))
+        )`
+      :line.action==='physical_return_pending'
+      ? `AND NOT EXISTS(
+          SELECT 1 FROM return_v2_unified_lines prev
+          JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+          JOIN returns prev_return ON prev_return.id=pp.return_id
+          WHERE prev.order_item_id=order_items.id AND prev_return.status='completed'
+            AND (pp.order_id<>order_items.order_id
+              OR prev.action<>'physical_return_pending'
+              OR prev.reservation_id IS NOT NULL OR prev.reservation_release<>0
+              OR prev.stock_quantity_change<>0
+              OR prev.sold_unit_price<>order_items.unit_price
+              OR prev.original_line_quantity<>order_items.quantity+(
+                SELECT COALESCE(SUM(later.contracted_quantity),0)
+                FROM return_v2_unified_lines later
+                JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+                JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
                 WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id))
         )`
       : `AND NOT EXISTS(SELECT 1 FROM return_v2_unified_lines prev
+          JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+          JOIN returns ret ON ret.id=pp.return_id AND ret.status='completed'
           WHERE prev.order_item_id=order_items.id)`
+    const priorItemReturnGuard=line.action==='physical_return_pending'
+      ? '' : `AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
+           ON ret.id=ri.return_id WHERE ri.order_item_id=order_items.id
+            AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?)
+            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items lb
+              JOIN return_v2_unified_postings up ON up.id=lb.posting_id
+              WHERE lb.return_item_id=ri.id AND up.request_id=?))`
     statements.push(db.prepare(
       `UPDATE order_items SET quantity=quantity-?,line_total=(quantity-?)*unit_price,
        stock_writeoff_status=CASE WHEN quantity=? AND ? NOT IN ('physical_return_pending','cancel_workshop_obligation','cancel_unreserved_obligation')
@@ -479,17 +517,13 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
        WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
          AND stock_writeoff_status=? AND line_total=quantity*unit_price
          `+sameItemHistoryGuard+`
-         AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
-           ON ret.id=ri.return_id WHERE ri.order_item_id=order_items.id
-            AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?)
-            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items lb
-              JOIN return_v2_unified_postings up ON up.id=lb.posting_id
-              WHERE lb.return_item_id=ri.id AND up.request_id=?))
+         `+priorItemReturnGuard+`
          `+guard
     ).bind(line.quantity,line.quantity,line.quantity,line.action,
       line.orderItemId,wanted.orderId,line.originalQty,line.unitPrice,
       line.oldStatus,...(line.action==='cancel_unshipped_reservation'?[r!.id]:[]),
-      wanted.requestId,wanted.requestId,...guardArgs))
+      ...(line.action==='physical_return_pending'?[]:[wanted.requestId,wanted.requestId]),
+      ...guardArgs))
     statements.push(changed(db,'contract_line'))
     statements.push(db.prepare(
       `INSERT INTO return_v2_unified_lines(
