@@ -21,3 +21,14 @@
 .sku-lookup-result{display:flex;flex-direction:column;gap:7px;font-size:13px;overflow-wrap:anywhere}
 .sku-lookup-result small{font-size:11px;color:var(--muted,#666)}
 .sku-lookup-result button{align-self:flex-start}
+
+.catalog-size-entry{display:grid;min-width:0;gap:4px;align-content:start}
+.catalog-size-entry>.catalog-size-tile{width:100%;min-width:0}
+.catalog-size-entry .sku-barcode-action{min-width:0}
+.catalog-size-entry .sku-barcode-trigger{width:100%;min-width:0;font-size:11px;min-height:28px;padding:4px 5px;line-height:1.2}
+.catalog-sku-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.catalog-sku-head-actions .sku-barcode-action{min-width:0}
+@media(max-width:460px){
+  .catalog-sku-head-actions{justify-content:flex-start}
+  .catalog-size-entry .sku-barcode-trigger{font-size:10px}
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { encodeCode128B } from '../../../../shared/barcode-code128.ts'
 import './skuBarcodeLabel.css'
 
@@ -45,10 +45,8 @@ function printableBarcodeSvg(code: string): string {
     '<rect width="' + encoded.width + '" height="64" fill="#fff"/>' + bars + '</svg>'
 }
 
-function printSkuLabel(record: SkuBarcodeRecord): boolean {
+function printSkuLabel(record: SkuBarcodeRecord, printWindow: Window): boolean {
   if (!record.barcode || !record.active) return false
-  const printWindow = window.open('', '_blank', 'width=620,height=460')
-  if (!printWindow) return false
   const title = htmlEscape(clean(record.productName))
   const description = [record.color, record.size, record.gender].map(clean).filter(Boolean).join(' · ')
   const execution = [record.material, record.length].map(clean).filter(x => x && x !== 'СТАНДАРТ').join(' · ')
@@ -79,10 +77,20 @@ function printSkuLabel(record: SkuBarcodeRecord): boolean {
   return true
 }
 
-export function SkuBarcodeButton({ variantId }: { variantId: number }) {
+export function SkuBarcodeButton({ variantId, compact = false }: { variantId: number; compact?: boolean }) {
   const [record, setRecord] = useState<SkuBarcodeRecord | null>(null)
   const [loading, setLoading] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!record) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRecord(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [record])
 
   const open = async () => {
     if (loading) return
@@ -105,9 +113,38 @@ export function SkuBarcodeButton({ variantId }: { variantId: number }) {
     }
   }
 
+  const printVerified = async (label: SkuBarcodeRecord) => {
+    if (printing || !label.active || !label.barcode) return
+    const printWindow = window.open('', '_blank', 'width=620,height=460')
+    if (!printWindow) {
+      setError('Браузер заблокировал окно печати. Разрешите всплывающие окна для Orders-app.')
+      return
+    }
+    setPrinting(true)
+    setError('')
+    try {
+      const response = await fetch('/api/barcodes/sku/' + encodeURIComponent(String(variantId)), {
+        method: 'GET', credentials: 'same-origin', cache: 'no-store',
+      })
+      const fresh = await response.json() as SkuBarcodeRecord
+      if (!response.ok || !fresh.ok || !fresh.active || fresh.physicalUnit !== false ||
+          !fresh.barcode || fresh.barcode !== label.barcode) {
+        throw new Error('Позиция изменилась или больше неактивна. Печать отменена: обновите каталог.')
+      }
+      if (printWindow.closed) return
+      if (!printSkuLabel(fresh, printWindow)) throw new Error('Не удалось подготовить этикетку.')
+    } catch (cause) {
+      if (!printWindow.closed) printWindow.close()
+      setError(cause instanceof Error ? cause.message : 'Не удалось проверить SKU перед печатью.')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return <div className="sku-barcode-action">
-    <button type="button" className="secondary compact" disabled={loading} onClick={() => void open()}>
-      {loading ? 'Проверяю SKU…' : 'Штрихкод SKU'}
+    <button type="button" className="secondary compact sku-barcode-trigger" title="Этикетка варианта SKU (не отдельной физической вещи)"
+      disabled={loading} onClick={() => void open()}>
+      {loading ? 'Проверяю…' : compact ? 'Этикетка SKU' : 'Штрихкод SKU'}
     </button>
     {error ? <span role="alert" className="sku-barcode-error">{error}</span> : null}
     {record?.barcode ? (
@@ -125,12 +162,14 @@ export function SkuBarcodeButton({ variantId }: { variantId: number }) {
             <Code128Svg code={record.barcode}/>
             <strong className="sku-barcode-code">{record.barcode}</strong>
           </div>
-          <p className="sku-barcode-explanation">Это код SKU для поиска и маркировки полки.
-            Он одинаков для всех вещей данного варианта и не подтверждает приёмку или наличие.</p>
+          <p className="sku-barcode-explanation">Это этикетка варианта для поиска и маркировки полки.
+            Она одинакова для всех вещей данного варианта. Для индивидуального учёта вещей она не подходит.
+            Печать не меняет остатки или резервы.</p>
+          {error ? <p role="alert" className="sku-barcode-error">{error}</p> : null}
           <div className="sku-barcode-dialog-actions">
-            <button type="button" className="primary" onClick={() => {
-              if (!printSkuLabel(record)) setError('Браузер заблокировал окно печати. Разрешите всплывающие окна для Orders-app.')
-            }}>Открыть печать · 58 × 35 мм</button>
+            <button type="button" className="primary" disabled={printing} onClick={() => void printVerified(record)}>
+              {printing ? 'Проверяю актуальность…' : 'Печать SKU · 58 × 35 мм'}
+            </button>
           </div>
         </section>
       </div>

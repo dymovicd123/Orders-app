@@ -42,7 +42,13 @@ export function SkuBarcodeLookup({ onLocate }: { onLocate: (value: SkuLookupReco
       })
       const data = await response.json() as SkuLookupRecord & { message?: string }
       if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось найти штрихкод.')
-      if (generation === requestRef.current) setResult(data)
+      if (generation === requestRef.current) {
+        setResult(data)
+        if (data.active) {
+          onLocate(data)
+          inputRef.current?.select()
+        }
+      }
     } catch (cause) {
       if (generation === requestRef.current) {
         setError(cause instanceof Error ? cause.message : 'Ошибка чтения штрихкода.')
@@ -68,7 +74,7 @@ export function SkuBarcodeLookup({ onLocate }: { onLocate: (value: SkuLookupReco
     </button>
     {expanded ? <section className="sku-lookup-panel" aria-label="Поиск по штрихкоду SKU">
       <form onSubmit={event => { event.preventDefault(); void lookup() }}>
-        <label htmlFor="catalog-sku-barcode-scan">Штрихкод SKU</label>
+        <label htmlFor="catalog-sku-barcode-scan">Найти позицию по штрихкоду SKU</label>
         <div className="sku-lookup-row">
           <input id="catalog-sku-barcode-scan" ref={inputRef} type="text"
             autoComplete="off" spellCheck={false} placeholder="Сканируйте код или введите вручную"

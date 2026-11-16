@@ -1,0 +1,32 @@
+name: Barcode Branch2 workflow UX check
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/views/catalogPolishExecutionGroups.tsx'
+      - 'src/features/inventory/views/SkuBarcodeButton.tsx'
+      - 'src/features/inventory/views/SkuBarcodeLookup.tsx'
+      - 'src/features/inventory/views/skuBarcodeLabel.css'
+      - 'scripts/test-barcode-sku-workflow-ux-20261116.mjs'
+      - '.github/workflows/ci-barcode-workflow-ux-branch2-20261116.yml'
+permissions:
+  contents: read
+jobs:
+  barcode-workflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Barcode identity and scan regression
+        run: |
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-barcode-sku-http-domain-20261116.mjs
+          node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+          node scripts/test-barcode-sku-workflow-ux-20261116.mjs
+      - name: Typecheck and frontend build
+        run: npm run build
