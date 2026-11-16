@@ -1,0 +1,163 @@
+name: Main Return V2 activation once (pinned Worker version, D1 never written)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-return-v2-controlled-activation-20261116.yml'
+      - '.github/scripts/main_return_v2_worker_release.py'
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-return-v2-controlled-activation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check reviewed release script parses; D1 and Worker tests stay intact
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/main_return_v2_worker_release.py
+          node scripts/return-v2-main-readiness.mjs >/tmp/v2-local-schema.json
+          node scripts/test-return-v2-unified-finance-20261114.mjs >/tmp/v2-finance-suite.log 2>&1
+          npm run build
+          echo MAIN_V2_RELEASE_DRY_RUN_QA_PASS
+
+  activate:
+    if: ${{ github.event_name == 'issue_comment' && github.event.issue.number == 990 && github.event.comment.user.login == 'dymovicd123' && startsWith(github.event.comment.body, '/activate-return-v2-main ') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_COMMAND: ${{ github.event.comment.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Require exact approved Main commit and two release-only files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '418837f4e72e13239f5829e6ef54bd6821c66f1e'
+          test "$RELEASE_COMMAND" = "/activate-return-v2-main $(git rev-parse HEAD)"
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/scripts/main_return_v2_worker_release.py' '.github/workflows/main-return-v2-controlled-activation-20261116.yml')"
+          test "$actual" = "$expected"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          echo MAIN_V2_EXACT_SOURCE_AND_TARGET_PIN_PASS
+      - run: npm ci
+      - name: Validate production V2 schema and pristine journal (D1 READ ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/return-v2-main-readiness.mjs --remote >/tmp/main-v2-schema.json
+          jq -e '.schema.ready==true and .schema.foundTables==12 and .schema.foundColumns==10' /tmp/main-v2-schema.json >/dev/null
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM return_v2_unified_postings) AS unified,
+              (SELECT COUNT(*) FROM return_v2_postings) AS early,
+              (SELECT COUNT(*) FROM return_v2_unified_lines) AS lines,
+              (SELECT COUNT(*) FROM return_v2_unified_cancellations) AS cancellations
+          " > /tmp/main-v2-journal-check.json
+          jq -e '.[0].results[0] | .unified==0 and .early==0 and .lines==0 and .cancellations==0' /tmp/main-v2-journal-check.json >/dev/null
+          echo MAIN_V2_D1_READ_ONLY_ACTIVATION_READY
+      - name: Capture pre-release D1 time-travel point (no D1 writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > /tmp/main-v2-worker-release-time
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No Time Travel recovery bookmark") end' > /tmp/main-v2-worker-d1-bookmark
+          test -s /tmp/main-v2-worker-d1-bookmark
+          echo "Pre-activation D1 recovery time UTC: $(cat /tmp/main-v2-worker-release-time)" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Time Travel bookmark captured; no automatic D1 restore is permitted.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Prove live Worker, D1 and two existing admin secrets are unchanged
+        run: python3 .github/scripts/main_return_v2_worker_release.py baseline
+      - name: Build reviewed Main source and upload NEW VERSION WITHOUT DEPLOYING
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build >/tmp/main-v2-compile.log 2>&1
+          if ! npx --no-install wrangler versions upload \
+            --config wrangler.jsonc --name orders-app \
+            --var RETURN_V2_ENABLED:true --keep-vars --strict \
+            --tag return-v2-main-20261116 \
+            --message "Main Return V2 reviewed SHA $GITHUB_SHA" \
+            >/tmp/main-v2-upload.log 2>&1; then
+            echo "::error::Worker version upload failed. Live production version was NOT changed."
+            exit 1
+          fi
+          echo MAIN_V2_EXACT_CODE_UPLOAD_AS_UNDEPLOYED_DRAFT
+      - name: Prove NEW version preserves admin secrets, D1 and flag=true
+        run: python3 .github/scripts/main_return_v2_worker_release.py new
+      - name: Deploy exactly checked new version to 100% Main
+        run: python3 .github/scripts/main_return_v2_worker_release.py deploy
+      - name: Check production anonymous authentication and asset route
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error
+          base='https://orders-app.orders-clothes.workers.dev'
+          for path in ('/api/auth/status','/'):
+            request=urllib.request.Request(base+path,headers={'User-Agent':'Mozilla/5.0'})
+            try:
+              with urllib.request.urlopen(request,timeout=25) as response:
+                status=response.status
+            except urllib.error.HTTPError as exc:
+              status=exc.code
+            print('MAIN_V2_ANONYMOUS_SMOKE',path,status)
+            if status>=500 or status not in (200,401,403):
+              raise SystemExit('Unexpected public app status after controlled V2 Worker deployment.')
+          PY
+      - name: Roll back Worker only if post-deploy anonymous smoke FAILED
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          if test -f /tmp/return-v2-main-worker-version-state.json; then
+            python3 - <<'PY'
+          import json
+          p='/tmp/return-v2-main-worker-version-state.json'
+          s=json.load(open(p))
+          print('Release deployed before failure:',s.get('deployed'))
+          PY
+            if jq -e '.deployed==true' /tmp/return-v2-main-worker-version-state.json >/dev/null; then
+              python3 .github/scripts/main_return_v2_worker_release.py rollback
+            fi
+          fi
+      - name: Final release proof and cleanup
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/return-v2-main-worker-version-state.json; then
+            jq -r '"Previous Worker version: "+.before+"\nPrepared V2 version: "+(.new//"none")' /tmp/return-v2-main-worker-version-state.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -f /tmp/main-v2-schema.json /tmp/main-v2-journal-check.json
+          rm -f /tmp/main-v2-worker-d1-bookmark /tmp/main-v2-worker-release-time
+          rm -f /tmp/main-v2-compile.log /tmp/main-v2-upload.log /tmp/return-v2-main-worker-version-state.json
