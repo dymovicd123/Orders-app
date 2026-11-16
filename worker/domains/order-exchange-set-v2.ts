@@ -1,3 +1,4 @@
+import { assertActivePaymentMethods } from './payment-method-validation.ts'
 import { readJson } from '../core/http.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizeSourceType, toInt } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
@@ -523,6 +524,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
       const refundParts = normalizeMoneyParts(input.refundParts, settlement.refundAmount, input.refundMethod)
       const paymentMethod = moneyMethodsSummary(paymentParts)
       const refundMethod = moneyMethodsSummary(refundParts)
+      await assertActivePaymentMethods(db, [...paymentParts, ...refundParts].map(part => part.method))
 
       const financialAction: ExchangeSetExecutionPlan['financialAction'] = paymentAmount > 0
         ? 'extra_payment'
