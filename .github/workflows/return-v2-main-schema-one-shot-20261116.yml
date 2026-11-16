@@ -1,0 +1,187 @@
+name: Return V2 Main D1 schema once (bookmark first, no Worker deploy)
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/return-v2-main-schema-one-shot-20261116.yml']
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: return-v2-main-schema-one-shot
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Prove all migrations and exact immutable production target on disposable SQLite
+        run: |
+          set -euo pipefail
+          node scripts/return-v2-main-readiness.mjs
+          node scripts/test-return-v2-unified-finance-20261114.mjs
+          test "$(grep -c '^ALTER TABLE' migrations/0125_return_v2_contract_quantity_marker.sql)" = 1
+          echo "RETURN_V2_MAIN_SCHEMA_WORKFLOW_PREVIEW_PASS"
+
+  install:
+    if: ${{ github.event_name == 'issue_comment' && github.event.issue.number == 990 && github.event.comment.user.login == 'dymovicd123' && startsWith(github.event.comment.body, '/install-return-v2-main-schema ') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_COMMAND: ${{ github.event.comment.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Exact operator authorization, one-shot commit and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$(git branch --show-current)" = 'main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'a3a85f0121b47679d35604d1501ba7932dc92ed5'
+          test "$RELEASE_COMMAND" = "/install-return-v2-main-schema $(git rev-parse HEAD)"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = '.github/workflows/return-v2-main-schema-one-shot-20261116.yml'
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|0904a573-21ff-44d8-93b0-c9200f771702' wrangler.jsonc
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          echo "RETURN_V2_MAIN_PINNED_SCHEMA_ONLY_SCOPE_PASS"
+      - run: npm ci
+      - name: Validate all 12 additive migrations in disposable SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/return-v2-main-readiness.mjs >/tmp/return-v2-local.json
+          jq -e '.target=="orders-app" and .schema.ready==true and .migrations.count==12' /tmp/return-v2-local.json >/dev/null
+          for n in $(seq 124 135); do
+            file="$(find migrations -maxdepth 1 -type f -name "0$n"'_return_v2_*.sql' -print -quit)"
+            test -n "$file" && test -f "$file"
+            ! grep -Eiq '^[[:space:]]*(DELETE|DROP|UPDATE|REPLACE|TRUNCATE|INSERT)[[:space:]]' "$file"
+          done
+          node scripts/test-return-v2-unified-finance-20261114.mjs >/tmp/return-v2-test.log 2>&1 || { echo "::error::Main Return V2 SQLite tests failed; migration NOT attempted"; exit 1; }
+          echo "RETURN_V2_MAIN_LOCAL_SCHEMA_AND_FINANCE_PASS"
+      - name: Require pristine production Return V2 schema (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          node scripts/return-v2-main-readiness.mjs --remote > /tmp/return-v2-before-schema.json
+          status=$?
+          set -e
+          test "$status" -eq 2
+          jq -e '.target=="orders-app" and .database=="orders_db_prod"
+            and .schema.ready==false and .schema.foundTables==0 and .schema.foundColumns==0
+            and .schema.expectedTables==12 and .schema.expectedColumns==10' /tmp/return-v2-before-schema.json >/dev/null
+          echo "RETURN_V2_MAIN_REMOTE_PRISTINE_SCHEMA_PASS"
+      - name: Capture Cloudflare D1 Time Travel recovery point BEFORE all schema writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          date -u +'%Y-%m-%dT%H:%M:%SZ' >/tmp/return-v2-recovery-utc
+          curl --fail-with-body -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32)
+                 then .result.bookmark else error("No validated Time Travel bookmark") end' > /tmp/return-v2-recovery-bookmark
+          test -s /tmp/return-v2-recovery-bookmark
+          echo "Pre-migration D1 recovery timestamp (UTC): $(cat /tmp/return-v2-recovery-utc)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bookmark confirmed (not disclosed); Time Travel restoration is destructive and is NEVER automatic." >> "$GITHUB_STEP_SUMMARY"
+          echo "RETURN_V2_MAIN_TIME_TRAVEL_BOOKMARK_CAPTURED"
+      - name: Record private read-only business totals before migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT
+             (SELECT COUNT(*) FROM orders) AS orders_count,
+             (SELECT COUNT(*) FROM order_items) AS items_count,
+             (SELECT COUNT(*) FROM returns) AS returns_count,
+             (SELECT COUNT(*) FROM return_items) AS returned_items_count,
+             (SELECT COUNT(*) FROM payments) AS payments_count,
+             (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+             (SELECT COUNT(*) FROM inventory_reservations) AS reserve_rows,
+             (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+             (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+             (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+             (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_total,
+             (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity_total,
+             (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total
+          " > /tmp/return-v2-before-business.json
+          jq -e '.[0].results[0] | .orders_count>=1 and .items_count>=1' /tmp/return-v2-before-business.json >/dev/null
+          test -s /tmp/return-v2-recovery-bookmark
+          echo "RETURN_V2_MAIN_BUSINESS_BASELINE_CAPTURED"
+      - name: Apply exactly 0124-0135 additive Return V2 SQL, never touch Worker or activation flag
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /tmp/return-v2-recovery-bookmark
+          test -s /tmp/return-v2-before-business.json
+          for n in $(seq 124 135); do
+            file="$(find migrations -maxdepth 1 -type f -name "0$n"'_return_v2_*.sql' -print -quit)"
+            test -n "$file" && test -f "$file"
+            if ! npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file "$file" >/tmp/return-v2-d1-command.log 2>&1; then
+              echo "::error::Migration $n FAILED: partial schema may exist. STOP; do not enable V2 or rerun blindly."
+              exit 1
+            fi
+            echo "Return V2 additive migration $n applied"
+          done
+      - name: Verify exact production capability and historical business totals
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/return-v2-main-readiness.mjs --remote > /tmp/return-v2-after-schema.json
+          jq -e '.target=="orders-app" and .schema.ready==true
+            and .schema.foundTables==12 and .schema.foundColumns==10' /tmp/return-v2-after-schema.json >/dev/null
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT
+             (SELECT COUNT(*) FROM orders) AS orders_count,
+             (SELECT COUNT(*) FROM order_items) AS items_count,
+             (SELECT COUNT(*) FROM returns) AS returns_count,
+             (SELECT COUNT(*) FROM return_items) AS returned_items_count,
+             (SELECT COUNT(*) FROM payments) AS payments_count,
+             (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+             (SELECT COUNT(*) FROM inventory_reservations) AS reserve_rows,
+             (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+             (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+             (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+             (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_total,
+             (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity_total,
+             (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total
+          " > /tmp/return-v2-after-business.json
+          if ! diff -q <(jq -cS '.[0].results[0]' /tmp/return-v2-before-business.json) <(jq -cS '.[0].results[0]' /tmp/return-v2-after-business.json) >/dev/null; then
+            echo "::warning::Business aggregates changed; may be live customer activity. Independent audit required before enabling Return V2."
+            echo "Schema installed, but live activity or altered totals require review." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "All measured pre-existing business totals remained unchanged." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "RETURN_V2_MAIN_SCHEMA_12_TABLES_10_COLUMNS_READY_FLAG_OFF"
+      - name: Remove ephemeral validation and recovery files from runner
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/return-v2-recovery-bookmark /tmp/return-v2-recovery-utc
+          rm -f /tmp/return-v2-before-business.json /tmp/return-v2-after-business.json
+          rm -f /tmp/return-v2-before-schema.json /tmp/return-v2-after-schema.json
+          rm -f /tmp/return-v2-d1-command.log /tmp/return-v2-local.json /tmp/return-v2-test.log
