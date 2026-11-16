@@ -16,7 +16,7 @@ export async function assertActivePaymentMethod(
      WHERE kind = 'payment_method' AND is_active = 1`,
   ).all<{ value: string }>()
   const matched = (result.results || []).find(row =>
-    upperText(row.value).replace(/\\s+/g, ' ').trim() === method
+    upperText(row.value).replace(/\s+/g, ' ').trim() === method
   )
   if (!matched) throw new Error(`${label} «${method}» отсутствует среди активных способов оплаты.`)
   return upperText(matched.value)
