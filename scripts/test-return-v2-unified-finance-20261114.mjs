@@ -1934,6 +1934,75 @@ const qaFlowUi=fs.readFileSync('src/features/sections/OrderReturnV2Flow.tsx','ut
 assert(qaFlowUi.includes("rejected?.code==='return_v2_not_eligible'"))
 assert(qaFlowUi.includes("setUnknownResult(false)"))
 assert(qaFlowUi.includes("setEligible(false)"))
+
+// Work QA F3: a completed zero-money Exchange Set replaced one of two shipped
+// originals. Its replacement is still reserved, not dispatched. The order's
+// aggregate shipping_status remains sent but cannot override line evidence.
+addOrder(10610,10611,'QA-V2-PARTIAL-EXCHANGE-REMAIN',440,2)
+qaMoveShipmentSku(10611,2)
+qaFresh(10610,10611)
+const f3Ship=await api('POST','/api/orders/10610/shipping/dispatches',{
+ requestId:'qa-v2-partial-exchange-shipment-0001',
+ items:[{orderItemId:10611,quantity:2}]
+})
+assert.equal(f3Ship.shippedQuantity,2)
+const f3At=new Date().toISOString()
+sql.prepare('UPDATE order_items SET quantity=1,line_total=440 WHERE id=10611').run()
+sql.prepare(`INSERT INTO order_items(
+ id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,
+ is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at)
+ VALUES(10612,10610,9521,9531,'QA REPLACEMENT NOT SHIPPED',1,440,440,
+ 0,'warehouse','reserved',?,'qa-v2-exchange-new',?)`).run(f3At,f3At)
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=9541').run()
+sql.prepare(`INSERT INTO inventory_reservations(
+ order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
+ VALUES(10610,10612,'warehouse',9521,9531,1,'active',?,?)`).run(f3At,f3At)
+sql.prepare(`INSERT INTO exchanges
+ (id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,
+ new_source_type,status,financial_action,financial_amount,created_at)
+ VALUES(10613,10610,'2026-11-16',NULL,0,NULL,'warehouse','completed','none',0,?)`).run(f3At)
+for(const [role,itemId] of [['old',10611],['new',10612]]){
+ sql.prepare(`INSERT INTO exchange_items
+ (exchange_id,role,order_item_id,product_name_snapshot,quantity,created_at)
+ VALUES(10613,?,?,?,1,?)`).run(role,itemId,'QA partial exchange line',f3At)
+}
+sql.prepare('UPDATE orders SET updated_at=? WHERE id=10610').run(f3At)
+const f3BeforeStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10502').get()
+const f3Initial=await callV2Http('GET','/api/orders/10610/returns/v2/preview')
+assert.equal(f3Initial.eligible,true)
+assert.deepEqual(f3Initial.evidence.lines.map(l=>l.proposedAction),
+ ['physical_return_pending','cancel_unshipped_reservation'])
+assert.equal(f3Initial.evidence.lines[0].dispatchedQuantity,2)
+assert.equal(f3Initial.evidence.lines[0].exchangedOldQuantity,1)
+assert.equal(f3Initial.evidence.lines[0].contractQuantity,1)
+assert.equal(f3Initial.evidence.lines[1].dispatchedQuantity,0)
+const f3Old=await callV2Http('POST','/api/orders/10610/returns/v2',{
+ requestId:'qa-v2-partial-exchange-old-return-001',
+ expectedOrderVersion:f3Initial.evidence.orderVersion,
+ items:[{orderItemId:10611,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(f3Old.remainingSale,440)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10611').get().quantity,0)
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10502').get(),f3BeforeStock)
+const f3NewPreview=await callV2Http('GET','/api/orders/10610/returns/v2/preview')
+assert.equal(f3NewPreview.eligible,true)
+assert.equal(f3NewPreview.evidence.lines[0].orderItemId,10612)
+assert.equal(f3NewPreview.evidence.lines[0].proposedAction,'cancel_unshipped_reservation')
+const f3New=await callV2Http('POST','/api/orders/10610/returns/v2',{
+ requestId:'qa-v2-partial-exchange-new-return-001',
+ expectedOrderVersion:f3NewPreview.evidence.orderVersion,
+ items:[{orderItemId:10612,quantity:1,receiptIntent:'pending'}],
+ refundAmount:0,refundMethod:''
+},201)
+assert.equal(f3New.remainingSale,0)
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=10612').get().quantity,0)
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=10612').get().status,'released')
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10502').get(),f3BeforeStock)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10611').get().n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10612').get().n,0)
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=10610 AND event_type=\'order_refund\'').get().n,0)
+console.log('RETURN_V2_F3_PARTIAL_EXCHANGE_QA_PASS')
 console.log('RETURN_V2_WORK_QA_P1_PASS: second shipped unit, post-cancellation return, preserved Workshop completion, full history and stale-form reset')
 
 sql.close()
