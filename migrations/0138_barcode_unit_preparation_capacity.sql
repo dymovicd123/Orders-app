@@ -48,3 +48,24 @@ BEGIN
       AND u.unit_status NOT IN ('issued','not_stock','retired')
   );
 END;
+
+CREATE TRIGGER IF NOT EXISTS trg_barcode_prepared_batch_cancel_integrity
+BEFORE UPDATE OF state ON barcode_print_batches
+FOR EACH ROW
+WHEN OLD.purpose = 'existing_stock'
+  AND OLD.state = 'prepared'
+  AND NEW.state = 'cancelled'
+BEGIN
+  SELECT RAISE(ABORT, 'BARCODE_CANCELLATION_UNIT_ALREADY_USED')
+  WHERE NOT EXISTS (
+    SELECT 1 FROM barcode_print_batch_labels bl WHERE bl.batch_id=OLD.batch_id
+  ) OR EXISTS (
+    SELECT 1 FROM barcode_print_batch_labels bl
+    JOIN inventory_unit_labels l ON l.token=bl.label_token
+    JOIN inventory_units u ON u.unit_id=l.unit_id
+    WHERE bl.batch_id=OLD.batch_id
+      AND (u.unit_status <> 'unverified'
+        OR u.coverage_status <> 'unlinked'
+        OR l.state <> 'active')
+  );
+END;
