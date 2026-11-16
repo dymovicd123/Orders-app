@@ -15,6 +15,7 @@ type BatchSummary = {
   source: 'warehouse' | 'boutique'
   quantity: number
   canReprint: boolean
+  canCancel: boolean
 }
 type Preview = { ok: boolean; maximumPerBatch: number; locations: Location[]; recentBatches: BatchSummary[]; message?: string }
 type Batch = {
@@ -90,6 +91,8 @@ export function UnitBarcodePreparation({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [confirmCancelId, setConfirmCancelId] = useState('')
   const [error, setError] = useState('')
   const requestIdRef = useRef('')
   const requestRef = useRef(0)
@@ -137,7 +140,7 @@ export function UnitBarcodePreparation({
     quantity <= (preview?.maximumPerBatch || 20) && !location?.discrepancy)
 
   const create = async () => {
-    if (!canPrepare || saving) return
+    if (!canPrepare || saving || cancelling) return
     const requestId = requestIdRef.current || crypto.randomUUID()
     requestIdRef.current = requestId
     setSaving(true)
@@ -174,6 +177,26 @@ export function UnitBarcodePreparation({
     }
   }
 
+  const cancelBatch = async (batchId: string) => {
+    if (cancelling || saving || printing) return
+    setCancelling(true)
+    setError('')
+    try {
+      const response = await fetch('/api/barcodes/units/batches/' + encodeURIComponent(batchId) + '/cancel', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      })
+      await readJson<{ ok: boolean }>(response)
+      if (batch?.batchId === batchId) setBatch(null)
+      setConfirmCancelId('')
+      requestIdRef.current = ''
+      await reload()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось аннулировать партию')
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   const print = async () => {
     if (!batch || printing) return
     const printWindow = window.open('', '_blank', 'width=680,height=530')
@@ -204,6 +227,7 @@ export function UnitBarcodePreparation({
   return <div className="unit-barcode-entry">
     <button className="secondary compact" type="button" onClick={() => {
       setBatch(null)
+      setConfirmCancelId('')
       setOpen(true)
     }}>Маркировать вещи</button>
     {open ? <div className="unit-barcode-overlay" role="presentation" onMouseDown={event => {
@@ -216,7 +240,7 @@ export function UnitBarcodePreparation({
             <h3>Маркировать вещи</h3>
             <p>{productName} · {variantLabel}</p>
           </div>
-          <button type="button" className="secondary compact" disabled={saving || printing}
+          <button type="button" className="secondary compact" disabled={saving || printing || cancelling}
             onClick={() => setOpen(false)}>Закрыть</button>
         </div>
         <p className="unit-barcode-note">Для каждой физической вещи создаётся отдельный код.
@@ -253,10 +277,10 @@ export function UnitBarcodePreparation({
         {error ? <p className="unit-barcode-error" role="alert">{error}</p> : null}
         <div className="unit-barcode-action-row">
           <button className="primary compact" type="button"
-            disabled={!canPrepare || saving || loading} onClick={() => void create()}>
+            disabled={!canPrepare || saving || loading || cancelling} onClick={() => void create()}>
             {saving ? 'Сохраняю…' : `Подготовить ${quantity} ${quantity === 1 ? 'этикетку' : 'этикетки'}`}
           </button>
-          <button className="secondary compact" type="button" disabled={loading || saving}
+          <button className="secondary compact" type="button" disabled={loading || saving || cancelling}
             onClick={() => void reload()}>Обновить остатки</button>
         </div>
         {batch ? <div className="unit-barcode-success" role="status">
@@ -267,14 +291,29 @@ export function UnitBarcodePreparation({
         </div> : null}
         {preview?.recentBatches.length ? <div className="unit-barcode-recent">
           <strong>Недавние партии · повторная печать</strong>
-          {preview.recentBatches.map(row => <div key={row.batchId} className="unit-barcode-recent-row">
+          {preview.recentBatches.map(row => <div key={row.batchId} className="unit-barcode-recent-item"><div className="unit-barcode-recent-row">
             <span>{sourceName(row.source)} · {row.quantity} шт · {new Date(row.createdAt).toLocaleDateString('ru-RU')}</span>
-            <button type="button" className="secondary compact"
-              disabled={!row.canReprint || loading || saving}
-              onClick={() => void loadExisting(row.batchId)}>
-              {row.canReprint ? 'Открыть' : 'Код отозван'}
+            <div className="unit-barcode-recent-actions">
+              <button type="button" className="secondary compact"
+                disabled={!row.canReprint || loading || saving || cancelling}
+                onClick={() => void loadExisting(row.batchId)}>
+                {row.canReprint ? 'Повторить печать' : 'Недействительна'}
+              </button>
+              {row.canCancel ? <button type="button" className="secondary compact"
+                disabled={cancelling || saving || printing} onClick={() => setConfirmCancelId(row.batchId)}>
+                Аннулировать
+              </button> : null}
+            </div>
+          </div>
+          {confirmCancelId === row.batchId ? <div key={row.batchId + '-confirm'} className="unit-barcode-cancel-warning" role="alert">
+            <span>Все {row.quantity} кодов станут недействительными. Если этикетки уже наклеены, их необходимо снять.</span>
+            <button className="danger compact" type="button" disabled={cancelling}
+              onClick={() => void cancelBatch(row.batchId)}>
+              {cancelling ? 'Аннулирую…' : 'Подтвердить аннулирование'}
             </button>
-          </div>)}
+            <button className="secondary compact" type="button" disabled={cancelling}
+              onClick={() => setConfirmCancelId('')}>Отмена</button>
+          </div> : null}</div>)}
         </div> : null}
       </section>
     </div> : null}
