@@ -75,16 +75,18 @@ jobs:
           db=[x for x in bindings if x.get('name')=='DB']
           if len(db)!=1 or db[0].get('type')!='d1' or (db[0].get('database_id') or db[0].get('id'))!='17e68a41-1d58-4a36-8a63-47c3e32443c4':
             raise SystemExit('Unexpected active production DB binding')
-          assets=[x for x in bindings if x.get('type')=='assets']
-          if len(assets)!=1:raise SystemExit('Unexpected assets binding')
+          secret_bindings={x.get('name'):x for x in bindings if x.get('type')=='secret_text'}
+          if set(secret_bindings)!={'ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
+            raise SystemExit('Missing or unreviewed production admin secret bindings')
           flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
-          enabled=len(flags)==1 and flags[0].get('type')=='plain_text' and flags[0].get('text')=='true'
-          if enabled:raise SystemExit('Return V2 is already LIVE; stop before second activation')
-          if flags:raise SystemExit('Unexpected or ambiguous V2 flag on active Worker')
-          unexpected=[b.get('name','') for b in bindings if b not in db+assets]
-          if unexpected:raise SystemExit('Unreviewed active bindings: '+','.join(unexpected))
+          if flags:raise SystemExit('Unexpected V2 flag on active production Worker')
+          if len(bindings)!=3 or {x.get('name') for x in bindings}!={'DB','ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
+            raise SystemExit('Unexpected active Worker binding inventory')
+          listing=get('/versions?per_page=5').get('items') or []
+          if not listing or listing[0].get('id')!=version_id:
+            raise SystemExit('Latest uploaded Worker version differs from the 100%-active production version')
           print('MAIN_ACTIVE_VERSION_ID:',version_id)
-          print('MAIN_D1_BINDING_APPROVED_ASSETS_PRESENT_V2_OFF')
+          print('MAIN_D1_AND_TWO_ADMIN_SECRETS_PRESERVED_V2_OFF')
           print('NO D1 WRITE, NO WORKER SETTINGS UPDATE, NO DEPLOY')
           PY
       - name: Cleanup ephemeral output
