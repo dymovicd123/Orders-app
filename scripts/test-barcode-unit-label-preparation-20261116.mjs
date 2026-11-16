@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  cancelPreparedUnitLabelBatch, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch,
+  cancelPreparedUnitLabelBatch, lookupIndividualUnitBarcode, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch,
 } from '../worker/domains/barcode-unit-preparation.ts'
 import { isUnitBarcode } from '../shared/barcode-unit.ts'
 import { encodeCode128B } from '../shared/barcode-code128.ts'
@@ -168,6 +168,20 @@ await assert.rejects(readPreparedUnitLabelBatch(d1, first.batchId), /отозв�
 assert.equal((await previewUnitBarcodePreparation(d1, 101)).recentBatches.some(x =>
   x.batchId === first.batchId && !x.canReprint), true)
 assert.deepEqual(stock(), snapshot)
+const found = await lookupIndividualUnitBarcode(d1, last.labels[0].token.toLowerCase())
+assert.equal(found.ok, true)
+assert.equal(found.barcodeType, 'unit')
+assert.equal(found.variantId, 101)
+assert.equal(found.active, true)
+assert.equal(found.verified, false)
+assert.equal(found.status, 'prepared')
+const expired = await lookupIndividualUnitBarcode(d1, boutique.labels[0].token)
+assert.equal(expired.ok, true)
+assert.equal(expired.status, 'revoked')
+assert.equal(expired.active, false)
+assert.equal((await lookupIndividualUnitBarcode(d1, 'OCU1-INVALID')).code, 'invalid_unit_barcode')
+assert.deepEqual(stock(), snapshot)
+
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(), [])
 
 const routes = readFileSync('worker/index.ts','utf8')
@@ -180,6 +194,9 @@ assert(ui.includes('Подтвердить аннулирование'), 'must a
 assert(routes.includes("barcodeCancelMatch && request.method === 'POST'"), 'cancel route must be authenticated and available')
 assert(ui.includes('window.open(\'\', \'_blank\''), 'printing must open browser popup before await')
 assert(card.includes('<UnitBarcodePreparation'), 'marking must be reachable in exact variant card')
+assert(routes.includes("code.trim().toUpperCase().startsWith('OCU1-')"), 'the same scanner must look up OCU1')
+const scanner = readFileSync('src/features/inventory/views/SkuBarcodeLookup.tsx', 'utf8')
+assert(scanner.includes('Индивидуальная метка аннулирована') && scanner.includes('наличие не подтверждено'), 'scanner status must be human readable')
 for (const name of ['inventory_stock','inventory_movements','inventory_reservations','order_items']) {
   const source = readFileSync('worker/domains/barcode-unit-preparation.ts','utf8')
   assert(!new RegExp('(?:UPDATE|DELETE\\s+FROM|INSERT\\s+INTO)\\s+' + name, 'i').test(source),
