@@ -1,0 +1,133 @@
+name: Branch2 Barcode SKU controlled deploy 2026-11-16 (NO Main)
+
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-barcode-sku-controlled-publish-20261116.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch2-controlled-worker-deployment
+  cancel-in-progress: false
+
+jobs:
+  branch2-only:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Assert reviewed Branch2-only source and D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '9b5f6623cf6cc342b4fab611baa1bf9a5a13d61f'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config=json.loads(Path('wrangler.jsonc').read_text())
+          assert config['name']=='orders-app-branch2'
+          assert config['main']=='worker/index.ts'
+          assert config['d1_databases']==[{'binding':'DB','database_name':'orders_db_branch2_mirror_20261027','database_id':'0904a573-21ff-44d8-93b0-c9200f771702'}]
+          assert config.get('env') is None
+          assert config.get('vars',{}).get('RETURN_V2_ENABLED') is None
+          config['keep_vars']=True
+          config['send_metrics']=False
+          Path('.branch2-barcode-controlled.jsonc').write_text(json.dumps(config,indent=2)+'\n')
+          print('BRANCH2_BARCODE_RELEASE_TARGET_CONFIRMED')
+          PY
+      - name: Preflight current remote Worker settings (READ ONLY)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: result=json.load(r)
+          if not result.get('success'):raise SystemExit('FAILED Cloudflare Worker settings read')
+          bindings=result['result'].get('bindings',[])
+          dbs=[b for b in bindings if b.get('name')=='DB']
+          if len(dbs)!=1 or dbs[0].get('type')!='d1' or (dbs[0].get('database_id') or dbs[0].get('id'))!='0904a573-21ff-44d8-93b0-c9200f771702':
+            raise SystemExit('FAILED Branch2 Worker D1 is not the test DB')
+          baseline={b.get('name'):b.get('type') for b in bindings if b.get('name')!='DB'}
+          if 'ADMIN_MODE_SESSION_SECRET' not in baseline:
+            raise SystemExit('FAILED expected existing Worker secret is missing')
+          from pathlib import Path
+          Path('.branch2-worker-bindings-before.json').write_text(json.dumps(baseline))
+          print('BRANCH2_BARCODE_PRE_DEPLOY_BINDINGS_OK')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Test barcode and baseline business behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-barcode-sku-http-domain-20261116.mjs
+          npm run build
+          echo BRANCH2_BARCODE_BUILD_PASS
+      - name: Wrangler Branch2 dry run (NO upload)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler deploy --config .branch2-barcode-controlled.jsonc --name orders-app-branch2 --keep-vars --strict --dry-run --outdir .branch2-barcode-preview
+          echo BRANCH2_BARCODE_DRY_RUN_PASS
+      - name: Deploy ONLY Branch2 Worker, preserving existing vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler deploy --config .branch2-barcode-controlled.jsonc --name orders-app-branch2 --keep-vars --strict
+          echo BRANCH2_BARCODE_DEPLOY_ONLY_TEST_WORKER_PASS
+      - name: Verify Worker D1 and previous variables/secrets after release (READ ONLY)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          from pathlib import Path
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r:result=json.load(r)
+          if not result.get('success'):raise SystemExit('FAILED postdeployment Worker settings read')
+          bindings=result['result'].get('bindings',[])
+          dbs=[b for b in bindings if b.get('name')=='DB']
+          if len(dbs)!=1 or dbs[0].get('type')!='d1' or (dbs[0].get('database_id') or dbs[0].get('id'))!='0904a573-21ff-44d8-93b0-c9200f771702':
+            raise SystemExit('FAILED postdeployment Branch2 DB separation')
+          old=json.loads(Path('.branch2-worker-bindings-before.json').read_text())
+          now={b.get('name'):b.get('type') for b in bindings if b.get('name')!='DB'}
+          for key,kind in old.items():
+            if now.get(key)!=kind:raise SystemExit('FAILED missing/changed existing Worker binding '+key)
+          print('BRANCH2_BARCODE_DEPLOY_BINDING_PRESERVATION_PASS')
+          PY
+      - name: Branch2 health check (READ ONLY)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          url='https://orders-app-branch2.orders-clothes.workers.dev/api/health'
+          with urllib.request.urlopen(url,timeout=30) as r:
+            status=r.status
+            body=r.read(10000).decode('utf8','replace')
+          if status!=200:raise SystemExit('Branch2 health is not HTTP 200: '+str(status))
+          print('BRANCH2_BARCODE_HEALTH_200_PASS')
+          PY
