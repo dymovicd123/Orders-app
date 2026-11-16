@@ -12,6 +12,7 @@ import { getOrder } from './orders-write.ts'
 import { moneyMethodsSummary, normalizeMoneyParts } from './return-exchange-payment-channels.ts'
 import type { MoneyPartInput } from './return-exchange-payment-channels.ts'
 import { noStandaloneReturnSql } from './order-return-capacity.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 // Item-level dispatch is authoritative even while another item of the same
 // order has not been shipped. In particular, ready Workshop goods have no
@@ -53,6 +54,7 @@ export async function createReturn(
   if (!orderId) {
     throw new Error('orderId is required.');
   }
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'return_create');
 
   let existing = await getOrder(db, orderId);
   if (!existing) {
@@ -264,6 +266,13 @@ export async function createReturn(
   if (!returnId) {
     const leaseUntil = Date.now() + 45_000;
     const createStatements: D1PreparedStatement[] = [
+      // This check runs IN THE SAME ATOMIC batch as the legacy Return header.
+      // A zero-money Return otherwise bypasses the old available-cash CAS.
+      ...(v2Gate.v2SchemaReady ? [db.prepare(
+        `SELECT json('V1_RETURN_V2_CONFLICT')
+          WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+             AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+       ).bind(orderId)] : []),
       db.prepare(
         `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
          VALUES (?, ?, ?,
@@ -321,6 +330,10 @@ export async function createReturn(
     try {
       await db.batch(createStatements);
     } catch (error) {
+      // If V2 won after the initial preflight, do not disguise the cause as
+      // a price/quantity error; refuse all legacy Return changes.
+      if(v2Gate.v2SchemaReady)
+        await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'return_create');
       const raw = cleanText(error instanceof Error ? error.message : error);
       if (/not null constraint failed:\s*returns\.amount/i.test(raw)) {
         throw new CriticalOperationConflictError(

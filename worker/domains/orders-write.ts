@@ -17,6 +17,9 @@ import { hydratePickedOrderItems } from './order-source-picker.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
+import { readReturnV2LegacyMutationGate } from './return-v2-legacy-mutation-guard.ts'
+import { updateReturnV2Metadata, type VersionedMetadataCorrection } from './return-v2-metadata-correction.ts'
 
 export async function applyOrderStockWriteOff(
   db: D1Database,
@@ -1249,6 +1252,22 @@ export async function updateOrderCritical(
     throw new CriticalOperationConflictError(
       'Удаление выполняется только отдельным действием администратора с предпросмотром последствий.'
     );
+  // A post-Return V2 order is not locked forever: the existing narrow
+  // "Исправить реквизиты" form uses a dedicated versioned metadata transaction.
+  // It MUST NOT reuse the legacy editor's money/stock critical saga.
+  const history=await readReturnV2LegacyMutationGate(db,id);
+  if(history.v2History!=='none' && history.v2History!=='conflict'
+      && options.lifecycleAction!=='order_delete' && managerMetadataOnly){
+    return await updateReturnV2Metadata(db,{
+      orderId:id,requestId:cleanText(input.requestId),
+      correction:(raw.metadataCorrection as VersionedMetadataCorrection),
+      actorRole:cleanText(actor?.role),actorLabel:cleanText(checkedBy)
+    });
+  }
+  // Every other historical editor operation remains guarded, including
+  // price, payment, full item rewrite, and deletion.
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,id,
+    options.lifecycleAction==='order_delete'?'order_delete':'order_edit');
   await ensureOrderItemWorkshopColumn(db);
   // Safely update non-stock, non-money order details without constructing the
   // large legacy editor draft. The existing saga still owns retries and IDs.
@@ -1293,6 +1312,17 @@ export async function updateOrderCritical(
   try {
     criticalOperation = await beginCriticalOperation(db, 'order_edit', input.requestId, { orderId: id, ...input }, { orderId: id });
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
+    // Close the gap between first preflight and critical-operation lease. A
+    // future V2 posting also excludes active order_edit in its own batch.
+    await assertLegacyMutationAllowedAfterReturnV2(db,id,
+      options.lifecycleAction==='order_delete'?'order_delete':'order_edit');
+    const v1Exclusion=v2Gate.v2SchemaReady
+      ? ' AND '+legacyV1WriteExclusionSql('orders.id') : '';
+    const v1GateStatement=()=>db.prepare(
+      `SELECT json('ORDER_EDITOR_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+         AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(id);
     let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
     let plan = operationContext.plan as Record<string, any> | undefined;
 
@@ -2219,7 +2249,7 @@ export async function updateOrderCritical(
       const orderUpdateStatement = db.prepare(
         `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
             delivery_type = ?, order_payment_method = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
-            total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
+            total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`+v1Exclusion
       ).bind(
         p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null, p.nextOrderPaymentMethod || null,
         p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
@@ -2311,6 +2341,7 @@ export async function updateOrderCritical(
           )) : [];
         try {
           await db.batch([
+          ...(v2Gate.v2SchemaReady ? [v1GateStatement()] : []),
           ...correctionCas,
           ...immutableExchangeAudit,
           orderUpdateStatement,
@@ -2342,6 +2373,7 @@ export async function updateOrderCritical(
         const m=p.metadataBefore;
         try{
           await db.batch([
+            ...(v2Gate.v2SchemaReady ? [v1GateStatement()] : []),
             db.prepare(`SELECT json('ORDER_METADATA_STALE') WHERE NOT EXISTS(
               SELECT 1 FROM orders WHERE id=?
               AND COALESCE(order_date,'')=? AND COALESCE(customer_id,0)=?
@@ -2368,7 +2400,7 @@ export async function updateOrderCritical(
                 customer_id=CASE WHEN ?<>'' THEN
                   (SELECT id FROM customers WHERE phone_normalized=?) ELSE NULL END,
                 customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?
-              WHERE id=?`).bind(p.nextOrderDate,p.nextPhone,p.nextPhone,
+              WHERE id=?`+v1Exclusion).bind(p.nextOrderDate,p.nextPhone,p.nextPhone,
                 p.nextCustomerName,p.nextCity||null,p.nextDelivery||null,
                 p.nextComment||null,p.timestamp,id)
           ]);
@@ -2378,7 +2410,13 @@ export async function updateOrderCritical(
           throw error;
         }
       } else {
-        await orderUpdateStatement.run();
+        if(v2Gate.v2SchemaReady){
+          // Do not silently accept a zero-row stale versioned UPDATE.
+          await db.batch([
+            orderUpdateStatement,
+            db.prepare("SELECT json('ORDER_EDITOR_V2_CONFLICT') WHERE changes()<>1"),
+          ]);
+        } else await orderUpdateStatement.run();
       }
       await advanceCriticalOperation(db, criticalOperation, 'order_updated');
     }

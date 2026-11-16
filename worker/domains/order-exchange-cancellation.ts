@@ -11,6 +11,7 @@ import { getOrder } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import type { ReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
 import { restoreNotIssuedReservation } from './order-exchange-reservation-snapshot.ts'
+import { assertLegacyMutationAllowedAfterReturnV2 } from './return-v2-legacy-mutation-guard.ts'
 
 export async function cancelExchange(db: D1Database, exchangeId: number, input: { requestId?: string; comment?: string }) {
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -34,6 +35,7 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
      WHERE e.id = ?`
   ).bind(exchangeId).first<Record<string, unknown>>();
   if (!exchange) throw new Error('Exchange not found.');
+  await assertLegacyMutationAllowedAfterReturnV2(db,toInt(exchange.order_id,0),'exchange_cancel');
   if (cleanText(exchange.status) === 'cancelled' && !operationContext.baselineCaptured) {
     const completedResponse = { ok: true, exchangeId, alreadyCancelled: true, stockReversals: [], financialAction: normalizeExchangeFinancialAction(exchange.financial_action), financialAmount: Math.max(0, toInt(exchange.financial_amount, 0)), refreshRequired: true };
     await completeCriticalOperation(db, criticalOperation, completedResponse);

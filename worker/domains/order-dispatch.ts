@@ -6,6 +6,7 @@ import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts
 import { CriticalOperationConflictError } from './critical.ts'
 import { boundedDispatchStock, DispatchStockConfirmationRequired, normalizeDispatchStockConfirmations, type DispatchStockConfirmation } from './order-dispatch-confirmation.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, readReturnV2LegacyMutationGate, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 type Selection = { orderItemId: number; quantity: number }
 type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; activeQuantity: number; unresolvedQuantity: number; needsConfirmation: boolean; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
@@ -23,7 +24,11 @@ const fail = (message: string): never => { throw new CriticalOperationConflictEr
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
   orderId: number,
-  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; stockConfirmations?: DispatchStockConfirmation[] },
+  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; stockConfirmations?: DispatchStockConfirmation[];
+    // INTERNAL domain option only: the HTTP adapter never accepts this.
+    // A dedicated Return V2 prototype validates provenance before invoking
+    // the existing physical dispatch engine.
+    versionedCancelledReturn?: {postingId:number;expectedOrderVersion:string} },
 ) {
   const requestId = cleanText(input.requestId)
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)) fail('Повторите отправку после обновления заказа.')
@@ -47,6 +52,16 @@ export async function dispatchSelectedCompleteOrderLines(
     if (replay.order_id !== orderId) fail('Повторный запрос относится к другому заказу.')
     await identicalReplay(replay.id)
     return {ok:true,alreadyCommitted:true,dispatchId:replay.id}
+  }
+  const v2Context=input.versionedCancelledReturn
+  const v2Gate=await readReturnV2LegacyMutationGate(db,orderId)
+  if(v2Context){
+    if(v2Gate.v2History!=='unified'||!v2Gate.v2SchemaReady
+      ||!Number.isSafeInteger(v2Context.postingId)||v2Context.postingId<1
+      ||!cleanText(v2Context.expectedOrderVersion))
+      fail('Подтверждённая отмена Return V2 не найдена для новой отправки.')
+  }else if(!v2Gate.legacyWritesAllowed){
+    await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
   }
   const order = await getOrder(db,orderId)
   if (!order) throw new CriticalOperationConflictError('Заказ не найден.')
@@ -72,6 +87,12 @@ export async function dispatchSelectedCompleteOrderLines(
   const selectedStock=selected.filter(x=>x.sourceType!=='workshop')
   const selectedWorkshop=selected.filter(x=>x.sourceType==='workshop')
   const selectedPhysicalStock=selectedStock.filter(x=>!x.dispatchPriorIssued)
+  if(v2Context && (selected.length!==1 || selectedPhysicalStock.length!==1
+    || selectedWorkshop.length!==0 || selected[0].reservationStatus!=='active'
+    || selected[0].quantity!==selected[0].originalQuantity
+    || selected[0].dispatchPriorIssued || toInt(selected[0].exchangeEventId,0)>0)){
+    fail('После отменённого Return V2 можно отправить только целую восстановленную складскую позицию.')
+  }
   const selectedReplacements = selectedStock.filter(x=>toInt(x.exchangeEventId,0)>0)
   // A legacy 'sent' order can acquire a NEW unshipped exchange line.
   // Never reissue an original product merely because this button is open.
@@ -234,6 +255,70 @@ export async function dispatchSelectedCompleteOrderLines(
     db.prepare(`INSERT INTO order_dispatches(order_id,request_id,dispatch_date,created_at,actor,status)
        VALUES(?,?,?,?,?,'sent')`).bind(orderId,requestId,date,stamp,cleanText(input.actor)),
   ]
+  if(v2Context){
+    // A cancelled V2 does not erase its history. Only a precise, previously
+    // UN-SHIPPED reservation restored by that cancellation may leave stock.
+    // The evidence is rechecked *inside the dispatch transaction*, before
+    // ANY sale movement, stock decrement, reservation fulfilment or new journal.
+    const line=selected[0]
+    statements.push(db.prepare(
+      `SELECT json('RETURN_V2_RESUMED_DISPATCH_CONFLICT')
+       WHERE NOT EXISTS(
+         SELECT 1 FROM orders o
+         JOIN return_v2_unified_postings up ON up.order_id=o.id
+         JOIN return_v2_unified_cancellations uc ON uc.posting_id=up.id
+            AND uc.order_id=o.id AND uc.return_id=up.return_id
+         JOIN returns ret ON ret.id=up.return_id AND ret.order_id=o.id
+         JOIN return_v2_unified_lines ul ON ul.posting_id=up.id
+         JOIN order_items oi ON oi.id=ul.order_item_id AND oi.order_id=o.id
+         JOIN inventory_reservations ir ON ir.id=ul.reservation_id
+             AND ir.order_item_id=oi.id AND ir.order_id=o.id
+         WHERE o.id=? AND o.updated_at=? AND o.pricing_mode='itemized_v1'
+           AND o.order_status NOT IN ('archived','deleted') AND o.archived_at IS NULL
+           AND o.total_amount=up.initial_total AND o.received_amount=uc.initial_received
+           AND COALESCE(o.return_amount,0)=0
+           AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+           AND up.id=? AND ret.status='cancelled'
+           AND uc.initial_total=up.initial_total
+           AND uc.initial_received=up.initial_received
+           AND uc.reversed_amount=up.cash_refund
+           AND uc.reservations_restore_confirmed=1
+           AND (up.cash_refund=0 OR
+             (uc.refund_recovered_at IS NOT NULL AND uc.recovery_method IS NOT NULL
+              AND EXISTS(SELECT 1 FROM financial_events fe
+               WHERE fe.order_id=o.id AND fe.event_key='return-v2:unified:cancelled:'||up.id
+                 AND fe.event_type='refund_reversal' AND fe.amount_delta=up.cash_refund
+                 AND fe.payment_method=uc.recovery_method)))
+           AND (SELECT COUNT(*) FROM return_v2_unified_postings h WHERE h.order_id=o.id)=1
+           AND (SELECT COUNT(*) FROM return_v2_postings h WHERE h.order_id=o.id)=0
+           AND (SELECT COUNT(*) FROM returns h WHERE h.order_id=o.id)=1
+           AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id)
+           AND ul.action='cancel_unshipped_reservation'
+           AND ul.order_item_id=? AND ul.contracted_quantity=ul.original_line_quantity
+           AND ul.original_line_quantity=?
+           AND ir.status='active' AND ir.quantity=?
+           AND ir.variant_id=? AND ir.inventory_source=?
+           AND oi.quantity=? AND oi.stock_writeoff_status='reserved'
+           AND oi.unit_price=ul.sold_unit_price
+           AND oi.line_total=oi.quantity*oi.unit_price
+           AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+             WHERE di.order_item_id=oi.id)
+           AND NOT EXISTS(SELECT 1 FROM return_v2_resumed_dispatches rd
+             WHERE rd.posting_id=up.id AND rd.order_item_id=oi.id)
+           AND NOT EXISTS(SELECT 1 FROM return_items ri WHERE ri.return_id=ret.id
+             AND (ri.physical_received_at IS NOT NULL OR COALESCE(ri.restocked,0)<>0))
+       )`
+    ).bind(orderId,v2Context.expectedOrderVersion,v2Context.postingId,
+       line.orderItemId,line.quantity,line.quantity,line.variantId,
+       line.sourceType,line.quantity))
+  }else if(v2Gate.v2SchemaReady){
+    // A stale V1 dispatcher must not overtake a V2 financial posting.
+    statements.push(db.prepare(
+      `SELECT json('V1_DISPATCH_V2_CONFLICT')
+       WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+          AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+    ).bind(orderId))
+  }
   for(const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)!
     if (item.dispatchPriorIssued) {
@@ -499,11 +584,25 @@ export async function dispatchSelectedCompleteOrderLines(
        ) THEN ? ELSE NULL END,
        updated_at=? WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'`
   ).bind(date,stamp,orderId))
+  if(v2Context){
+    // Unique journal is committed in the SAME batch as the physical sale.
+    // Lost HTTP responses cannot create duplicate inventory movements.
+    statements.push(db.prepare(
+      `INSERT INTO return_v2_resumed_dispatches(
+         request_id,posting_id,order_id,order_item_id,quantity,
+         expected_order_version,created_at)
+       SELECT d.request_id,?,?,?, ?,?,?
+       FROM order_dispatches d WHERE d.request_id=? AND d.order_id=?`
+    ).bind(v2Context.postingId,orderId,selected[0].orderItemId,
+      selected[0].quantity,v2Context.expectedOrderVersion,stamp,requestId,orderId))
+  }
   try{
     const result=await db.batch(statements)
     const first=result[0]
     if(toInt(first?.meta?.changes,0)!==1)fail('Отправка уже выполняется. Обновите заказ.')
   }catch(error){
+    if(v2Gate.v2SchemaReady && !v2Context)
+      await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
     const msg=cleanText(error instanceof Error?error.message:error)
     if(/unique constraint failed/i.test(msg)){
       const recorded=await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=?').bind(requestId).first<{id:number;order_id:number}>()

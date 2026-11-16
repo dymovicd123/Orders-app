@@ -242,6 +242,42 @@ export async function listReturnHistory(db: D1Database, url: URL) {
       lifecycleStatus: cleanText(row.return_item_lifecycle_status) || null, pendingReason: cleanText(row.return_item_pending_reason) || null,
     });
   }
+  const shownIds=Array.from(rowsById.keys());
+  if(shownIds.length){
+    const slots=shownIds.map(()=>'?').join(',');
+    const contractRows=await db.prepare(`SELECT up.return_id,ul.id AS line_id,ul.order_item_id,
+      COALESCE(ao.semantic_action,ul.action) AS contract_action,
+      ul.contracted_quantity,oi.product_name_snapshot,oi.gender_snapshot,
+      oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+      oi.source_type,oi.is_workshop,oi.variant_id
+      FROM return_v2_unified_postings up
+      JOIN return_v2_unified_lines ul ON ul.posting_id=up.id
+      JOIN order_items oi ON oi.id=ul.order_item_id AND oi.order_id=up.order_id
+      LEFT JOIN return_v2_unified_action_overrides ao
+        ON ao.posting_id=up.id AND ao.order_item_id=ul.order_item_id
+      WHERE up.return_id IN (${slots}) AND ul.action<>'physical_return_pending'
+      ORDER BY up.return_id,ul.id`).bind(...shownIds).all<Record<string,unknown>>();
+    for(const line of mapSqlRows(contractRows)){
+      const record=rowsById.get(Number(line.return_id));
+      if(!record)continue;
+      const itemId=Number(line.order_item_id);
+      if(record.items.some((item:any)=>item.orderItemId===itemId))continue;
+      record.items.push({
+        id:-Number(line.line_id),orderItemId:itemId,
+        productName:cleanText(line.product_name_snapshot)||'Товар',
+        quantity:Math.max(0,Number(line.contracted_quantity)||0),
+        gender:cleanText(line.gender_snapshot)||null,color:cleanText(line.color_snapshot)||null,
+        material:cleanText(line.material_snapshot)||null,length:cleanText(line.length_snapshot)||null,
+        size:cleanText(line.size_snapshot)||null,
+        inventorySource:null,restocked:false,physicalTracking:false,physicalReceivedAt:null,
+        isWorkshop:toInt(line.is_workshop,0)===1,
+        sourceType:cleanText(line.source_type)||'warehouse',
+        currentVariantId:toInt(line.variant_id,0)||null,
+        lifecycleId:null,lifecycleVariantId:null,lifecycleStatus:null,pendingReason:null,
+        contractOnly:true,contractAction:cleanText(line.contract_action)
+      });
+    }
+  }
   const rows = Array.from(rowsById.values());
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return {
