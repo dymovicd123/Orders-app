@@ -85,7 +85,7 @@ export async function previewUnitBarcodePreparation(db: D1Database, variantInput
     readCoveredCounts(db, variantId),
     db.prepare(
       `SELECT b.batch_id, b.created_at, b.state, u.inventory_source, COUNT(*) AS quantity,
-              SUM(CASE WHEN l.state='active' THEN 1 ELSE 0 END) AS printable
+              SUM(CASE WHEN l.state='active' AND u.unit_status='unverified' AND u.coverage_status='unlinked' THEN 1 ELSE 0 END) AS printable
        FROM barcode_print_batches b
        JOIN barcode_print_batch_labels bl ON bl.batch_id=b.batch_id
        JOIN inventory_unit_labels l ON l.token=bl.label_token
@@ -143,8 +143,8 @@ export async function readPreparedUnitLabelBatch(db: D1Database, batchId: string
   if (rows.some(row => row.label_state !== 'active')) {
     throw new BarcodePreparationError('revoked_label', 'В этой партии есть отозванные коды. Повторная печать заблокирована.')
   }
-  if (rows.some(row => row.unit_status === 'retired' || row.coverage_status === 'excluded')) {
-    throw new BarcodePreparationError('inactive_unit', 'Эта партия содержит исключённые записи.')
+  if (rows.some(row => row.unit_status !== 'unverified' || row.coverage_status !== 'unlinked')) {
+    throw new BarcodePreparationError('unit_already_used', 'Эта метка уже связана с операцией. Повторная печать здесь недоступна.')
   }
   return {
     ok: true, batchId, createdAt: batch.created_at,
