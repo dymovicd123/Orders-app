@@ -43,14 +43,14 @@ assert.equal(allowLegacyReturnEditor(0,0,'checking'),true)
 
 // Validate the runnable, no-network Branch2 preflight against the COMPLETE
 // migration chain in CI, not just individual Worker SQL statements.
-const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-branch2-readiness.mjs'],{
+const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-main-readiness.mjs'],{
  encoding:'utf8',timeout:90000
 })
 assert.equal(stagePreflight.status,0,
- 'Read-only Branch2 local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
+ 'Read-only Main local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
 const stageReport=JSON.parse(stagePreflight.stdout)
 assert.equal(stageReport.mode,'local-in-memory')
-assert.equal(stageReport.target,'orders-app-branch2')
+assert.equal(stageReport.target,'orders-app')
 assert.equal(stageReport.schema.ready,true)
 assert.equal(stageReport.schema.expectedTables,RETURN_V2_REQUIRED_TABLES.length)
 assert.equal(stageReport.schema.expectedColumns,10)
