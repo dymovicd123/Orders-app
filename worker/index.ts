@@ -10,6 +10,7 @@ import { addDdsCategory, addDdsArticle, setDdsCategoryActive, setDdsArticleActiv
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { lookupCatalogSkuBarcode, readCatalogSkuBarcode } from './domains/barcode-sku.ts'
+import { BarcodePreparationError, cancelPreparedUnitLabelBatch, lookupIndividualUnitBarcode, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch } from './domains/barcode-unit-preparation.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
@@ -88,6 +89,9 @@ function warehouseSupervisorEndpoint(path: string, method: string) {
   // Explicit warehouse-only allowlist. No order, payment, employee, or global administrator rights.
   const routes: Array<[RegExp, string[]]> = [
     [/^\/api\/inventory\/settings$/, ['PATCH']],
+    [/^\/api\/barcodes\/units\/(?:preview|batches)$/, ['GET','POST']],
+    [/^\/api\/barcodes\/units\/batches\/UBL1-[0-9a-f-]+$/, ['GET']],
+    [/^\/api\/barcodes\/units\/batches\/UBL1-[0-9a-f-]+\/cancel$/, ['POST']],
     [/^\/api\/inventory\/pending-writeoffs\/apply$/, ['POST']],
     [/^\/api\/inventory\/audit\/resolve$/, ['POST']],
     [/^\/api\/inventory\/movements\/\d+\/reverse$/, ['POST']],
@@ -1305,9 +1309,69 @@ export default {
         const result = await readCatalogSkuBarcode(env.DB, Number(skuBarcodeMatch[1]))
         return json(result, { status: result.ok ? 200 : result.code === 'invalid_sku' ? 400 : 404 })
       }
+      if (url.pathname === '/api/barcodes/units/preview' && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          return json(await previewUnitBarcodePreparation(env.DB, url.searchParams.get('variantId')));
+        } catch (error) {
+          if (error instanceof BarcodePreparationError) {
+            return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+          }
+          throw error;
+        }
+      }
+
+      if (url.pathname === '/api/barcodes/units/batches' && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ variantId?: unknown; source?: unknown; quantity?: unknown; requestId?: unknown }>(request);
+        try {
+          const actor = cleanText(authUser?.login || authUser?.displayName || 'warehouse');
+          return json(await prepareUnitLabelBatch(env.DB, input, actor), { status: 200 });
+        } catch (error) {
+          if (error instanceof BarcodePreparationError) {
+            return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+          }
+          throw error;
+        }
+      }
+
+      const barcodeCancelMatch = url.pathname.match(/^\/api\/barcodes\/units\/batches\/(UBL1-[0-9a-f-]+)\/cancel$/);
+      if (barcodeCancelMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          const actor = cleanText(authUser?.login || authUser?.displayName || 'warehouse');
+          return json(await cancelPreparedUnitLabelBatch(env.DB, barcodeCancelMatch[1], actor));
+        } catch (error) {
+          if (error instanceof BarcodePreparationError) {
+            return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+          }
+          throw error;
+        }
+      }
+
+      const barcodeUnitBatchMatch = url.pathname.match(/^\/api\/barcodes\/units\/batches\/(UBL1-[0-9a-f-]+)$/);
+      if (barcodeUnitBatchMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          return json(await readPreparedUnitLabelBatch(env.DB, barcodeUnitBatchMatch[1]));
+        } catch (error) {
+          if (error instanceof BarcodePreparationError) {
+            return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+          }
+          throw error;
+        }
+      }
+
       if (url.pathname === '/api/barcodes/lookup' && request.method === 'GET') {
-        const result = await lookupCatalogSkuBarcode(env.DB, url.searchParams.get('code') || '')
-        return json(result, { status: result.ok ? 200 : result.code === 'invalid_barcode' ? 400 : 404 })
+        const code = url.searchParams.get('code') || ''
+        const result = code.trim().toUpperCase().startsWith('OCU1-')
+          ? await lookupIndividualUnitBarcode(env.DB, code)
+          : await lookupCatalogSkuBarcode(env.DB, code)
+        return json(result, { status: result.ok ? 200 : (result.code === 'invalid_barcode' || result.code === 'invalid_unit_barcode') ? 400 : 404 })
       }
 
       if (url.pathname === '/api/catalog' && request.method === 'GET') {

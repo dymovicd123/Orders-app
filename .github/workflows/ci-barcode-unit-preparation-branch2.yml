@@ -1,0 +1,35 @@
+name: Barcode individual label preparation Branch2 CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/barcode-unit-preparation.ts'
+      - 'worker/index.ts'
+      - 'migrations/0138_barcode_unit_preparation_capacity.sql'
+      - 'src/features/inventory/views/UnitBarcodePreparation.tsx'
+      - 'src/features/inventory/views/unitBarcodePreparation.css'
+      - 'src/features/inventory/views/catalogPolishExecutionGroups.tsx'
+      - 'scripts/test-barcode-unit-label-preparation-20261116.mjs'
+      - '.github/workflows/ci-barcode-unit-preparation-branch2.yml'
+permissions:
+  contents: read
+jobs:
+  unit-preparation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Physical-label domain, D1 constraints and UI behavior
+        run: |
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-barcode-sku-http-domain-20261116.mjs
+          node scripts/test-barcode-unit-foundation-20261116.mjs
+          node scripts/test-barcode-unit-catalog-integrity-20261116.mjs
+          node scripts/test-barcode-unit-label-preparation-20261116.mjs
+      - name: Compile and build
+        run: npm run build

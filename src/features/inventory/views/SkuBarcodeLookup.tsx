@@ -14,6 +14,10 @@ export type SkuLookupRecord = {
   length?: string
   size?: string
   status?: string
+  barcodeType?: 'sku' | 'unit'
+  source?: string
+  verified?: boolean
+  message?: string
 }
 
 export function SkuBarcodeLookup({ onLocate }: { onLocate: (value: SkuLookupRecord) => void }) {
@@ -59,7 +63,7 @@ export function SkuBarcodeLookup({ onLocate }: { onLocate: (value: SkuLookupReco
       <label htmlFor="catalog-sku-barcode-scan">Найти по штрихкоду</label>
       <div className="sku-lookup-row">
         <input id="catalog-sku-barcode-scan" ref={inputRef} type="text"
-          autoComplete="off" spellCheck={false} placeholder="Сканируйте или введите код"
+          autoComplete="off" spellCheck={false} placeholder="Сканируйте общий или индивидуальный код"
           value={code} onChange={event => {
             requestRef.current++
             setBusy(false)
@@ -77,13 +81,20 @@ export function SkuBarcodeLookup({ onLocate }: { onLocate: (value: SkuLookupReco
       <strong>{result.productName}</strong>
       <span>{[result.color, result.size, result.gender, result.material, result.length]
         .filter(value => value && value !== 'СТАНДАРТ').join(' · ')}</span>
-      <small>{result.active ? 'Карточка варианта открыта' : 'Вариант удалён из рабочего каталога'}</small>
+      <small>{result.barcodeType === 'unit'
+        ? result.status === 'revoked' ? 'Индивидуальная метка аннулирована'
+          : result.status === 'prepared' ? 'Индивидуальная метка подготовлена · наличие не подтверждено'
+          : result.active ? 'Индивидуальная метка найдена' : 'Метка недействительна'
+        : result.active ? 'Общий код · карточка варианта открыта' : 'Вариант удалён из рабочего каталога'}</small>
+      {result.barcodeType === 'unit' && result.message ? <small>{result.message}</small> : null}
       {result.active ? <button className="secondary compact" type="button" onClick={() => {
         onLocate(result)
         inputRef.current?.focus()
         inputRef.current?.select()
       }}>Показать ещё раз</button> : null}
-      <small>Это код варианта, а не доказательство физического наличия вещи.</small>
+      <small>{result.barcodeType === 'unit'
+          ? 'Индивидуальный код не проводит приход, перемещение или выдачу.'
+          : 'Это код варианта, а не доказательство физического наличия вещи.'}</small>
     </div> : null}
   </section>
 }

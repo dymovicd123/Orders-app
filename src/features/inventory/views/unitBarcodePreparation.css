@@ -1,0 +1,24 @@
+.unit-barcode-entry{display:flex;align-items:center}
+.unit-barcode-overlay{position:fixed;inset:0;z-index:1150;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,22,35,.58)}
+.unit-barcode-modal{display:flex;flex-direction:column;gap:12px;width:min(580px,100%);max-height:calc(100vh - 30px);overflow:auto;padding:20px;border-radius:16px;background:var(--card-bg,#fff);color:var(--text,#202020);box-shadow:0 20px 55px rgba(0,0,0,.27)}
+.unit-barcode-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.unit-barcode-head h3{margin:0;font-size:20px}
+.unit-barcode-head p{margin:5px 0 0;color:var(--muted,#627083);font-size:12px}
+.unit-barcode-note{margin:0;padding:12px;border:1px solid var(--line,#dce3ea);background:rgba(60,105,178,.05);border-radius:11px;font-size:13px;line-height:1.5}
+.unit-barcode-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.unit-barcode-fields label{display:grid;gap:5px;min-width:0;font-size:12px;font-weight:650}
+.unit-barcode-fields select,.unit-barcode-fields input{min-width:0;width:100%;min-height:42px}
+.unit-barcode-capacity{font-size:13px;line-height:1.45;margin:0}
+.unit-barcode-error{font-size:12px;color:#b53131;margin:0}
+.unit-barcode-action-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.unit-barcode-success{display:grid;justify-items:start;gap:8px;padding:12px;border:1px solid #b9d9c8;border-radius:11px;background:rgba(35,146,90,.045);font-size:12px}
+.unit-barcode-success strong{font-size:14px}
+.unit-barcode-recent{display:grid;gap:7px;padding-top:10px;border-top:1px solid var(--line,#dce3ea);font-size:12px}
+.unit-barcode-recent-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.unit-barcode-recent-row button{flex:0 0 auto}
+@media(max-width:550px){.unit-barcode-modal{padding:14px}.unit-barcode-head{align-items:flex-start}.unit-barcode-fields{grid-template-columns:1fr}.unit-barcode-action-row{display:grid}.unit-barcode-action-row button{width:100%}}
+.unit-barcode-recent-item{display:grid;gap:6px}
+.unit-barcode-recent-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.unit-barcode-cancel-warning{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid #e7c6b9;border-radius:9px;background:rgba(184,72,35,.05);font-size:12px;line-height:1.4}
+.unit-barcode-cancel-warning span{flex:1 1 180px}
+@media(max-width:550px){.unit-barcode-recent-row{align-items:flex-start;flex-direction:column}}
