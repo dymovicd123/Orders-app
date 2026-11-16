@@ -1,0 +1,90 @@
+name: Branch2 barcode UX postrelease verification READ ONLY 2026-11-16
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-barcode-ux-postrelease-readonly-20261116.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard Branch2 and expected reviewed parent
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD^)" = '39f47e6abb5b92405c98ec0fd27e11b496d46314'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('wrangler.jsonc').read_text())
+          assert cfg['name']=='orders-app-branch2'
+          assert cfg['d1_databases']==[{
+            'binding':'DB','database_name':'orders_db_branch2_mirror_20261027',
+            'database_id':'0904a573-21ff-44d8-93b0-c9200f771702'
+          }]
+          print('BRANCH2_SOURCE_TARGET_PASS')
+          PY
+      - name: Inspect active Branch2 D1 and secret bindings (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app-branch2/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          if not data.get('success'):raise SystemExit('settings failed')
+          bindings=data['result'].get('bindings',[])
+          db=[b for b in bindings if b.get('name')=='DB']
+          if len(db)!=1 or db[0].get('type')!='d1' or (db[0].get('database_id') or db[0].get('id'))!='0904a573-21ff-44d8-93b0-c9200f771702':
+            raise SystemExit('wrong D1')
+          for secret in ('ADMIN_MODE_SESSION_SECRET',):
+            if not any(b.get('name')==secret for b in bindings):raise SystemExit('missing binding '+secret)
+          print('BRANCH2_ACTIVE_D1_AND_SECRETS_PASS')
+          PY
+      - name: Verify full JSON health and live page assets (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request,urllib.error
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def get(path):
+            for attempt in range(1,6):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'OrdersBranch2BarcodeReadOnlyQA/1.0','Accept':'application/json,text/html,*/*'})
+              try:
+                with urllib.request.urlopen(req,timeout=25) as response:
+                  status=response.status
+                  data=response.read()
+                if status==200:return data
+                print('HTTP_STATUS',path,status,'attempt',attempt)
+              except urllib.error.HTTPError as e:
+                print('HTTP_ERROR',path,e.code,'attempt',attempt)
+              except Exception as e:
+                print('HTTP_ERROR_TYPE',path,type(e).__name__,'attempt',attempt)
+              time.sleep(2)
+            raise SystemExit('BRANCH2_GET_FAILED '+path)
+          health=json.loads(get('/api/health'))
+          if health.get('ok') is not True:raise SystemExit('BRANCH2_HEALTH_NOT_OK')
+          print('BRANCH2_HEALTH_FULL_JSON_PASS')
+          page=get('/').decode('utf8','replace')
+          if '<html' not in page.lower():raise SystemExit('BRANCH2_HTML_NOT_FOUND')
+          print('BRANCH2_ROOT_HTML_PASS')
+          match=re.search(r'<script[^>]*src="(/assets/[^"]+)"',page)
+          if not match:raise SystemExit('BRANCH2_ENTRY_ASSET_NOT_FOUND')
+          js=get(match.group(1))
+          if len(js)<1000:raise SystemExit('BRANCH2_JS_EMPTY')
+          print('BRANCH2_JS_ASSET_200_PASS')
+          print('BRANCH2_BARCODE_WORKER_LIVE_CONFIRMED_NO_D1_WRITES')
+          PY
