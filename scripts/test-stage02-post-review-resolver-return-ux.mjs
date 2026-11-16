@@ -115,6 +115,9 @@ const returnV2Flow = read('src/features/sections/OrderReturnV2Flow.tsx')
 assert.ok(returnV2Flow.includes('onSaved(saved)') && returnSection.includes('closeReturnForm(false)')
   && returnSection.includes("setActiveView(posted.receipt?.receiptPending?'intake':'history')"),
   'Return V2 must close its form and route to intake or history after a confirmed posting')
+assert.ok(app.includes('refreshOrdersAfterReturn: () => loadDashboard(false, filters, orderPageOffset)')
+  && returnSection.includes('void refreshOrdersAfterReturn()'),
+  'Confirmed Return V2 posting or cancellation must refresh the existing filtered order list without a page reload')
 assert.ok(returnSection.includes("target.scrollIntoView({behavior:'smooth',block:'start'})")
   && !app.includes('returnFormRef.current?.scrollIntoView'),
   'Return form focus must wait until the visible section is mounted')
