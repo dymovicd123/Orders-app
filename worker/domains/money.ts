@@ -1,3 +1,4 @@
+import { assertActivePaymentMethod } from './payment-method-validation.ts'
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { cleanText, normalizeDate, normalizeOrderStatus, toInt, upperText } from '../core/text.ts'
@@ -425,6 +426,7 @@ export async function createManualOrderPaymentCritical(
   }
 
   try {
+    await assertActivePaymentMethod(db, method);
     const gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'manual_payment');
     // A preflight is not sufficient: the old payment INSERT and money cache
     // both carry a V2 exclusion in their actual atomic SQL.
