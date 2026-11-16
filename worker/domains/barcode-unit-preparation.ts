@@ -1,4 +1,4 @@
-import { generateUnitBarcode } from '../../shared/barcode-unit.ts'
+import { generateUnitBarcode, isUnitBarcode } from '../../shared/barcode-unit.ts'
 
 type UnitSource = 'warehouse' | 'boutique'
 type Stock = { id: number; quantity: number; inventory_source: string }
@@ -309,4 +309,62 @@ export async function cancelPreparedUnitLabelBatch(db: D1Database, batchId: stri
     throw error
   }
   return { ok: true, batchId, cancelled: true, duplicate: false }
+}
+
+export async function lookupIndividualUnitBarcode(db: D1Database, codeInput: string) {
+  const token = String(codeInput || '').trim().toUpperCase()
+  if (!isUnitBarcode(token)) {
+    return { ok: false, code: 'invalid_unit_barcode', message: 'Индивидуальный штрихкод повреждён или неверен.' }
+  }
+  const row = await db.prepare(
+    `SELECT l.token, l.state AS label_state, u.unit_id, u.unit_status, u.coverage_status,
+            u.inventory_source, u.variant_id, v.is_active AS variant_active,
+            v.color, v.gender, v.material, v.length, v.size_label,
+            p.id AS product_id, p.name AS product_name, p.is_active AS product_active,
+            sp.is_active AS execution_active
+     FROM inventory_unit_labels l
+     JOIN inventory_units u ON u.unit_id=l.unit_id
+     LEFT JOIN catalog_variants v ON v.id=u.variant_id
+     LEFT JOIN catalog_products p ON p.id=v.product_id
+     LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+     WHERE l.token=? LIMIT 1`
+  ).bind(token).first<{
+    token: string; label_state: string; unit_id: string; unit_status: string;
+    coverage_status: string; inventory_source: string; variant_id: number;
+    variant_active: number; product_id: number; product_name: string;
+    product_active: number; execution_active: number;
+    color: string | null; gender: string | null; material: string | null;
+    length: string | null; size_label: string | null
+  }>()
+  if (!row) return { ok: false, code: 'unit_not_found', message: 'Такая индивидуальная метка не зарегистрирована.' }
+  const skuActive = Number(row.variant_active) === 1 && Number(row.product_active) === 1 &&
+    Number(row.execution_active) === 1
+  const active = row.label_state === 'active' && row.unit_status !== 'retired' &&
+    row.coverage_status !== 'excluded' && skuActive
+  const status = row.label_state === 'revoked' ? 'revoked'
+    : row.unit_status === 'unverified' ? 'prepared'
+    : row.unit_status
+  return {
+    ok: true,
+    barcodeType: 'unit' as const,
+    barcode: token,
+    unitId: row.unit_id,
+    variantId: Number(row.variant_id),
+    productId: Number(row.product_id),
+    productName: row.product_name || '',
+    color: row.color || '',
+    gender: row.gender || '',
+    material: row.material || '',
+    length: row.length || '',
+    size: row.size_label || '',
+    source: row.inventory_source,
+    status,
+    active,
+    physicalUnit: true,
+    verified: row.unit_status === 'on_hand' && row.coverage_status === 'linked',
+    message: !active ? 'Метка отозвана или её вариант больше неактивен.'
+      : row.unit_status === 'unverified'
+        ? 'Метка подготовлена. Физическое наличие и выдача пока не подтверждаются этим кодом.'
+        : 'Индивидуальная метка распознана. Проверяйте статус вещи перед операцией.',
+  }
 }
