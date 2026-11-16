@@ -31,6 +31,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     loadReturnPendingInbox,
     loadReturnHistory,
     returnSelectedOrder,
+    refreshOrdersAfterReturn,
     receiveReturnedItemAction,
     reconcileKnownInventoryLifecycle,
     saveReturn,
@@ -313,8 +314,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     setActiveView(posted.receipt?.receiptPending?'intake':'history')
                     void loadReturnHistory()
                     void loadReturnPendingInbox()
+                    void refreshOrdersAfterReturn()
                   }}
-                  onCancelled={()=>{void loadReturnHistory();void loadReturnPendingInbox()}}
+                  onCancelled={()=>{void loadReturnHistory();void loadReturnPendingInbox();void refreshOrdersAfterReturn()}}
                   onBack={()=>closeReturnForm(true)}
                 />
               <section className="mini-panel debt-form-panel"
