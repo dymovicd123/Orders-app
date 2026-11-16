@@ -1,3 +1,5 @@
+CREATE INDEX IF NOT EXISTS idx_inventory_units_original_variant ON inventory_units(original_variant_id);
+
 CREATE TRIGGER IF NOT EXISTS trg_barcode_unit_variant_deactivation
 BEFORE UPDATE OF is_active ON catalog_variants
 FOR EACH ROW
