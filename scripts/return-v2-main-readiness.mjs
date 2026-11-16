@@ -38,8 +38,10 @@ assert.equal(dbConfig?.database_name,'orders_db_prod',
  'Unexpected production D1 name; stop.')
 assert.equal(dbConfig?.database_id,'17e68a41-1d58-4a36-8a63-47c3e32443c4',
  'D1 database ID changed. Require explicit review before using the script.')
-assert(cfg.vars?.RETURN_V2_ENABLED!=='true' && cfg.vars?.RETURN_V2_ENABLED!==true,
- 'Return V2 must not be automatically enabled by the configuration.')
+const flag=cfg.vars?.RETURN_V2_ENABLED
+assert(flag===undefined||flag==='true'||flag==='false',
+ 'Return V2 flag must be a known explicit string value.')
+const returnV2Enabled=flag==='true'
 const missing=required.filter(file=>!fs.existsSync('migrations/'+file))
 assert.equal(missing.length,0,'Missing Return V2 migrations: '+missing.join(', '))
 const fingerprint=createHash('sha256')
@@ -97,13 +99,15 @@ if(!remote){
  const first=statements[0]?.results?.[0]||statements[0]?.result?.[0]
  status=evaluate(first)
 }
+if(remote && returnV2Enabled && !status.ready)
+ throw new Error('Production Return V2 flag is ON but schema is incomplete: stop release.')
 console.log(JSON.stringify({
  mode:remote?'remote-read-only':'local-in-memory',
  target:'orders-app',database:dbConfig.database_name,
  migrations:{first:'0124',last:'0135',count:required.length,
    fingerprintSha256:fingerprint.digest('hex')},
  schema:status,
- featureFlag:'OFF - no configuration change',
+ featureFlag:returnV2Enabled?'ON - configuration read only':'OFF - no configuration change',
  remoteMigrationPerformed:false,remoteDeploymentPerformed:false,
  note:status.ready
   ?'Schema capability only; this is NOT production release authorization.'
