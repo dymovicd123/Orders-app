@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          npx --no-install wrangler d1 export orders_db_prod --config wrangler.jsonc --remote --yes --output="$RUNNER_TEMP/main-before-return-v2.sql"
+          npx --no-install wrangler d1 export orders_db_prod --config wrangler.jsonc --remote --skip-confirmation --output="$RUNNER_TEMP/main-before-return-v2.sql"
           test "$(stat -c%s "$RUNNER_TEMP/main-before-return-v2.sql")" -gt 1000
           grep -Eiq '(CREATE TABLE|CREATE TABLE IF NOT EXISTS).*orders' "$RUNNER_TEMP/main-before-return-v2.sql"
           grep -Eiq '(CREATE TABLE|CREATE TABLE IF NOT EXISTS).*inventory_stock' "$RUNNER_TEMP/main-before-return-v2.sql"
@@ -120,29 +120,29 @@ jobs:
           set -euo pipefail
           test -s "$RUNNER_TEMP/main-v2-recovery-bookmark.txt"
           echo "Applying migrations/0124_return_v2_prepared_journal.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0124_return_v2_prepared_journal.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0124_return_v2_prepared_journal.sql'
           echo "Applying migrations/0125_return_v2_contract_quantity_marker.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0125_return_v2_contract_quantity_marker.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0125_return_v2_contract_quantity_marker.sql'
           echo "Applying migrations/0126_return_v2_posting_prototype.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0126_return_v2_posting_prototype.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0126_return_v2_posting_prototype.sql'
           echo "Applying migrations/0127_return_v2_cancellation_prototype.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0127_return_v2_cancellation_prototype.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0127_return_v2_cancellation_prototype.sql'
           echo "Applying migrations/0128_return_v2_unified_posting_prototype.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0128_return_v2_unified_posting_prototype.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0128_return_v2_unified_posting_prototype.sql'
           echo "Applying migrations/0129_return_v2_unified_receipt_intent.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0129_return_v2_unified_receipt_intent.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0129_return_v2_unified_receipt_intent.sql'
           echo "Applying migrations/0130_return_v2_unified_cancel_prototype.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0130_return_v2_unified_cancel_prototype.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0130_return_v2_unified_cancel_prototype.sql'
           echo "Applying migrations/0131_return_v2_metadata_edits.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0131_return_v2_metadata_edits.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0131_return_v2_metadata_edits.sql'
           echo "Applying migrations/0132_return_v2_resumed_dispatch_prototype.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0132_return_v2_resumed_dispatch_prototype.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0132_return_v2_resumed_dispatch_prototype.sql'
           echo "Applying migrations/0133_return_v2_workshop_obligation.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0133_return_v2_workshop_obligation.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0133_return_v2_workshop_obligation.sql'
           echo "Applying migrations/0134_return_v2_unreserved_obligation.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0134_return_v2_unreserved_obligation.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0134_return_v2_unreserved_obligation.sql'
           echo "Applying migrations/0135_return_v2_legacy_contract_baseline.sql"
-          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0135_return_v2_legacy_contract_baseline.sql' --yes
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file 'migrations/0135_return_v2_legacy_contract_baseline.sql'
           echo MAIN_RETURN_V2_SCHEMA_FILES_APPLIED
       - name: Verify complete production Return V2 schema READ ONLY
         shell: bash
