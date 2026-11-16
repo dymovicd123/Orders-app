@@ -238,6 +238,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           { label: 'Неквал', value: totals?.badCount || 0 },
           { label: 'Квал', value: totals?.qualifiedCount || 0 },
           { label: 'Продажи', value: totals?.salesCount || 0 },
+          { label: 'Общая конверсия', value: formatPercent((totals?.qualifiedCount || 0) > 0 ? (totals?.salesCount || 0) / totals.qualifiedCount : 0) },
         ])}
         <section className="report-table-card"><div className="strict-section-head"><h3>Лиды по менеджерам</h3><span className="soft-badge">таблица за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Дата</th><th>Менеджер</th><th className="num">Принято</th><th className="num">Неквал</th><th className="num">Квал</th><th className="num">Продажи</th><th className="num">Конверсия</th></tr></thead><tbody>{(financeReport.reports.leads || []).map((row) => <tr key={`lead-report-row-${row.id}`}><td>{formatDateShort(row.date)}</td><td><ManagerBadge name={row.manager} colorKey={managerColorFor(row.manager, row.managerId, row.managerColor)} compact /></td><td className="num">{row.acceptedCount}</td><td className="num">{row.badCount}</td><td className="num">{row.qualifiedCount}</td><td className="num">{row.salesCount}</td><td className="num">{formatPercent(row.conversionRate)}</td></tr>)}{!(financeReport.reports.leads || []).length ? <tr><td colSpan={8} className="empty-state">Лидов за период нет.</td></tr> : null}</tbody></table></div></section></>
     }
