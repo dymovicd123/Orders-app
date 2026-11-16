@@ -1,4 +1,5 @@
 import { SkuBarcodeButton } from './SkuBarcodeButton'
+import { UnitBarcodePreparation } from './UnitBarcodePreparation'
 import { useState } from 'react'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
 import { CatalogVariantGroupRetirementAction } from './CatalogVariantGroupRetirementAction'
@@ -467,6 +468,9 @@ export function CatalogPolishExecutionGroups({
                                   </div>
                                   <div className="catalog-sku-head-actions">
                                     <SkuBarcodeButton key={Number(cardVariant.id)} variantId={Number(cardVariant.id)} />
+                                    {isAdmin ? <UnitBarcodePreparation key={'unit-'+Number(cardVariant.id)}
+                                      variantId={Number(cardVariant.id)} productName={String(selectedProduct?.name || '')}
+                                      variantLabel={[colorGroup.label, normalizedText(cardVariant.sizeLabel), subgroup.gender, group.label].filter(Boolean).join(' · ')} /> : null}
                                     <button className="secondary compact" type="button" onClick={closeVariantCard}>Закрыть</button>
                                   </div>
                                 </div>
