@@ -115,7 +115,6 @@ export function SkuBarcodeButton({ variantId, compact = false }: { variantId: nu
 
   const printVerified = async (label: SkuBarcodeRecord) => {
     if (printing || !label.active || !label.barcode) return
-    // Open synchronously: a popup opened after awaiting fetch may be blocked by browsers.
     const printWindow = window.open('', '_blank', 'width=620,height=460')
     if (!printWindow) {
       setError('Браузер заблокировал окно печати. Разрешите всплывающие окна для Orders-app.')
