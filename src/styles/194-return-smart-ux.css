@@ -135,3 +135,9 @@
  .return-v2-panel .return-smart-summary{grid-template-columns:1fr}
  .return-v2-panel .return-smart-main small{font-size:.85rem}
 }
+
+/* Historic Return V2 merchandise is visual, never a live order line. */
+.order-item-card.is-return-history{border:1px dashed #a8b7cc;background:#f8fafc}
+.order-item-card.is-return-history .order-item-card-head strong{color:#334155}
+.order-item-history-status{display:inline-flex;width:fit-content;align-items:center;padding:5px 8px;margin-top:4px;border:1px solid #a9c6e7;border-radius:8px;background:#eff6ff;color:#1e40af;font-weight:700;font-size:.79rem;line-height:1.5}
+.order-item-history-status.is-cancelled{border-color:#d6c99f;background:#fffbeb;color:#854d0e}
