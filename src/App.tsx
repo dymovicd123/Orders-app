@@ -3297,6 +3297,11 @@ function removeDebtPayment(index: number) {
       setError('Выберите способ оплаты для каждой строки с положительной суммой. Платежи не сохранены.')
       return
     }
+    const allowedMethods = new Set(suggestionValues.paymentMethods.map(normalizeSuggestion))
+    if (normalizedPayments.some((payment) => !allowedMethods.has(normalizeSuggestion(payment.method)))) {
+      setError('Найден неизвестный способ оплаты. Выберите активный способ из справочника для каждой строки.')
+      return
+    }
 
     const closeAmount = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0)
     if (closeAmount > Number(debtSelectedOrder.debt_amount || 0)) {
