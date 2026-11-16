@@ -7,6 +7,7 @@ import worker from '../worker/index.ts'
 import { previewUnifiedReturnV2LineEvidence } from '../worker/domains/return-v2-unified-line-evidence.ts'
 import {listWorkshopTasks,updateWorkshopTask} from '../worker/domains/workshop.ts'
 import {listReturnHistory} from '../worker/domains/activity.ts'
+import {fetchOrderRelations} from '../worker/domains/orders-relations.ts'
 import { postUnifiedReturnV2Prototype } from '../worker/domains/return-v2-unified-posting-prototype.ts'
 import { submitUnifiedReturnV2WithReceiptPrototype, completeUnifiedReturnV2ReceiptPrototype } from '../worker/domains/return-v2-unified-immediate-intake-prototype.ts'
 import { readVersionedReturnMoney, syncVersionedReturnMoneyPrototype } from '../worker/domains/return-v2-financial-projection.ts'
@@ -2002,6 +2003,30 @@ assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_s
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10611').get().n,1)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM return_items WHERE order_item_id=10612').get().n,0)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=10610 AND event_type=\'order_refund\'').get().n,0)
+const qaOrderRelations=await fetchOrderRelations(DB,[10510,10520,10540,10610])
+const fullReturned=qaOrderRelations.returnHistoryItemsByOrderId.get(10510)||[]
+assert.equal((qaOrderRelations.itemsByOrderId.get(10510)||[]).length,0,
+ 'Fully returned purchase must have zero active lines')
+assert.equal(fullReturned.length,2,'Both historical returned units remain visible')
+assert(fullReturned.every(item=>item.order_item_id===10511
+ && item.action==='physical_return_pending' && item.physical_received_at===null))
+const partlyReturned=qaOrderRelations.returnHistoryItemsByOrderId.get(10520)||[]
+assert.equal((qaOrderRelations.itemsByOrderId.get(10520)||[]).length,1)
+assert.equal(partlyReturned.length,1,'Canceled return is not projected as completed merchandise')
+assert.equal(partlyReturned[0].contracted_quantity,1)
+const unshippedReturned=qaOrderRelations.returnHistoryItemsByOrderId.get(10540)||[]
+assert.equal(unshippedReturned.length,1)
+assert.equal(unshippedReturned[0].action,'cancel_unshipped_reservation')
+assert.equal(unshippedReturned[0].contracted_quantity,1)
+const f3OrderHistory=qaOrderRelations.returnHistoryItemsByOrderId.get(10610)||[]
+assert.equal((qaOrderRelations.itemsByOrderId.get(10610)||[]).length,0)
+assert.deepEqual(f3OrderHistory.map(item=>item.action),
+ ['physical_return_pending','cancel_unshipped_reservation'])
+const ordersTableUi=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
+assert(ordersTableUi.includes('order.returnHistoryItems || []'))
+assert(ordersTableUi.includes('item.physicallyReturned'))
+assert(ordersTableUi.includes('Отменён до отправки · без физического прихода'))
+console.log('RETURN_V2_ORDERS_HISTORY_READONLY_PASS: zero active items, exact returned quantities, awaiting receipt and unsent cancellation differentiated')
 console.log('RETURN_V2_F3_PARTIAL_EXCHANGE_QA_PASS')
 console.log('RETURN_V2_WORK_QA_P1_PASS: second shipped unit, post-cancellation return, preserved Workshop completion, full history and stale-form reset')
 
