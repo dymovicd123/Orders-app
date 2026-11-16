@@ -1,0 +1,108 @@
+name: Branch2 barcode individual schema and human UI controlled release (NO Main)
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-barcode-unit-schema-human-ui-release-20261116.yml
+permissions:
+  contents: read
+concurrency:
+  group: branch2-controlled-barcode-schema-and-worker
+  cancel-in-progress: false
+jobs:
+  test-only:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Exact Branch2 release guard, never Main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'b52b4bf0ee0b91f344ba3780f9cde7eb7141e88b'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('wrangler.jsonc').read_text())
+          assert cfg['name']=='orders-app-branch2'
+          assert cfg['main']=='worker/index.ts'
+          assert cfg.get('env') is None
+          assert cfg['d1_databases']==[{
+            'binding':'DB','database_name':'orders_db_branch2_mirror_20261027',
+            'database_id':'0904a573-21ff-44d8-93b0-c9200f771702'
+          }]
+          cfg['keep_vars']=True
+          cfg['send_metrics']=False
+          Path('.branch2-barcode-human-release.jsonc').write_text(json.dumps(cfg,indent=2)+'\n')
+          print('EXACT_BRANCH2_ONLY_PASS')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Validate schema safety and entire barcode workflow
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/branch2-barcode-unit-schema-guard-20261116.py
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-barcode-sku-http-domain-20261116.mjs
+          node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+          node scripts/test-barcode-sku-workflow-ux-20261116.mjs
+          node scripts/test-barcode-unit-foundation-20261116.mjs
+          node scripts/test-barcode-unit-catalog-integrity-20261116.mjs
+          npm run build
+      - name: Branch2 Worker dry-run, no upload
+        run: |
+          npx --no-install wrangler deploy --config .branch2-barcode-human-release.jsonc --name orders-app-branch2 --keep-vars --strict --dry-run --outdir .branch2-barcode-human-preview
+      - name: Read-only proof Branch2 schema is untouched before migration
+        run: python3 scripts/branch2-barcode-unit-schema-guard-20261116.py before
+      - name: Apply ONLY additive physical-unit identity tables to Branch2 D1
+        run: |
+          npx --no-install wrangler d1 execute DB --config wrangler.jsonc --remote --yes --file migrations/0136_barcode_physical_units_foundation.sql
+      - name: Read-only proof first migration contains empty identity tables
+        run: python3 scripts/branch2-barcode-unit-schema-guard-20261116.py after-foundation
+      - name: Apply ONLY identity/history guard triggers to Branch2 D1
+        run: |
+          npx --no-install wrangler d1 execute DB --config wrangler.jsonc --remote --yes --file migrations/0137_barcode_unit_catalog_integrity.sql
+      - name: Read-only proof exactly 12 triggers and no physical units
+        run: python3 scripts/branch2-barcode-unit-schema-guard-20261116.py after-integrity
+      - name: Deploy ONLY Branch2 Worker human barcode UI, preserving secrets
+        run: |
+          npx --no-install wrangler deploy --config .branch2-barcode-human-release.jsonc --name orders-app-branch2 --keep-vars --strict
+      - name: Recheck exact live Worker bindings, no Main
+        run: python3 scripts/branch2-barcode-unit-schema-guard-20261116.py worker-after
+      - name: Read-only Branch2 health, HTML and JS
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def get(path):
+              for attempt in range(5):
+                  try:
+                      with urllib.request.urlopen(base+path,timeout=25) as response:
+                          if response.status==200:return response.read()
+                  except Exception as error:
+                      print('BRANCH2_HTTP_RETRY',path,type(error).__name__,attempt+1)
+                      time.sleep(2)
+              raise SystemExit('BRANCH2_SMOKE_FAILED '+path)
+          health=json.loads(get('/api/health'))
+          if health.get('ok') is not True:raise SystemExit('HEALTH_NOT_OK')
+          page=get('/').decode('utf8','replace')
+          if '<html' not in page.lower():raise SystemExit('HTML_NOT_OK')
+          match=re.search(r'<script[^>]*src="(/assets/[^"]+)"',page)
+          if not match:raise SystemExit('CLIENT_ENTRY_NOT_FOUND')
+          if len(get(match.group(1)))<1000:raise SystemExit('CLIENT_ASSET_EMPTY')
+          print('BRANCH2_BARCODE_SCHEMA_AND_UI_RELEASE_VERIFIED_NO_MAIN_WRITES')
+          PY
