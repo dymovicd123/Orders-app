@@ -2,6 +2,7 @@ import { cleanText, toInt } from '../core/text.ts'
 import { writeActivityLog } from './activity.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { priorIssueEvidenceSql, SELECTIVE_DISPATCH_CUTOVER_AT } from './order-prior-issued-origin.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 /**
  * Old "Выдать готовые товары" operations may have already consumed stock,
@@ -15,12 +16,15 @@ export async function confirmPriorIssuedOrderShipping(
   orderId: number,
   input: { shippingDate: string; actor: string },
 ) {
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
   const now = new Date().toISOString()
   const proposed = cleanText(input.shippingDate)
   const shippingDate = /^\d{4}-\d{2}-\d{2}$/.test(proposed) ? proposed : now.slice(0, 10)
 
   // The entire proof is in the UPDATE predicate, not only in a stale GET plan.
   // No stock, reservation, movement, or order_item row is ever updated here.
+  const v2Exclusion=v2Gate.v2SchemaReady
+    ? ' AND '+legacyV1WriteExclusionSql('orders.id') : ''
   const update = db.prepare(`
     UPDATE orders SET shipping_status='sent', shipping_date=?, updated_at=?
     WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'
@@ -64,7 +68,7 @@ export async function confirmPriorIssuedOrderShipping(
             )
           )
       )
-  `).bind(shippingDate, now, orderId)
+  `+v2Exclusion).bind(shippingDate, now, orderId)
   // The evidence for future status-only correction is mandatory. A failed
   // activity insert rolls the shipping marker back in the same D1 transaction,
   // rather than leaving an unidentifiable send that legacy undo could restock.
@@ -104,6 +108,7 @@ export async function confirmPriorIssuedOrderShipping(
 export async function correctPriorIssuedOrderShippingIfApplicable(
   db: D1Database, orderId: number, input: { actor: string; physicalOutcome: unknown },
 ) {
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'shipping')
   const marker = await db.prepare(`
     SELECT created_at FROM activity_log
     WHERE order_id=? AND event_type='order_prior_issued_shipping_confirmed'
@@ -126,7 +131,8 @@ export async function correctPriorIssuedOrderShippingIfApplicable(
         WHERE a.order_id=orders.id
           AND a.event_type='order_prior_issued_shipping_confirmed'
           AND a.created_at=?)
-  `).bind(now,orderId,marker.created_at,marker.created_at).run()
+  `+(v2Gate.v2SchemaReady ? ' AND '+legacyV1WriteExclusionSql('orders.id') : '')
+  ).bind(now,orderId,marker.created_at,marker.created_at).run()
   if (toInt(result.meta?.changes,0)!==1) {
     throw new CriticalOperationConflictError(
       'После подтверждения отправки заказ изменился. Автоматически снимать статус нельзя: складская выдача не затронута.',

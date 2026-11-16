@@ -5,6 +5,7 @@ import { beginCriticalOperation, completeCriticalOperation, CriticalOperationCon
 import { financialEventStatement, readOrderFinancialLedger, syncOrderFinancialLedger } from './money.ts'
 import { getOrder } from './orders-write.ts'
 import { exchangeSetPaymentIds } from './return-exchange-payment-channels.ts'
+import { assertLegacyMutationAllowedAfterReturnV2 } from './return-v2-legacy-mutation-guard.ts'
 
 export async function correctExchangeFinancials(
   db: D1Database,
@@ -43,6 +44,7 @@ export async function correctExchangeFinancials(
        WHERE e.id = ?`
     ).bind(exchangeId).first<any>();
     if (!row) throw new Error('Обмен не найден.');
+    await assertLegacyMutationAllowedAfterReturnV2(db,toInt(row.order_id,0),'exchange_cancel');
     if (cleanText(row.status) === 'cancelled') throw new Error('Отменённый обмен нельзя исправлять.');
     if (normalizeOrderStatus(row.order_status) === 'deleted') throw new Error('Нельзя исправлять обмен удалённого заказа.');
 
