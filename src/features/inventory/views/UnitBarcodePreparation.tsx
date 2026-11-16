@@ -54,6 +54,7 @@ function renderBatch(windowToPrint: Window, batch: Batch, productName: string, v
     '<title>Индивидуальные этикетки</title><style>' +
     '@page{size:58mm 35mm;margin:0}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,sans-serif}' +
     '.label{width:58mm;height:35mm;box-sizing:border-box;padding:2mm;overflow:hidden;display:flex;flex-direction:column;gap:1mm;break-after:page;page-break-after:always}' +
+    '.label:last-of-type{break-after:auto;page-break-after:auto}' +
     '.title{font-weight:700;font-size:9pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.details{font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.bars{width:100%;height:13mm;display:block}.code{font-size:8pt;font-weight:bold;text-align:center;letter-spacing:.2px}' +
@@ -128,11 +129,11 @@ export function UnitBarcodePreparation({
   useEffect(() => {
     if (!open) return
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving && !printing) setOpen(false)
+      if (event.key === 'Escape' && !saving && !printing && !cancelling) setOpen(false)
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [open, saving, printing])
+  }, [open, saving, printing, cancelling])
 
   const location = preview?.locations.find(row => row.source === source)
   const available = location?.available ?? 0
@@ -231,7 +232,7 @@ export function UnitBarcodePreparation({
       setOpen(true)
     }}>Маркировать вещи</button>
     {open ? <div className="unit-barcode-overlay" role="presentation" onMouseDown={event => {
-      if (event.target === event.currentTarget && !saving && !printing) setOpen(false)
+      if (event.target === event.currentTarget && !saving && !printing && !cancelling) setOpen(false)
     }}>
       <section className="unit-barcode-modal" role="dialog" aria-modal="true"
         aria-label="Индивидуальные этикетки вещей">
