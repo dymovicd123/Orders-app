@@ -12,7 +12,7 @@ on:
       - worker/domains/barcode-sku.ts
       - src/features/inventory/views/SkuBarcodeButton.tsx
       - src/features/inventory/views/skuBarcodeLabel.css
-      - scripts/test-barcode-sku-foundation.mjs
+      - scripts/test-barcode-sku-*.mjs
       - worker/index.ts
       - src/features/inventory/views/catalogPolishExecutionGroups.tsx
       - .github/workflows/ci-barcode-sku-branch2-20261116.yml
@@ -33,5 +33,7 @@ jobs:
       - run: npm ci
       - name: Barcode checksum and Code128 tests
         run: node scripts/test-barcode-sku-foundation.mjs
+      - name: Read-only SKU lookup against isolated SQLite
+        run: node scripts/test-barcode-sku-http-domain-20261116.mjs
       - name: TypeScript and bundle build
         run: npm run build
