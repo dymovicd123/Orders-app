@@ -1,3 +1,4 @@
+import { assertActivePaymentMethods } from './payment-method-validation.ts'
 // Create a standalone Return: reserve the returned quantity, refund exact
 // payment channels, and record inventory lifecycle under one critical operation.
 // Original implementation/SQL extracted without modification.
@@ -78,6 +79,7 @@ export async function createReturn(
   const amount = Math.max(0, toInt(input.amount, 0));
   const paymentParts = normalizeMoneyParts(input.paymentParts, amount, input.paymentMethod);
   const paymentMethod = moneyMethodsSummary(paymentParts);
+  await assertActivePaymentMethods(db, paymentParts.map(part => part.method));
   const comment = cleanText(input.comment);
   // On a retry the return created by this same operation is already included in
   // order.return_amount. Add only that operation-owned amount back so the request
