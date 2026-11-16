@@ -2028,6 +2028,87 @@ assert(ordersTableUi.includes('item.physicallyReturned'))
 assert(ordersTableUi.includes('Отменён до отправки · без физического прихода'))
 console.log('RETURN_V2_ORDERS_HISTORY_READONLY_PASS: zero active items, exact returned quantities, awaiting receipt and unsent cancellation differentiated')
 console.log('RETURN_V2_F3_PARTIAL_EXCHANGE_QA_PASS')
+
+// H6: Worker commits a paid Return V2, but the browser transport loses the
+// response. Retrying the identical frozen body/requestId must acknowledge
+// the same posting and must never repeat money, reserve or stock movements.
+addOrder(10710,10711,'QA-V2-H6-DROPPED-RESPONSE',650)
+qaFresh(10710,10711)
+sql.prepare("INSERT INTO payments(order_id,payment_date,method,amount,payment_kind) VALUES(10710,'2026-11-16','CASH',650,'primary')").run()
+const h6Preview=await callV2Http('GET','/api/orders/10710/returns/v2/preview')
+assert.equal(h6Preview.eligible,true)
+assert.equal(h6Preview.evidence.lines[0].proposedAction,'cancel_unshipped_reservation')
+const h6Body={
+ requestId:'qa-v2-h6-lost-response-replay-00001',
+ expectedOrderVersion:h6Preview.evidence.orderVersion,
+ items:[{orderItemId:10711,quantity:1,receiptIntent:'pending'}],
+ refundAmount:650,refundMethod:'CASH'
+}
+const h6Path='/api/orders/10710/returns/v2'
+const h6StockBefore=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()
+async function h6SendWithResponseDiscarded(){
+ const response=await worker.fetch(new Request('https://test-only.invalid'+h6Path,{
+  method:'POST',
+  headers:{Cookie:'orders_session='+token,'Content-Type':'application/json'},
+  body:JSON.stringify(h6Body)
+ }),{DB,RETURN_V2_ENABLED:'true'})
+ // The test harness observes the server-side response status solely to prove
+ // the write actually happened. Nothing is delivered to the mock client.
+ assert.equal(response.status,201)
+ throw new TypeError('Failed to fetch: test transport drops response after commit')
+}
+await assert.rejects(h6SendWithResponseDiscarded(),/drops response after commit/)
+const h6Posted=sql.prepare(
+ 'SELECT id,return_id,request_id,cash_refund,final_total FROM return_v2_unified_postings WHERE order_id=10710'
+).all()
+assert.equal(h6Posted.length,1,'Dropped response still records exactly one posting')
+assert.equal(h6Posted[0].request_id,h6Body.requestId)
+assert.equal(h6Posted[0].cash_refund,650)
+assert.equal(h6Posted[0].final_total,0)
+assert.equal(sql.prepare("SELECT status,amount FROM returns WHERE id=?").get(h6Posted[0].return_id).status,'completed')
+const h6FirstCounts={
+ returns:sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=10710').get().n,
+ postings:sql.prepare('SELECT COUNT(*) n FROM return_v2_unified_postings WHERE order_id=10710').get().n,
+ lines:sql.prepare(`SELECT COUNT(*) n FROM return_v2_unified_lines ul
+  JOIN return_v2_unified_postings up ON up.id=ul.posting_id WHERE up.order_id=10710`).get().n,
+ finance:sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=10710').get().n,
+ movements:sql.prepare("SELECT COUNT(*) n FROM inventory_movements WHERE reference_id=?").get(String(10710)).n
+}
+const h6FirstStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get()
+assert.equal(h6FirstStock.quantity,h6StockBefore.quantity)
+assert.equal(h6FirstStock.reserved_quantity,h6StockBefore.reserved_quantity-1)
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=10711').get().status,'released')
+assert.equal((await readVersionedReturnMoney(DB,10710)).paidOut,650)
+const h6Replay=await callV2Http('POST',h6Path,h6Body,200)
+assert.equal(h6Replay.contractPosted,true)
+assert.equal(h6Replay.replayed,true)
+assert.equal(h6Replay.returnId,h6Posted[0].return_id)
+assert.equal(h6Replay.postingId,h6Posted[0].id)
+const h6WrongReplay=await callV2Http('POST',h6Path,{
+ ...h6Body,refundAmount:0,refundMethod:''
+},409)
+assert.equal(h6WrongReplay.ok,false,'Mutating the payload must not reuse a recorded requestId')
+const h6NewId=await callV2Http('POST',h6Path,{
+ ...h6Body,requestId:'qa-v2-h6-new-id-for-completed-order-0001'
+},409)
+assert.equal(h6NewId.ok,false,'A brand-new requestId must not re-apply a completed order')
+assert.deepEqual({
+ returns:sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=10710').get().n,
+ postings:sql.prepare('SELECT COUNT(*) n FROM return_v2_unified_postings WHERE order_id=10710').get().n,
+ lines:sql.prepare(`SELECT COUNT(*) n FROM return_v2_unified_lines ul
+  JOIN return_v2_unified_postings up ON up.id=ul.posting_id WHERE up.order_id=10710`).get().n,
+ finance:sql.prepare('SELECT COUNT(*) n FROM financial_events WHERE order_id=10710').get().n,
+ movements:sql.prepare("SELECT COUNT(*) n FROM inventory_movements WHERE reference_id=?").get(String(10710)).n
+},h6FirstCounts,'Recovery and rejected duplicate must leave all posting ledgers unchanged')
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9541').get(),h6FirstStock)
+assert.equal((await readVersionedReturnMoney(DB,10710)).paidOut,650)
+const h6UiSource=fs.readFileSync('src/features/sections/OrderReturnV2Flow.tsx','utf8')
+assert(h6UiSource.includes('if(!requestRef.current)requestRef.current='))
+assert(h6UiSource.includes('setUnknownResult(true)'))
+assert(h6UiSource.includes("unknownResult?'Проверить прежнее сохранение'"))
+assert(h6UiSource.includes("body:JSON.stringify({\n         requestId:requestRef.current"))
+console.log('RETURN_V2_H6_LOST_RESPONSE_PASS: server commits, response is discarded, identical retry returns same posting, altered/new request rejected, finance and stock unchanged')
+
 console.log('RETURN_V2_WORK_QA_P1_PASS: second shipped unit, post-cancellation return, preserved Workshop completion, full history and stale-form reset')
 
 sql.close()
