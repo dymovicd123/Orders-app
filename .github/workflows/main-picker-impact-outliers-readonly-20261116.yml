@@ -1,0 +1,33 @@
+name: "READ ONLY: Main picker corrections outliers 2026-11-16"
+on:
+  push:
+    branches: [audit/barcode-readiness-main-20261116]
+    paths: ['.github/workflows/main-picker-impact-outliers-readonly-20261116.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/audit/barcode-readiness-main-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check production target and script (no writes)
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          node --check scripts/audit-picker-impact-outliers-main-20261116.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Inspect correction outliers and historical sent exception (SELECT only)
+        run: node scripts/audit-picker-impact-outliers-main-20261116.mjs
