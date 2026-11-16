@@ -19,7 +19,7 @@ assert(button.includes('fresh.barcode !== label.barcode'), 'print must reject st
 assert(button.includes('!fresh.active'), 'retired SKU must fail closed before printing')
 assert(button.includes('fresh.physicalUnit !== false'), 'SKU label must not impersonate a physical item')
 assert(button.includes("method: 'GET'"), 'print revalidation must use read-only API')
-assert(button.indexOf("window.open('', '_blank'") < button.indexOf('await fetch('), 'print popup must open before async check')
+assert(button.indexOf("window.open('', '_blank'", button.indexOf('const printVerified')) < button.indexOf('await fetch(', button.indexOf('const printVerified')), 'print popup must open before async check')
 assert(button.includes('if (!printWindow.closed) printWindow.close()'), 'failed validation must close popup')
 assert(button.includes("event.key === 'Escape'"), 'preview must support Escape')
 
