@@ -892,6 +892,22 @@ export type OrderRecord = {
   retained_summary_text?: string | null
   retained_payment_count?: number
   retained_return_count?: number
+  returnHistoryItems?: Array<{
+    orderItemId: number
+    productName: string
+    quantity: number
+    gender?: string | null
+    color?: string | null
+    material?: string | null
+    length?: string | null
+    size?: string | null
+    sourceType: string
+    action: string
+    physicallyReturned: boolean
+    physicalReceivedAt: string | null
+    restocked: boolean
+    receiptDestination: string | null
+  }>
   items: Array<{
     id?: number
     productId?: number | null
