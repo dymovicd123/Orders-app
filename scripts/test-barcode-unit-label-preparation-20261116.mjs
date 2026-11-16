@@ -177,7 +177,7 @@ assert(routes.includes("requireAdminAccess(request)"), 'write endpoint must requ
 assert(routes.includes("url.pathname === '/api/barcodes/units/batches' && request.method === 'POST'"))
 assert(ui.includes('Маркировать вещи') && ui.includes('повторная печать'), 'human marking/reprint UI missing')
 assert(ui.includes('Подтвердить аннулирование'), 'must allow safe mistaken label cancellation')
-assert(routes.includes("'/cancel'"), 'cancel route must be authenticated and available')
+assert(routes.includes("barcodeCancelMatch && request.method === 'POST'"), 'cancel route must be authenticated and available')
 assert(ui.includes('window.open(\'\', \'_blank\''), 'printing must open browser popup before await')
 assert(card.includes('<UnitBarcodePreparation'), 'marking must be reachable in exact variant card')
 for (const name of ['inventory_stock','inventory_movements','inventory_reservations','order_items']) {
