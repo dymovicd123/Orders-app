@@ -51,7 +51,7 @@ function printSkuLabel(record: SkuBarcodeRecord, printWindow: Window): boolean {
   const description = [record.color, record.size, record.gender].map(clean).filter(Boolean).join(' · ')
   const execution = [record.material, record.length].map(clean).filter(x => x && x !== 'СТАНДАРТ').join(' · ')
   const markup = '<!doctype html><html lang="ru"><head><meta charset="utf-8"/>' +
-    '<title>Этикетка SKU</title><style>' +
+    '<title>Общий код варианта</title><style>' +
     '@page{size:58mm 35mm;margin:0}' +
     'body{margin:0;font-family:Arial,sans-serif;color:#111;background:#fff}' +
     '.label{box-sizing:border-box;width:58mm;height:35mm;padding:2mm;overflow:hidden;display:flex;flex-direction:column;gap:1mm}' +
@@ -67,7 +67,7 @@ function printSkuLabel(record: SkuBarcodeRecord, printWindow: Window): boolean {
     (execution ? '<div class="details">' + htmlEscape(execution) + '</div>' : '') +
     printableBarcodeSvg(record.barcode) +
     '<div class="code">' + htmlEscape(record.barcode) + '</div>' +
-    '<div class="note">Код SKU · не отдельная вещь</div></div>' +
+    '<div class="note">Общий код · не индивидуальная вещь</div></div>' +
     '<div class="controls"><button type="button" onclick="window.print()">Печать этикетки</button>' +
     ' <span>Макет 58 × 35 мм. В настройках печати выберите масштаб 100%.</span></div></body></html>'
   printWindow.document.open()
@@ -142,18 +142,18 @@ export function SkuBarcodeButton({ variantId, compact = false }: { variantId: nu
   }
 
   return <div className="sku-barcode-action">
-    <button type="button" className="secondary compact sku-barcode-trigger" title="Этикетка варианта SKU (не отдельной физической вещи)"
+    <button type="button" className="secondary compact sku-barcode-trigger" title="Общий код для поиска варианта или маркировки полки; не индивидуальная вещь"
       disabled={loading} onClick={() => void open()}>
-      {loading ? 'Проверяю…' : compact ? 'Этикетка SKU' : 'Штрихкод SKU'}
+      {loading ? 'Проверяю…' : compact ? 'Код варианта' : 'Этикетка варианта'}
     </button>
     {error ? <span role="alert" className="sku-barcode-error">{error}</span> : null}
     {record?.barcode ? (
       <div className="sku-barcode-backdrop" role="presentation" onMouseDown={event => {
         if (event.target === event.currentTarget) setRecord(null)
       }}>
-        <section className="sku-barcode-dialog" role="dialog" aria-modal="true" aria-label="Штрихкод SKU">
+        <section className="sku-barcode-dialog" role="dialog" aria-modal="true" aria-label="Этикетка варианта">
           <div className="sku-barcode-dialog-head">
-            <h3>Штрихкод варианта</h3>
+            <h3>Общий код варианта</h3>
             <button type="button" className="secondary compact" onClick={() => setRecord(null)}>Закрыть</button>
           </div>
           <div className="sku-barcode-label-preview">
@@ -162,13 +162,13 @@ export function SkuBarcodeButton({ variantId, compact = false }: { variantId: nu
             <Code128Svg code={record.barcode}/>
             <strong className="sku-barcode-code">{record.barcode}</strong>
           </div>
-          <p className="sku-barcode-explanation">Это этикетка варианта для поиска и маркировки полки.
-            Она одинакова для всех вещей данного варианта. Для индивидуального учёта вещей она не подходит.
-            Печать не меняет остатки или резервы.</p>
+          <p className="sku-barcode-explanation">Этот код одинаков у всех изделий с такими характеристиками.
+            Печатайте его для полки или поиска в каталоге, но не как индивидуальную этикетку вещи.
+            Печать не изменяет количество на складе или резервы.</p>
           {error ? <p role="alert" className="sku-barcode-error">{error}</p> : null}
           <div className="sku-barcode-dialog-actions">
             <button type="button" className="primary" disabled={printing} onClick={() => void printVerified(record)}>
-              {printing ? 'Проверяю актуальность…' : 'Печать SKU · 58 × 35 мм'}
+              {printing ? 'Проверяю актуальность…' : 'Печатать общий код · 58 × 35 мм'}
             </button>
           </div>
         </section>
