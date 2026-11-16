@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch,
+  cancelPreparedUnitLabelBatch, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch,
 } from '../worker/domains/barcode-unit-preparation.ts'
 import { isUnitBarcode } from '../shared/barcode-unit.ts'
 import { encodeCode128B } from '../shared/barcode-code128.ts'
@@ -122,6 +122,19 @@ await assert.rejects(
   prepareUnitLabelBatch(d1, { variantId:101, source:'warehouse', quantity:1, requestId:id(5) }, 'admin'),
   /Нельзя подготовить больше/
 )
+const cancelled = await cancelPreparedUnitLabelBatch(d1, boutique.batchId, 'admin')
+assert.equal(cancelled.cancelled, true)
+assert.equal(cancelled.duplicate, false)
+assert.equal((await cancelPreparedUnitLabelBatch(d1, boutique.batchId, 'admin')).duplicate, true)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_unit_labels WHERE state='revoked'").get().n, 1)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_units WHERE unit_status='retired' AND coverage_status='excluded'").get().n, 1)
+assert.equal((await previewUnitBarcodePreparation(d1, 101)).locations.find(x => x.source === 'boutique').available, 1)
+await assert.rejects(readPreparedUnitLabelBatch(d1, boutique.batchId), /аннулирована/)
+const boutiqueAgain = await prepareUnitLabelBatch(d1,
+  { variantId:101, source:'boutique', quantity:1, requestId:id(11) }, 'admin')
+assert.notEqual(boutiqueAgain.labels[0].token, boutique.labels[0].token)
+assert.deepEqual(stock(), snapshot, 'Cancel and reprepare must not change physical totals')
+
 const beforeIllegal = count('inventory_units')
 assert.throws(() => sqlite.prepare(`INSERT INTO inventory_units
 (unit_id,original_variant_id,variant_id,origin_kind,origin_ref,inventory_source,unit_status,coverage_status,created_at,updated_at)
@@ -162,7 +175,9 @@ const ui = readFileSync('src/features/inventory/views/UnitBarcodePreparation.tsx
 const card = readFileSync('src/features/inventory/views/catalogPolishExecutionGroups.tsx','utf8')
 assert(routes.includes("requireAdminAccess(request)"), 'write endpoint must require privileged account')
 assert(routes.includes("url.pathname === '/api/barcodes/units/batches' && request.method === 'POST'"))
-assert(ui.includes('Маркировать вещи') && ui.includes('Повторная печать') === false || ui.includes('повторная печать'))
+assert(ui.includes('Маркировать вещи') && ui.includes('повторная печать'), 'human marking/reprint UI missing')
+assert(ui.includes('Подтвердить аннулирование'), 'must allow safe mistaken label cancellation')
+assert(routes.includes("'/cancel'"), 'cancel route must be authenticated and available')
 assert(ui.includes('window.open(\'\', \'_blank\''), 'printing must open browser popup before await')
 assert(card.includes('<UnitBarcodePreparation'), 'marking must be reachable in exact variant card')
 for (const name of ['inventory_stock','inventory_movements','inventory_reservations','order_items']) {
