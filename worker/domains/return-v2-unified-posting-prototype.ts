@@ -21,7 +21,7 @@ type Stock={id:number;inventory_source:string;variant_id:number;quantity:number;
 type PreparedLine={orderItemId:number;quantity:number;originalQty:number;unitPrice:number;
   value:number;action:Exclude<ReturnV2LineAction,'needs_review'>;reservation:Res|null;
   source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent;
-  fulfilledQty:number;legacyUnloggedShipping:boolean;unrestoredCorrection:boolean}
+  fulfilledQty:number;exchangedOldQty:number;legacyUnloggedShipping:boolean;unrestoredCorrection:boolean}
 export class ReturnV2UnifiedPostingConflict extends Error {
   readonly status=409
   readonly code='return_v2_unified_posting_conflict'
@@ -128,7 +128,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       if(result.length!==1||result[0].status!=='fulfilled'
         ||result[0].quantity!==line.fulfilledQuantity
         ||(isLegacy?line.dispatchedQuantity!==0
-          :line.dispatchedQuantity!==line.contractQuantity+line.postedV2PhysicalQuantity))
+          :line.dispatchedQuantity!==line.contractQuantity+line.postedV2PhysicalQuantity+line.exchangedOldQuantity))
         reject('Выдача позиции перестала соответствовать журналу отправок.')
     }else{
       if(result.length!==1||result[0].status!==(act==='cancel_unshipped_reservation'?'active':'unresolved')
@@ -196,6 +196,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       reservation,source:actual.source_type,variant:actual.variant_id,
       oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent,
       fulfilledQty:line.fulfilledQuantity,
+      exchangedOldQty:line.exchangedOldQuantity,
       legacyUnloggedShipping:line.reasonCode==='legacy_sent_fulfilled_without_dispatch',
       unrestoredCorrection:line.reasonCode==='reshipped_after_unrestored_correction'})
   }
@@ -435,6 +436,10 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
             AND r.status='fulfilled' AND r.quantity=?
         ) AND (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
              FROM order_dispatch_items di WHERE di.order_item_id=order_items.id)=?
+          AND (SELECT COALESCE(SUM(ei.quantity),0)
+            FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+            WHERE ei.order_item_id=order_items.id AND ei.role='old'
+              AND e.order_id=order_items.order_id AND e.status='completed')=?
           AND ${line.unrestoredCorrection
              ? noUnprovenCancelledDispatchSql('order_items.id')
              : noUnsafeCancelledDispatchSql('order_items.id')}
@@ -460,7 +465,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
          AND ${noUnreversedDispatchSql('order_items.id')}`
     const guardArgs=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
       ? [] : line.action==='physical_return_pending'
-      ? [line.fulfilledQty,...(line.legacyUnloggedShipping?[]:[line.fulfilledQty])] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
+      ? [line.fulfilledQty,...(line.legacyUnloggedShipping?[]:[line.fulfilledQty,line.exchangedOldQty])] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
         line.quantity===r!.quantity?'released':r!.status]
     const sameItemHistoryGuard=line.action==='cancel_unshipped_reservation'
       ? `AND NOT EXISTS(

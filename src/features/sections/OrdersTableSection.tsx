@@ -292,12 +292,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       const shipmentLinesByItemIndex = new Map(shipmentDisplay.lines.map(line => [line.sourceIndex, line]))
                       const fullyShipped = isOrderShipmentCompleteForActions(order)
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
-                      const fullItemCount = Math.max(order.items.length, Number(order.item_count || 0))
+                      const returnedHistoryItems = order.returnHistoryItems || []
+                      const fullItemCount = Math.max(order.items.length, Number(order.item_count || 0)) + returnedHistoryItems.length
                       const itemSummary = summarizeOrderItemLines(
                         order.items,
                         visibleItemCount,
                         projection.workshopPending ? 'in_workshop' : 'ready',
                       )
+                      const visibleReturnedHistory = returnedHistoryItems.slice(0,Math.max(0,visibleItemCount-itemSummary.lines.length))
                       const visiblePaymentCount = Math.max(2, expandedOrderPaymentCounts[order.id] || 2)
                       const paymentSummary = summarizeOrderPaymentLines(order.payments, visiblePaymentCount)
                       const retainedOnly = projection.retainedOnly
@@ -351,6 +353,30 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   </div>
                                 </div>
                               ))}
+                              {visibleReturnedHistory.map((item,index)=>{
+                                const details=[item.gender,item.color,item.material,item.length,item.size].filter(Boolean).join(' · ')
+                                const isReceived=item.physicallyReturned&&Boolean(item.physicalReceivedAt)
+                                const status=item.physicallyReturned
+                                  ? isReceived
+                                    ? item.restocked
+                                      ? `Возвращён · принят в ${item.receiptDestination==='boutique'?'Бутик':'Склад'}`
+                                      : 'Возвращён · получен без добавления в остатки'
+                                    : 'Возврат оформлен · ожидает физической приёмки'
+                                  : item.action==='cancel_workshop_obligation'
+                                    ? 'Отказ клиента · работа цеха сохранена'
+                                    : 'Отменён до отправки · без физического прихода'
+                                return <div className="order-item-chip order-item-card is-return-history"
+                                  key={`${order.id}-returned-${item.orderItemId}-${index}`}>
+                                  <div className="order-item-card-head">
+                                    <strong>{item.productName}</strong>
+                                    <span className="order-item-quantity-badge">× {item.quantity}</span>
+                                  </div>
+                                  {details?<span className="order-item-card-details">{details}</span>:null}
+                                  <small className={`order-item-history-status ${item.physicallyReturned?'is-returned':'is-cancelled'}`}>
+                                    {status}
+                                  </small>
+                                </div>
+                              })}
                               {Math.max(0, fullItemCount - visibleItemCount) > 0 ? (
                                 <button
                                   className="order-item-chip order-item-chip-more is-clickable"

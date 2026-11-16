@@ -75,6 +75,7 @@ export function orderItemAvailableOperationQuantity(item: Record<string, unknown
 
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
+  const returnHistoryItemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
   const committedExchangeCountByOrderId = new Map<number, number>();
@@ -84,7 +85,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, returnHistoryItemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -106,7 +107,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const placeholders = chunk.map(() => '?').join(',');
     const requestedOrderValues = chunk.map(() => '(?)').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult, returnV2HistoryResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 COALESCE(
@@ -185,6 +186,23 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
          LEFT JOIN standalone_returns sr ON sr.order_id = ro.order_id
          LEFT JOIN exchange_counts ec ON ec.order_id = ro.order_id`
       ).bind(...chunk).all<Record<string, unknown>>(),
+      db.prepare(`SELECT up.order_id,ul.order_item_id,ul.contracted_quantity,
+          COALESCE(ao.semantic_action,ul.action) AS action,
+          oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,
+          oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+          oi.source_type,oi.is_workshop,
+          ri.physical_received_at,ri.restocked,ri.inventory_source
+        FROM return_v2_unified_postings up
+        JOIN returns ret ON ret.id=up.return_id AND ret.status='completed'
+        JOIN return_v2_unified_lines ul ON ul.posting_id=up.id
+        JOIN order_items oi ON oi.id=ul.order_item_id AND oi.order_id=up.order_id
+        LEFT JOIN return_v2_unified_action_overrides ao
+          ON ao.posting_id=up.id AND ao.order_item_id=ul.order_item_id
+        LEFT JOIN return_items ri ON ri.return_id=up.return_id
+          AND ri.order_item_id=ul.order_item_id
+          AND ul.action='physical_return_pending'
+        WHERE up.order_id IN (${placeholders})
+        ORDER BY up.order_id,ul.id`).bind(...chunk).all<Record<string, unknown>>(),
     ]);
 
     const activeStandaloneReturnedByItem = new Map<number, number>();
@@ -203,6 +221,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
 
     appendRows(itemsByOrderId, itemsResult.results || []);
+    appendRows(returnHistoryItemsByOrderId, returnV2HistoryResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
     appendRows(returnsByOrderId, returnsResult.results || []);
     appendRows(workshopTasksByOrderId, workshopTasksResult.results || []);
@@ -223,7 +242,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, returnHistoryItemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 

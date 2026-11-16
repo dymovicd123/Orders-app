@@ -27,6 +27,7 @@ export type ReturnV2LineEvidence = {
   selectedSaleValue: number
   dispatchedQuantity: number
   postedV2PhysicalQuantity: number
+  exchangedOldQuantity: number
   activeReservedQuantity: number
   unresolvedReservedQuantity: number
   fulfilledQuantity: number
@@ -45,6 +46,7 @@ type ItemRow = {
   line_total:number;stock_writeoff_status:string|null;source_type:string
   is_workshop:number;variant_id:number|null;prior_issued_evidence:number
   old_returned_quantity:number;exchanged_old_qty:number;
+  completed_exchange_new:number;
   posted_physical_v2_qty:number;baselined_old_qty:number
 }
 type ReservationRow = {
@@ -106,6 +108,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
          WHERE ei.order_item_id=oi.id AND ei.role='old'
            AND ex.order_id=oi.order_id AND COALESCE(ex.status,'completed')='completed'),0)
          AS exchanged_old_qty,
+       EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+         WHERE ei.order_item_id=oi.id AND ei.role='new'
+           AND ex.order_id=oi.order_id AND ex.status='completed' AND ei.quantity>0)
+         AS completed_exchange_new,
        COALESCE((SELECT SUM(ul.contracted_quantity)
          FROM return_v2_unified_lines ul
          JOIN return_v2_unified_postings up ON up.id=ul.posting_id
@@ -187,6 +193,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const contractQuantity=amount(item.quantity)??0
     const oldReturned=amount(item.old_returned_quantity)??0
     const postedV2Physical=amount(item.posted_physical_v2_qty)
+    const exchangedOld=amount(item.exchanged_old_qty)
     const qty=Math.max(0,contractQuantity-oldReturned)
     const soldUnitPrice=amount(item.unit_price)??0
     const rs=reservations.get(id)||[]
@@ -204,8 +211,9 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
     const tasks=workshopTasks.get(id)||[]
+    const isConfirmedExchangeReplacement=Number(item.completed_exchange_new)===1
     const expectedHistoricalFulfillment=contractQuantity
-      +(amount(item.exchanged_old_qty)??0)
+      +(exchangedOld??0)
       +(amount(item.posted_physical_v2_qty)??0)
       +(amount(item.baselined_old_qty)??0)
     const legacySentIssued=!isWorkshop&&String(order.shipping_status)==='sent'
@@ -235,7 +243,9 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     let reasonCode='unknown_state'
     let message='Нет однозначного основания для складского действия. Не изменяйте остаток автоматически.'
     const badNumbers=oldReturned>contractQuantity||qty===0||postedV2Physical===null
-      ||(postedV2Physical!==null&&!Number.isSafeInteger(contractQuantity+postedV2Physical))
+      ||exchangedOld===null
+      ||(postedV2Physical!==null&&exchangedOld!==null
+        &&!Number.isSafeInteger(contractQuantity+postedV2Physical+exchangedOld))
       ||!Number.isSafeInteger(qty*soldUnitPrice)
       ||rs.some(r=>amount(r.quantity)===null||amount(r.quantity)===0)
       ||ds.some(r=>amount(r.quantity)===null||amount(r.cancelled_quantity)===null
@@ -264,15 +274,15 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         && Number(d.correction_valid)===1))){
       reasonCode='corrected_dispatch_requires_review'
       message='Есть отменённая отправка. Проверьте, где товар и что уже учтено.'
-    }else if(dispatched>contractQuantity+(postedV2Physical??0)
-      ||dispatched>0&&dispatched<contractQuantity+(postedV2Physical??0)){
+    }else if(dispatched>contractQuantity+(postedV2Physical??0)+(exchangedOld??0)
+      ||dispatched>0&&dispatched<contractQuantity+(postedV2Physical??0)+(exchangedOld??0)){
       reasonCode='partial_dispatch_not_split'
       message='Часть этой строки отправлена без безопасного разделения. Требуется сверка.'
-    }else if(dispatched===contractQuantity+(postedV2Physical??0)&&qty>0){
+    }else if(dispatched===contractQuantity+(postedV2Physical??0)+(exchangedOld??0)&&qty>0){
       const validDispatch=ds.every(d=>Number(d.movement_valid)===1||isWorkshop||(
         d.movement_id===null&&priorIssued))
       const badReservation=activeQty>0||unresolvedQty>0
-        ||(!isWorkshop&&(fulfilled.length!==1||fulfilledQty!==contractQuantity+(postedV2Physical??0)))
+        ||(!isWorkshop&&(fulfilled.length!==1||fulfilledQty!==contractQuantity+(postedV2Physical??0)+(exchangedOld??0)))
       if(validDispatch&&!badReservation){
         action='physical_return_pending'
         reasonCode='dispatch_confirmed'
@@ -291,7 +301,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         message='Склад уже списал товар, но отправка клиенту не подтверждена. Не начислять приход.'
       }
     }else if(dispatched===0&&ds.length===0&&!isWorkshop
-      &&String(order.shipping_status)==='sent'){
+      &&String(order.shipping_status)==='sent'&&!isConfirmedExchangeReplacement){
       reasonCode='legacy_order_sent_without_line_proof'
       message='Заказ отмечен отправленным, но нет подтверждения выдачи этой позиции.'
     }else if(dispatched===0&&ds.length===0&&!isWorkshop&&nonCurrent.length===0
@@ -306,6 +316,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       action='cancel_unresolved_reservation'
       reasonCode='unresolved_reservation_not_dispatched'
       message='Физического списания нет. Закрыть неразрешённый резерв без изменения остатка.'
+    }else if(dispatched===0&&ds.length===0&&!isWorkshop
+      &&String(order.shipping_status)==='sent'){
+      reasonCode='legacy_order_sent_without_line_proof'
+      message='Заказ отмечен отправленным, но нет подтверждения выдачи этой позиции.'
     }else if(!isWorkshop&&dispatched===0&&ds.length===0&&rs.length===0
       &&!priorIssued&&['pending_reservation','not_reserved','unreserved',''].includes(stockStatus)
       &&['warehouse','boutique'].includes(source)){
@@ -340,6 +354,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
       availableQuantity:qty,selectedQuantity:qty,
       soldUnitPrice,selectedSaleValue:qty*soldUnitPrice,
       dispatchedQuantity:dispatched,postedV2PhysicalQuantity:postedV2Physical??0,
+      exchangedOldQuantity:exchangedOld??0,
       activeReservedQuantity:activeQty,unresolvedReservedQuantity:unresolvedQty,
       fulfilledQuantity:fulfilledQty,
       plannedReserveRelease:action==='cancel_unshipped_reservation'?activeQty:0,
