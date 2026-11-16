@@ -87,6 +87,9 @@ jobs:
           node scripts/test-warehouse-report-documents-20261111.mjs
           node scripts/test-warehouse-capital-ux-full-word-20261111.mjs
 
+      - name: Check payment methods use active references
+        run: node scripts/test-payment-method-validation-20261116.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

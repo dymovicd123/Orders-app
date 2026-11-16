@@ -757,6 +757,14 @@ function App() {
           window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#inventory`)
         }
       }
+      if (rawHash !== 'editor') {
+        setEditorOpen(false)
+        setEditorOrderOverride(null)
+        setSelectedOrderId(null)
+        setEditorDraft(null)
+        setEditorReturnSector('orders')
+        setOrderPanel((current) => current === 'edit' ? 'list' : current)
+      }
       setActiveSector(nextSector)
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
     }
@@ -770,6 +778,14 @@ function App() {
   useEffect(() => {
     setMobileNavOpen(false)
     if (activeSector === 'orders' && orderPanel === 'zammler') setOrderPanel('list')
+    if (activeSector !== 'orders') {
+      setEditorOpen(false)
+      setEditorOrderOverride(null)
+      setSelectedOrderId(null)
+      setEditorDraft(null)
+      setEditorReturnSector('orders')
+      setOrderPanel((current) => current === 'edit' ? 'list' : current)
+    }
   }, [activeSector])
 
   useEffect(() => {
@@ -3271,10 +3287,19 @@ function removeDebtPayment(index: number) {
         method: String(payment.method || '').trim(),
         paymentKind: 'debt_close' as const,
       }))
-      .filter((payment) => payment.amount > 0 && payment.method)
+      .filter((payment) => payment.amount > 0)
 
     if (!normalizedPayments.length) {
       setError('Добавьте хотя бы одну оплату с суммой больше нуля и способом оплаты.')
+      return
+    }
+    if (normalizedPayments.some((payment) => !payment.method)) {
+      setError('Выберите способ оплаты для каждой строки с положительной суммой. Платежи не сохранены.')
+      return
+    }
+    const allowedMethods = new Set(suggestionValues.paymentMethods.map(normalizeSuggestion))
+    if (normalizedPayments.some((payment) => !allowedMethods.has(normalizeSuggestion(payment.method)))) {
+      setError('Найден неизвестный способ оплаты. Выберите активный способ из справочника для каждой строки.')
       return
     }
 

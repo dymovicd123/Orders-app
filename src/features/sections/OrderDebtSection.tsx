@@ -239,7 +239,7 @@ export function OrderDebtSection({ ctx }: { ctx: SectionContext }) {
                                 value={payment.method}
                                 onChange={(value) => updateDebtPayment(index, 'method', value)}
                                 placeholder="Выберите способ"
-                                options={suggestionValues.paymentMethods}
+                                strictOptions options={suggestionValues.paymentMethods}
                               />
                             </label>
                             <label>

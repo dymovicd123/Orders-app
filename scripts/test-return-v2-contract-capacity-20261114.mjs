@@ -87,6 +87,7 @@ const token='test-local-http-create-token'
 const tokenHash=createHash('sha256').update(token).digest('base64url')
 const staffToken='test-local-http-staff-token'
 const staffTokenHash=createHash('sha256').update(staffToken).digest('base64url')
+sql.prepare("INSERT INTO reference_values(kind,value,is_active) VALUES('payment_method','KASPI',1),('payment_method','CASH',1)").run()
 sql.prepare("INSERT INTO managers (id,name,is_active) VALUES(9001,'HTTP Manager',1)").run()
 sql.prepare("INSERT INTO app_users (id,login,email,password_hash,role,manager_id,display_name,is_active,must_change_password) VALUES(9001,'httpmanager','local@invalid','fixture-inert-hash','admin',9001,'HTTP Admin',1,0)").run()
 sql.prepare("INSERT INTO app_users (id,login,email,password_hash,role,manager_id,display_name,is_active,must_change_password) VALUES(9002,'httpstaff','staff@invalid','fixture-inert-hash','manager',NULL,'HTTP Staff',1,0)").run()

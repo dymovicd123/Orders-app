@@ -658,7 +658,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               {exchangeDraft.financialAction !== 'none' ? (
                                 <label>
                                   <span>{exchangeDraft.financialAction === 'refund' ? 'Способ возврата денег' : 'Способ оплаты'}</span>
-                                  <SmartPickerInput value={exchangeDraft.paymentMethod} options={suggestionValues.paymentMethods} placeholder={exchangeDraft.financialAction === 'refund' ? 'Например, НАЛИЧКА' : 'Например, KASPI'} onChange={(value) => setExchangeDraft((current) => ({ ...current, paymentMethod: value }))} />
+                                  <SmartPickerInput value={exchangeDraft.paymentMethod} strictOptions options={suggestionValues.paymentMethods} placeholder={exchangeDraft.financialAction === 'refund' ? 'Например, НАЛИЧКА' : 'Например, KASPI'} onChange={(value) => setExchangeDraft((current) => ({ ...current, paymentMethod: value }))} />
                                 </label>
                               ) : null}
                             </div>
@@ -806,7 +806,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               <div className="form-grid compact-form-grid">
                                 <label><span>Дата</span><input type="date" value={financialCorrection.exchangeDate} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, exchangeDate: event.target.value }))} /></label>
                                 <label><span>Сумма</span><FriendlyNumberInput type="number" min="1" value={financialCorrection.financialAmount} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, financialAmount: Math.max(0, Number(event.target.value || 0)) }))} /></label>
-                                <label><span>{entry.financialAction === 'refund' ? 'Способ возврата' : 'Способ оплаты'}</span><SmartPickerInput value={financialCorrection.paymentMethod} options={suggestionValues.paymentMethods} placeholder={entry.financialAction === 'refund' ? 'Например, НАЛИЧКА' : 'Например, KASPI'} onChange={(value: string) => setFinancialCorrection((current: any) => ({ ...current, paymentMethod: value }))} /></label>
+                                <label><span>{entry.financialAction === 'refund' ? 'Способ возврата' : 'Способ оплаты'}</span><SmartPickerInput value={financialCorrection.paymentMethod} strictOptions options={suggestionValues.paymentMethods} placeholder={entry.financialAction === 'refund' ? 'Например, НАЛИЧКА' : 'Например, KASPI'} onChange={(value: string) => setFinancialCorrection((current: any) => ({ ...current, paymentMethod: value }))} /></label>
                                 <label className="wide"><span>Комментарий</span><input value={financialCorrection.comment} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, comment: event.target.value }))} /></label>
                               </div>
                               <div className="row-actions">

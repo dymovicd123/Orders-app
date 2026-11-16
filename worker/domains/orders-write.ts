@@ -1,3 +1,4 @@
+import { assertActivePaymentMethod, assertActivePaymentMethods } from './payment-method-validation.ts'
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
@@ -752,6 +753,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const rawPayments = Array.isArray(input.payments) ? input.payments : [];
         assertOrderItemInputs(rawItems);
         assertOrderPaymentInputs(rawPayments);
+        await assertActivePaymentMethods(db, rawPayments.filter(payment => Number(payment?.amount || 0) > 0).map(payment => payment.method));
         const normalizedItems = await hydratePickedOrderItems(db, normalizeOrderItems(rawItems, sourceType));
         const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
@@ -857,6 +859,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
 
         assertOrderItemInputs(items);
         assertOrderPaymentInputs(payments);
+        await assertActivePaymentMethods(db, payments.filter(payment => Number(payment?.amount || 0) > 0).map(payment => payment.method));
+        if (orderPaymentMethod) await assertActivePaymentMethod(db, orderPaymentMethod, 'Способ оплаты заказа');
         const requestedPricingMode = cleanText(input.pricingMode);
         if (requestedPricingMode && requestedPricingMode !== 'legacy_manual_total' && requestedPricingMode !== 'itemized_v1') {
           throw new OrderInputValidationError('Неизвестный режим расчёта заказа.');
@@ -1489,6 +1493,9 @@ export async function updateOrderCritical(
       const nextOrderPaymentMethod = input.orderPaymentMethod !== undefined
         ? upperText(input.orderPaymentMethod)
         : upperText(existingAny.order_payment_method);
+      if (input.orderPaymentMethod !== undefined && nextOrderPaymentMethod && nextOrderPaymentMethod !== upperText(existingAny.order_payment_method)) {
+        await assertActivePaymentMethod(db, nextOrderPaymentMethod, 'Способ оплаты заказа');
+      }
       const nextSource = input.sourceType ? normalizeSourceType(input.sourceType) : normalizeSourceType(existingAny.source_type);
       const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
       const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
@@ -1651,6 +1658,7 @@ export async function updateOrderCritical(
         const newPaymentDate = requestedDateText;
         const newMethod = requested.method === undefined ? oldMethod : upperText(requested.method);
         if (!newMethod) throw new OrderInputValidationError('Способ оплаты не может быть пустым.');
+        if (newMethod !== oldMethod) await assertActivePaymentMethod(db, newMethod);
         const newAmountRaw = requested.amount === undefined ? oldAmount : Number(requested.amount);
         if (!Number.isInteger(newAmountRaw) || newAmountRaw <= 0) throw new OrderInputValidationError('Сумма проведённой оплаты должна быть целым числом больше нуля.');
         const newAmount = Number(newAmountRaw);

@@ -5,6 +5,7 @@ import { normalizeSearchText, rankSmartPickerOption } from '../../app/utils'
 export function SmartPickerInput({
   value,
   options,
+  strictOptions = false,
   placeholder,
   onChange,
   onPick,
@@ -47,9 +48,9 @@ export function SmartPickerInput({
         .map((entry) => entry.option)
       : uniqueOptions
 
-    if (current && !next.some((option) => normalizeSearchText(option) === current)) next.unshift(value)
+    if (current && !strictOptions && !next.some((option) => normalizeSearchText(option) === current)) next.unshift(value)
     return next.slice(0, 80)
-  }, [options, query, typedSearch, value])
+  }, [options, query, typedSearch, value, strictOptions])
 
   return (
     <div className={`smart-picker ${className || ''}`.trim()}>
@@ -71,7 +72,13 @@ export function SmartPickerInput({
             onChange(nextValue)
             setOpen(true)
           }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onBlur={() => window.setTimeout(() => {
+            if (strictOptions && query.trim() && !options.some((option) => normalizeSearchText(option) === normalizeSearchText(query))) {
+              setQuery('')
+              onChange('')
+            }
+            setOpen(false)
+          }, 120)}
         />
         {value ? (
           <button
@@ -111,7 +118,7 @@ export function SmartPickerInput({
               {option}
             </button>
           )) : (
-            <div className="smart-picker-empty">Совпадений нет. Можно ввести своё значение.</div>
+            <div className="smart-picker-empty">{strictOptions ? "Выберите вариант из справочника." : "Совпадений нет. Можно ввести своё значение."}</div>
           )}
         </div>
       ) : null}
