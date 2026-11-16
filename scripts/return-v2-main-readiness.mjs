@@ -1,6 +1,6 @@
 // Read-only Return V2 staging preflight.
 // Default: validate the full migration chain in a temporary in-memory SQLite DB.
-// --remote: run ONLY a SELECT/pragma_table_info query on the configured Branch2 D1.
+// --remote: run ONLY a SELECT/pragma_table_info query on the exact production D1.
 // No schema/data writes to remote D1, Worker deploy, or feature flag changes.
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
@@ -31,7 +31,7 @@ assert(args.length<=1 && (!args.length||args[0]==='--remote'),
  'Only the optional read-only --remote argument is supported.')
 const remote=args[0]==='--remote'
 const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8')
- .replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''))
+ .replace(/^\s*\/\*[\s\S]*?\*\//gm,'').replace(/^\s*\/\/.*$/gm,''))
 const dbConfig=cfg.d1_databases?.find(x=>x.binding==='DB')
 assert.equal(cfg.name,'orders-app','This preflight must only inspect Main.')
 assert.equal(dbConfig?.database_name,'orders_db_prod',
