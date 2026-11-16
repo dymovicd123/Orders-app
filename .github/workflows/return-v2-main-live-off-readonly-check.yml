@@ -1,0 +1,42 @@
+name: Return V2 Main - verify published Worker is still OFF before enable
+on:
+  push:
+    branches: [release/return-v2-main-enable-20261116]
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    if: "${{ github.ref == 'refs/heads/release/return-v2-main-enable-20261116' && github.event.head_commit.message == 'preflight(main): return-v2 verify live off and d1' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify immutable Main SHA and live Cloudflare bindings (READ ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/return-v2-main-enable-20261116'
+          test -n "$CF_ACCOUNT_ID"
+          test -n "$CF_API_TOKEN"
+          git fetch origin main --depth=1
+          test "$(git rev-parse origin/main)" = 'a3a85f0121b47679d35604d1501ba7932dc92ed5'
+          settings="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/orders-app/settings")"
+          echo "$settings" | jq -e --arg db '17e68a41-1d58-4a36-8a63-47c3e32443c4' '
+            .success==true
+            and ([.result.bindings[]? | select(.name=="DB" and .type=="d1"
+              and ((.database_id // .id)==$db))] | length)==1
+            and ([.result.bindings[]? | select(.name=="DB")] | length)==1
+            and ([.result.bindings[]? | select(.name=="RETURN_V2_ENABLED")] |
+              (length==0 or (length==1 and .[0].type=="plain_text" and .[0].text=="false")))
+          ' > /dev/null
+          echo RETURN_V2_MAIN_LIVE_FLAG_OFF_AND_PROD_D1_EXACT_PASS
+          deployment="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/orders-app/deployments")"
+          echo "$deployment" | jq -e '
+            .success==true and
+            (.result.deployments|sort_by(.created_on)|last|
+              (.versions|length==1 and .[0].percentage==100))
+          ' > /dev/null
+          echo RETURN_V2_MAIN_ONE_LIVE_VERSION_100_PERCENT_PASS
