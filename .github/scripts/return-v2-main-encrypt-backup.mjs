@@ -30,7 +30,7 @@ if(sourceHash!==check.digest('hex'))throw Error('Backup encryption round-trip fa
 const publicKeyHash=createHash('sha256').update(pubkey).digest('hex');
 writeFileSync(join(outputDir,'manifest.json'),JSON.stringify({
  type:'Orders-app Main D1 before Return V2 schema installation',createdAt:new Date().toISOString(),
- algorithm:'AES-256-GCM + RSA-3072-OAEP-SHA256',publicKeySha256:publicKeyHash,
+ algorithm:'AES-256-GCM + RSA-3072-OAEP-SHA256',publicKeySha256:publicKeyHash,\n exportCompatibility:'sqlite3_cli_only',importDirectlyToD1Supported:false,
  ciphertextBytes:statSync(path).size,plaintextBytes:statSync(source).size,
  sourceRef:process.env.GITHUB_SHA||'unknown'
 },null,2)+'\n',{mode:0o600});
