@@ -1,0 +1,27 @@
+name: Barcode unit integrity Branch2
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'migrations/0136_barcode_physical_units_foundation.sql'
+      - 'migrations/0137_barcode_unit_catalog_integrity.sql'
+      - 'scripts/test-barcode-unit-catalog-integrity-20261116.mjs'
+      - '.github/workflows/ci-barcode-unit-integrity-branch2-20261116.yml'
+permissions:
+  contents: read
+jobs:
+  sql-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Physical-unit catalog and label integrity
+        run: |
+          node scripts/test-barcode-unit-foundation-20261116.mjs
+          node scripts/test-barcode-unit-catalog-integrity-20261116.mjs
+      - run: npm run build
