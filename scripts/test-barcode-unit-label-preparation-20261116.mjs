@@ -182,6 +182,12 @@ assert.equal(expired.active, false)
 assert.equal((await lookupIndividualUnitBarcode(d1, 'OCU1-INVALID')).code, 'invalid_unit_barcode')
 assert.deepEqual(stock(), snapshot)
 
+sqlite.prepare("UPDATE inventory_units SET unit_status='needs_review' WHERE unit_id=?").run(last.labels[0].unitId)
+await assert.rejects(readPreparedUnitLabelBatch(d1, last.batchId), /уже связана с операцией/)
+await assert.rejects(cancelPreparedUnitLabelBatch(d1, last.batchId, 'admin'), /уже изменены или используются/)
+assert.equal(sqlite.prepare("SELECT state FROM barcode_print_batches WHERE batch_id=?").get(last.batchId).state, 'prepared')
+assert.deepEqual(stock(), snapshot)
+
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(), [])
 
 const routes = readFileSync('worker/index.ts','utf8')
