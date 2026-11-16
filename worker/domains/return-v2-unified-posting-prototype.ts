@@ -1,3 +1,4 @@
+import { assertActivePaymentMethod } from './payment-method-validation.ts'
 // Isolated Stage 2 prototype: mixed physical Return + cancellation of unshipped reservations.
 // NO Worker route, UI, or old Return/Exchange/financial consumer imports this module.
 // Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
@@ -78,6 +79,7 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
   }
   const already=await getPosted(db,wanted.requestId)
   if(already)return replay(already)
+  if (wanted.refund > 0) await assertActivePaymentMethod(db, wanted.method, 'Способ возврата денег')
   const preview=await previewUnifiedReturnV2LineEvidence(db,wanted.orderId)
   if(preview.orderVersion!==wanted.version)reject('Заказ изменился после открытия формы.')
   // A former partial Return may leave ONE ambiguous historical line. It may
