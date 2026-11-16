@@ -9,6 +9,7 @@ import { addDdsExpense, addDdsFunds, readDdsMonth, reverseDdsEntry } from './dom
 import { addDdsCategory, addDdsArticle, setDdsCategoryActive, setDdsArticleActive } from './domains/dds-directory.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
+import { lookupCatalogSkuBarcode, readCatalogSkuBarcode } from './domains/barcode-sku.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
@@ -1297,6 +1298,16 @@ export default {
           }
         }
         return json(result, { status: result.duplicate ? 200 : 201 });
+      }
+
+      const skuBarcodeMatch = url.pathname.match(/^\/api\/barcodes\/sku\/(\d+)$/)
+      if (skuBarcodeMatch && request.method === 'GET') {
+        const result = await readCatalogSkuBarcode(env.DB, Number(skuBarcodeMatch[1]))
+        return json(result, { status: result.ok ? 200 : result.code === 'invalid_sku' ? 400 : 404 })
+      }
+      if (url.pathname === '/api/barcodes/lookup' && request.method === 'GET') {
+        const result = await lookupCatalogSkuBarcode(env.DB, url.searchParams.get('code') || '')
+        return json(result, { status: result.ok ? 200 : result.code === 'invalid_barcode' ? 400 : 404 })
       }
 
       if (url.pathname === '/api/catalog' && request.method === 'GET') {
