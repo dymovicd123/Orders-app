@@ -170,7 +170,7 @@ jobs:
              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity_total,
              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total
           " > /tmp/return-v2-after-business.json
-          if ! cmp -s /tmp/return-v2-before-business.json /tmp/return-v2-after-business.json; then
+          if ! diff -q <(jq -cS '.[0].results[0]' /tmp/return-v2-before-business.json) <(jq -cS '.[0].results[0]' /tmp/return-v2-after-business.json) >/dev/null; then
             echo "::warning::Business aggregates changed; may be live customer activity. Independent audit required before enabling Return V2."
             echo "Schema installed, but live activity or altered totals require review." >> "$GITHUB_STEP_SUMMARY"
           else
