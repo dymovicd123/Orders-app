@@ -389,6 +389,11 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         <button type="button" className="catalog-clean-settings" onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики</button>
       </div>
 
+      <div className="catalog-barcode-overview" role="note">
+        <strong>Штрихкоды: поиск и печать</strong>
+        <span>Сканирование открывает нужный цвет и размер. «Код варианта» рядом с размером печатает общий код для полки.
+          Индивидуальные коды каждой вещи пока не подключены; печать не выполняет приход или выдачу.</span>
+      </div>
       <div className="w6-catalog-toolbar">
         <label className="w6-catalog-search">
           <span>Поиск</span>
