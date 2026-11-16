@@ -10,7 +10,7 @@ concurrency:
   group: branch2-controlled-barcode-schema-and-worker
   cancel-in-progress: false
 jobs:
-  test-only:
+  branch2-only:
     if: github.ref == 'refs/heads/branch2'
     runs-on: ubuntu-latest
     timeout-minutes: 25
