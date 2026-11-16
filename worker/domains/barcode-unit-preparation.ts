@@ -2,7 +2,7 @@ import { generateUnitBarcode } from '../../shared/barcode-unit.ts'
 
 type UnitSource = 'warehouse' | 'boutique'
 type Stock = { id: number; quantity: number; inventory_source: string }
-type PreparedBatch = { batch_id: string; purpose: string; created_at: string }
+type PreparedBatch = { batch_id: string; purpose: string; created_at: string; state: string }
 type UnitLabelRow = {
   token: string; unit_id: string; variant_id: number; inventory_source: UnitSource;
   unit_status: string; coverage_status: string; label_state: string
@@ -84,17 +84,17 @@ export async function previewUnitBarcodePreparation(db: D1Database, variantInput
     readStocks(db, variantId),
     readCoveredCounts(db, variantId),
     db.prepare(
-      `SELECT b.batch_id, b.created_at, u.inventory_source, COUNT(*) AS quantity,
+      `SELECT b.batch_id, b.created_at, b.state, u.inventory_source, COUNT(*) AS quantity,
               SUM(CASE WHEN l.state='active' THEN 1 ELSE 0 END) AS printable
        FROM barcode_print_batches b
        JOIN barcode_print_batch_labels bl ON bl.batch_id=b.batch_id
        JOIN inventory_unit_labels l ON l.token=bl.label_token
        JOIN inventory_units u ON u.unit_id=l.unit_id
        WHERE b.purpose='existing_stock' AND u.variant_id=?
-       GROUP BY b.batch_id, b.created_at, u.inventory_source
+       GROUP BY b.batch_id, b.created_at, b.state, u.inventory_source
        ORDER BY b.created_at DESC LIMIT 8`
     ).bind(variantId).all<{
-      batch_id: string; created_at: string; inventory_source: UnitSource;
+      batch_id: string; created_at: string; state: string; inventory_source: UnitSource;
       quantity: number; printable: number
     }>(),
   ])
@@ -111,7 +111,9 @@ export async function previewUnitBarcodePreparation(db: D1Database, variantInput
     }),
     recentBatches: (recent.results || []).map(row => ({
       batchId: row.batch_id, createdAt: row.created_at, source: row.inventory_source,
-      quantity: Number(row.quantity), canReprint: Number(row.printable) === Number(row.quantity),
+      quantity: Number(row.quantity), status: row.state,
+      canReprint: row.state === 'prepared' && Number(row.printable) === Number(row.quantity),
+      canCancel: row.state === 'prepared' && Number(row.printable) === Number(row.quantity),
     })),
   }
 }
@@ -121,10 +123,13 @@ export async function readPreparedUnitLabelBatch(db: D1Database, batchId: string
     throw new BarcodePreparationError('invalid_batch', 'Номер партии этикеток неверный.', 400)
   }
   const batch = await db.prepare(
-    `SELECT batch_id, purpose, created_at FROM barcode_print_batches
+    `SELECT batch_id, purpose, created_at, state FROM barcode_print_batches
      WHERE batch_id=? AND purpose='existing_stock' LIMIT 1`
   ).bind(batchId).first<PreparedBatch>()
   if (!batch) throw new BarcodePreparationError('batch_not_found', 'Партия этикеток не найдена.', 404)
+  if (batch.state === 'cancelled') {
+    throw new BarcodePreparationError('batch_cancelled', 'Эта партия аннулирована. Печать запрещена.')
+  }
   const result = await db.prepare(
     `SELECT l.token, u.unit_id, u.variant_id, u.inventory_source, u.unit_status,
             u.coverage_status, l.state AS label_state
@@ -233,4 +238,75 @@ export async function prepareUnitLabelBatch(
     throw error
   }
   return { ...await readPreparedUnitLabelBatch(db, batchId), duplicate: false }
+}
+
+export async function cancelPreparedUnitLabelBatch(db: D1Database, batchId: string, actor: string) {
+  if (!/^UBL1-[0-9a-f-]{36}$/.test(batchId)) {
+    throw new BarcodePreparationError('invalid_batch', 'Неверный номер партии.', 400)
+  }
+  const getState = () => db.prepare(
+    "SELECT state FROM barcode_print_batches WHERE batch_id=? AND purpose='existing_stock' LIMIT 1"
+  ).bind(batchId).first<{ state: string }>()
+  const initial = await getState()
+  if (!initial) throw new BarcodePreparationError('batch_not_found', 'Партия не найдена.', 404)
+  if (initial.state === 'cancelled') return { ok: true, batchId, cancelled: true, duplicate: true }
+  if (initial.state !== 'prepared') {
+    throw new BarcodePreparationError('batch_not_cancellable', 'Эту партию сейчас нельзя аннулировать.')
+  }
+  const result = await db.prepare(
+    `SELECT u.unit_id, u.unit_status, u.coverage_status, u.inventory_source,
+            l.token, l.state AS label_state
+     FROM barcode_print_batch_labels bl
+     JOIN inventory_unit_labels l ON l.token=bl.label_token
+     JOIN inventory_units u ON u.unit_id=l.unit_id
+     WHERE bl.batch_id=? ORDER BY u.unit_id`
+  ).bind(batchId).all<{
+    unit_id: string; unit_status: string; coverage_status: string;
+    inventory_source: string; token: string; label_state: string
+  }>()
+  const rows = result.results || []
+  if (!rows.length || rows.some(row =>
+    row.unit_status !== 'unverified' || row.coverage_status !== 'unlinked' ||
+    row.label_state !== 'active'
+  )) {
+    throw new BarcodePreparationError('batch_used',
+      'Коды этой партии уже изменены или используются. Автоматическое аннулирование остановлено.')
+  }
+  const now = new Date().toISOString()
+  const statements = [
+    db.prepare(
+      "UPDATE barcode_print_batches SET state='cancelled' WHERE batch_id=? AND state='prepared'"
+    ).bind(batchId),
+  ]
+  rows.forEach((row, index) => {
+    statements.push(
+      db.prepare(
+        `UPDATE inventory_unit_labels
+         SET state='revoked',revoked_at=?,revoke_reason='batch_cancelled'
+         WHERE token=? AND state='active'`
+      ).bind(now, row.token),
+      db.prepare(
+        `UPDATE inventory_units
+         SET unit_status='retired',coverage_status='excluded',inventory_source='none',
+             version=version+1,updated_at=?
+         WHERE unit_id=? AND unit_status='unverified' AND coverage_status='unlinked'`
+      ).bind(now, row.unit_id),
+      db.prepare(
+        `INSERT INTO inventory_unit_events
+          (event_id,unit_id,operation_key,action_type,reference_type,reference_id,
+           from_status,to_status,from_source,to_source,actor,created_at)
+         VALUES (?,?,?,'label_cancelled','barcode_print_batch',?,'unverified','retired',?,'none',?,?)`
+      ).bind(crypto.randomUUID(), row.unit_id, 'cancel:' + batchId + ':' + index,
+        batchId, row.inventory_source, actor.slice(0,120), now),
+    )
+  })
+  try {
+    await db.batch(statements)
+  } catch (error) {
+    if ((await getState())?.state === 'cancelled') {
+      return { ok: true, batchId, cancelled: true, duplicate: true }
+    }
+    throw error
+  }
+  return { ok: true, batchId, cancelled: true, duplicate: false }
 }
