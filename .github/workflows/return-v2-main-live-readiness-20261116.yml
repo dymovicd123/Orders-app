@@ -71,6 +71,7 @@ jobs:
           version_id=ver[0]['version_id']
           version=get('/versions/'+version_id)
           bindings=(version.get('resources') or {}).get('bindings') or []
+          print('Active binding descriptors (names and types only):',[(x.get('name'),x.get('type')) for x in bindings])
           db=[x for x in bindings if x.get('name')=='DB']
           if len(db)!=1 or db[0].get('type')!='d1' or (db[0].get('database_id') or db[0].get('id'))!='17e68a41-1d58-4a36-8a63-47c3e32443c4':
             raise SystemExit('Unexpected active production DB binding')
