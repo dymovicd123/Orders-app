@@ -55,6 +55,13 @@ jobs:
           cache: npm
       - name: Install pinned dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify backup encryption script and FTS5-capable Wrangler CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/return-v2-main-encrypt-backup.mjs
+          npx --yes --package wrangler@4.162.0 wrangler --version | grep -F '4.162.0'
+          npx --yes --package wrangler@4.162.0 wrangler d1 export --help | grep -F -- '--compatibility'
       - name: Verify migration chain in disposable SQLite
         run: node scripts/return-v2-main-readiness.mjs
       - name: Require production has zero Return V2 objects (READ ONLY)
