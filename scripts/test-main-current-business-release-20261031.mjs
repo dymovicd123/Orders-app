@@ -63,6 +63,16 @@ const tests=[
  'scripts/test-stage5b-http-routes-20261101.mjs',
  'scripts/test-old-order-post-stocktake-handover-r1.mjs',
  'scripts/test-old-order-post-stocktake-guard-r1.mjs',
+ 'scripts/test-return-v2-cancellation-prototype-20261114.mjs',
+ 'scripts/test-return-v2-contract-capacity-20261114.mjs',
+ 'scripts/test-return-v2-immediate-intake-20261114.mjs',
+ 'scripts/test-return-v2-ledger-20261114.mjs',
+ 'scripts/test-return-v2-posting-prototype-20261114.mjs',
+ 'scripts/test-return-v2-preparation-atomic-20261114.mjs',
+ 'scripts/test-return-v2-shadow-http-20261114.mjs',
+ 'scripts/test-return-v2-unified-line-evidence-20261114.mjs',
+ 'scripts/test-return-v2-unified-posting-prototype-20261114.mjs',
+ 'scripts/test-return-v2-unified-finance-20261114.mjs',
 ]
 let completed=0
 const started=Date.now()
