@@ -10,7 +10,7 @@ import { addDdsCategory, addDdsArticle, setDdsCategoryActive, setDdsArticleActiv
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { lookupCatalogSkuBarcode, readCatalogSkuBarcode } from './domains/barcode-sku.ts'
-import { BarcodePreparationError, cancelPreparedUnitLabelBatch, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch } from './domains/barcode-unit-preparation.ts'
+import { BarcodePreparationError, cancelPreparedUnitLabelBatch, lookupIndividualUnitBarcode, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch } from './domains/barcode-unit-preparation.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
@@ -1367,8 +1367,11 @@ export default {
       }
 
       if (url.pathname === '/api/barcodes/lookup' && request.method === 'GET') {
-        const result = await lookupCatalogSkuBarcode(env.DB, url.searchParams.get('code') || '')
-        return json(result, { status: result.ok ? 200 : result.code === 'invalid_barcode' ? 400 : 404 })
+        const code = url.searchParams.get('code') || ''
+        const result = code.trim().toUpperCase().startsWith('OCU1-')
+          ? await lookupIndividualUnitBarcode(env.DB, code)
+          : await lookupCatalogSkuBarcode(env.DB, code)
+        return json(result, { status: result.ok ? 200 : (result.code === 'invalid_barcode' || result.code === 'invalid_unit_barcode') ? 400 : 404 })
       }
 
       if (url.pathname === '/api/catalog' && request.method === 'GET') {
