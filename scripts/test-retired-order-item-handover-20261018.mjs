@@ -22,7 +22,7 @@ sqlite.exec(migration);sqlite.exec(migration);
 const d1={
  prepare(sql){
   const statement=sqlite.prepare(sql);
-  return {bind(...args){return {
+  return {async first(){return statement.get()||null},bind(...args){return {
    async first(){return statement.get(...args)||null},
    async run(){const result=statement.run(...args);return {...result,meta:{changes:result.changes}}}
   }}};
