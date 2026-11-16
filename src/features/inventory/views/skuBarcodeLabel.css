@@ -11,16 +11,20 @@
 .sku-barcode-explanation{margin:0;font-size:13px;line-height:1.5}
 .sku-barcode-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
 
-.sku-lookup{position:relative;display:flex;align-items:center}
-.sku-lookup-panel{position:absolute;z-index:35;top:calc(100% + 8px);left:0;width:min(420px,calc(100vw - 32px));padding:15px;background:var(--card-bg,#fff);color:var(--text,#202020);border:1px solid rgba(130,130,130,.3);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.16);display:flex;flex-direction:column;gap:10px}
-.sku-lookup-panel form{display:flex;flex-direction:column;gap:6px}
-.sku-lookup-panel label{font-size:12px;font-weight:600}
-.sku-lookup-row{display:flex;align-items:center;gap:6px}
-.sku-lookup-row input{min-width:0;flex:1}
-.sku-lookup-error{color:#b83131;font-size:13px;margin:0}
-.sku-lookup-result{display:flex;flex-direction:column;gap:7px;font-size:13px;overflow-wrap:anywhere}
+.catalog-barcode-overview{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;padding:9px 12px;margin-bottom:9px;border:1px solid var(--line,#dce3ee);border-radius:11px;background:var(--card,#fff);font-size:12px;line-height:1.4}
+.catalog-barcode-overview strong{white-space:nowrap}
+.catalog-barcode-overview span{color:var(--muted,#596579);flex:1 1 330px}
+.sku-lookup{position:relative;display:grid;gap:4px;min-width:220px;align-content:start}
+.sku-lookup form{display:grid;gap:5px;min-width:0}
+.sku-lookup label{font-size:12px;font-weight:700;color:var(--w6-md-muted,var(--muted,#596579))}
+.sku-lookup-row{display:flex;align-items:stretch;gap:6px}
+.sku-lookup-row input{min-width:0;flex:1;width:140px;min-height:42px}
+.sku-lookup-row button{flex:0 0 auto;min-height:42px}
+.sku-lookup-error{color:#b83131;font-size:12px;margin:0}
+.sku-lookup-result{position:absolute;top:calc(100% + 5px);left:0;z-index:35;width:min(385px,calc(100vw - 32px));padding:11px;border:1px solid var(--line,#dce3ee);border-radius:10px;background:var(--card,#fff);box-shadow:0 8px 20px rgba(20,30,50,.13);display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-size:12px;overflow-wrap:anywhere}
 .sku-lookup-result small{font-size:11px;color:var(--muted,#666)}
-.sku-lookup-result button{align-self:flex-start}
+.sku-lookup-result button{margin-top:4px}
+@media(max-width:760px){.sku-lookup{min-width:0;width:100%}.sku-lookup-row input{width:100%}}
 
 .catalog-size-entry{display:grid;min-width:0;gap:4px;align-content:start}
 .catalog-size-entry>.catalog-size-tile{width:100%;min-width:0}
