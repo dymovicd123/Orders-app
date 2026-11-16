@@ -286,7 +286,7 @@ export function UnitBarcodePreparation({
         </div>
         {batch ? <div className="unit-barcode-success" role="status">
           <strong>Партия из {batch.quantity} этикеток подготовлена</strong>
-          <span>Коды сохранены. Если печать не получилась, откройте эту же партию повторно.</span>
+          <span>Коды сохранены. Повторно печатайте только для тех же самых вещей, если первая этикетка испорчена. Не наклеивайте одинаковый код на разные изделия.</span>
           <button type="button" className="primary compact" disabled={printing}
             onClick={() => void print()}>{printing ? 'Проверяю…' : 'Печать этикеток · 58 × 35 мм'}</button>
         </div> : null}
