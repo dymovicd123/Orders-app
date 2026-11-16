@@ -104,6 +104,9 @@ jobs:
         if: github.base_ref == 'branch2'
         run: node scripts/test-warehouse-reports-navigation-20261111.mjs
 
+      - name: Validate active payment method references
+        run: node scripts/test-payment-method-validation-20261116.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
