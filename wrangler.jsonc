@@ -10,6 +10,9 @@
 		"command": "npm run build"
 	},
 	"compatibility_date": "2026-07-06",
+	"vars": {
+		"RETURN_V2_ENABLED": "true"
+	},
 	"d1_databases": [
   	{
     	"binding": "DB",
