@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          npx --no-install wrangler d1 export orders_db_prod --config wrangler.jsonc --remote --skip-confirmation --output="$RUNNER_TEMP/main-before-return-v2.sql"
+          npx --yes --package wrangler@4.162.0 wrangler d1 export orders_db_prod --config wrangler.jsonc --remote --skip-confirmation --compatibility sqlite3_cli_only --output="$RUNNER_TEMP/main-before-return-v2.sql"
           test "$(stat -c%s "$RUNNER_TEMP/main-before-return-v2.sql")" -gt 1000
           grep -Eiq '(CREATE TABLE|CREATE TABLE IF NOT EXISTS).*orders' "$RUNNER_TEMP/main-before-return-v2.sql"
           grep -Eiq '(CREATE TABLE|CREATE TABLE IF NOT EXISTS).*inventory_stock' "$RUNNER_TEMP/main-before-return-v2.sql"
