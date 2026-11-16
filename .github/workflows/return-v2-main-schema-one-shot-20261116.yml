@@ -57,7 +57,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$(git branch --show-current)" = 'main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'a3a85f0121b47679d35604d1501ba7932dc92ed5'
+          test "$(git rev-parse HEAD^)" = '14f8f09379cfc9c69749626f8c310f283cbc875b'
           test "$RELEASE_COMMAND" = "/install-return-v2-main-schema $(git rev-parse HEAD)"
           changed="$(git diff --name-only HEAD^ HEAD)"
           test "$changed" = '.github/workflows/return-v2-main-schema-one-shot-20261116.yml'
@@ -89,6 +89,12 @@ jobs:
           node scripts/return-v2-main-readiness.mjs --remote > /tmp/return-v2-before-schema.json
           status=$?
           set -e
+          echo "D1 read-only V2 preflight exit: $status"
+          if test -s /tmp/return-v2-before-schema.json; then
+            jq -c '{target,database,schema,featureFlag}' /tmp/return-v2-before-schema.json || true
+          else
+            echo "::error::Read-only D1 preflight produced no JSON"
+          fi
           test "$status" -eq 2
           jq -e '.target=="orders-app" and .database=="orders_db_prod"
             and .schema.ready==false and .schema.foundTables==0 and .schema.foundColumns==0
