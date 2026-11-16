@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const lookup = readFileSync('src/features/inventory/views/SkuBarcodeLookup.tsx', 'utf8')
+const catalog = readFileSync('src/features/inventory/views/renderInventoryCatalogPanel.tsx', 'utf8')
+const route = readFileSync('worker/index.ts', 'utf8')
+const server = readFileSync('worker/domains/barcode-sku.ts', 'utf8')
+assert(lookup.includes("onSubmit={event => { event.preventDefault(); void lookup() }}"), 'USB HID scanner Enter submit missing')
+assert(lookup.includes("method: 'GET'"), 'scan lookup must be read only')
+assert(lookup.includes('/api/barcodes/lookup?code='), 'scan lookup route missing')
+assert(lookup.includes("result.active ? <button"), 'retired SKU must not offer navigation as active')
+assert(lookup.includes('Это код варианта, а не доказательство физического наличия'), 'SKU-level warning missing')
+assert(catalog.includes('SkuBarcodeLookup onLocate='), 'scanner not mounted in Catalog')
+assert(catalog.includes("ctx.setCatalogCategoryFilter('all')"), 'scanner must reveal variants regardless of prior category filter')
+assert(catalog.includes("setInventoryQuery(item.productName)"), 'scanner must remove mismatching prior text search')
+assert(catalog.includes('tile?.click()'), 'found SKU must open exact catalog card')
+assert(route.includes("url.pathname === '/api/barcodes/lookup' && request.method === 'GET'"), 'route must remain authenticated read-only GET')
+assert(!server.includes('UPDATE inventory_stock') && !server.includes('INSERT INTO inventory_stock'), 'barcode lookup cannot mutate stock')
+console.log('BARCODE SCANNER LOOKUP PASSED: HID Enter, retired guard, exact SKU navigation, zero stock mutations')
