@@ -406,7 +406,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
                             <SmartPickerInput
                               value={returnDraft.paymentMethod}
-                              options={suggestionValues.paymentMethods}
+                              strictOptions options={suggestionValues.paymentMethods}
                               onChange={(value) => setReturnDraft((current) => ({ ...current, paymentMethod: value }))}
                               placeholder="Например, НАЛИЧКА"
                             />
@@ -424,7 +424,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                   <div className="subgrid order-payment-grid">
                                     <label><span>Способ</span><SmartPickerInput
                                       value={returnDraft.extraRefundMethod}
-                                      options={suggestionValues.paymentMethods}
+                                      strictOptions options={suggestionValues.paymentMethods}
                                       placeholder="Например, KASPI"
                                       onChange={(value) => setReturnDraft((current) => ({ ...current, extraRefundMethod: value }))}
                                     /></label>
