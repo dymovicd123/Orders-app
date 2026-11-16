@@ -199,7 +199,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       value={createDraft.orderPaymentMethod}
                       onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
                       placeholder="Как клиент будет оплачивать заказ"
-                      options={suggestionValues.paymentMethods}
+                      strictOptions options={suggestionValues.paymentMethods}
                     />
                     <small>Выберите способ, которым клиент будет оплачивать заказ.</small>
                   </label>
@@ -312,7 +312,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         <div className="mini-item-head"><strong>Оплата {index + 1}</strong><button className="ghost danger compact" type="button" onClick={() => removeCreatePayment(index)}>Удалить</button></div>
                         <div className="subgrid order-payment-grid">
                           <label><span>Дата</span><input type="date" value={payment.paymentDate} onChange={(event) => updateCreatePayment(index, 'paymentDate', event.target.value)} /></label>
-                          <label><span>Способ оплаты</span><SmartPickerInput value={payment.method} onChange={(value) => updateCreatePayment(index, 'method', value)} placeholder="Выберите способ" options={suggestionValues.paymentMethods} /></label>
+                          <label><span>Способ оплаты</span><SmartPickerInput value={payment.method} onChange={(value) => updateCreatePayment(index, 'method', value)} placeholder="Выберите способ" strictOptions options={suggestionValues.paymentMethods} /></label>
                           <label><span>Сумма</span><FriendlyNumberInput type="number" min="0" value={payment.amount ?? 0} onChange={(event) => updateCreatePayment(index, 'amount', Number(event.target.value))} /></label>
                         </div>
                       </div>
