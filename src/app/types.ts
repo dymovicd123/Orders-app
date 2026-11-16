@@ -1842,6 +1842,7 @@ export type SmartPickerRank = {
 export type SmartPickerInputProps = {
   value: string
   options: string[]
+  strictOptions?: boolean
   placeholder?: string
   onChange: (value: string) => void
   onPick?: (value: string) => void
