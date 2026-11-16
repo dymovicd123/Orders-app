@@ -1,0 +1,107 @@
+name: Return V2 Main LIVE read-only D1 and active Worker audit
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/return-v2-main-live-readiness-20261116.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check EXACT production schema (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          node scripts/return-v2-main-readiness.mjs --remote >/tmp/main-v2-schema.json
+          jq -e '.target=="orders-app" and .schema.ready==true and .schema.foundTables==12 and .schema.foundColumns==10' /tmp/main-v2-schema.json >/dev/null
+          echo 'READ_ONLY_PRODUCTION_V2_SCHEMA_READY_12_10'
+      - name: Inspect V2 journal state without customer or money data
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+           SELECT
+             (SELECT COUNT(*) FROM return_v2_unified_postings) AS unified_postings,
+             (SELECT COUNT(*) FROM return_v2_postings) AS early_postings,
+             (SELECT COUNT(*) FROM return_v2_unified_lines) AS unified_lines,
+             (SELECT COUNT(*) FROM return_v2_unified_cancellations) AS cancellations,
+             (SELECT COUNT(*) FROM return_items WHERE contract_quantity_applied<>0) AS marked_legacy_items
+          " >/tmp/main-v2-journals.json
+          jq -cS '.[0].results[0]' /tmp/main-v2-journals.json
+          jq -e '.[0].results[0] | .unified_postings==0 and .early_postings==0
+            and .unified_lines==0 and .cancellations==0 and .marked_legacy_items==0' /tmp/main-v2-journals.json >/dev/null
+          echo 'READ_ONLY_PRODUCTION_V2_JOURNALS_PRISTINE'
+      - name: Inspect exact 100%-active Main Worker version binding, not latest draft
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          token=os.environ['CLOUDFLARE_API_TOKEN'].strip()
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID'].strip()
+          root='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/orders-app'
+          def get(path):
+            req=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+token})
+            with urllib.request.urlopen(req,timeout=35) as response:
+              body=json.load(response)
+            if body.get('success') is not True:raise SystemExit('Cloudflare read failed: '+path)
+            return body['result']
+          deployments=get('/deployments').get('deployments') or []
+          if not deployments:raise SystemExit('No production deployments')
+          active=sorted(deployments,key=lambda x:x.get('created_on',''))[-1]
+          ver=active.get('versions') or []
+          if len(ver)!=1 or float(ver[0].get('percentage',0))!=100:
+            raise SystemExit('Production traffic split; stop')
+          version_id=ver[0]['version_id']
+          version=get('/versions/'+version_id)
+          bindings=(version.get('resources') or {}).get('bindings') or []
+          print('Active binding descriptors (names and types only):',[(x.get('name'),x.get('type')) for x in bindings])
+          db=[x for x in bindings if x.get('name')=='DB']
+          if len(db)!=1 or db[0].get('type')!='d1' or (db[0].get('database_id') or db[0].get('id'))!='17e68a41-1d58-4a36-8a63-47c3e32443c4':
+            raise SystemExit('Unexpected active production DB binding')
+          secret_bindings={x.get('name'):x for x in bindings if x.get('type')=='secret_text'}
+          if set(secret_bindings)!={'ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
+            raise SystemExit('Missing or unreviewed production admin secret bindings')
+          flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
+          if flags:raise SystemExit('Unexpected V2 flag on active production Worker')
+          if len(bindings)!=3 or {x.get('name') for x in bindings}!={'DB','ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
+            raise SystemExit('Unexpected active Worker binding inventory')
+          listing=get('/versions?per_page=5').get('items') or []
+          if not listing:raise SystemExit('No version inventory returned')
+          latest_id=listing[0].get('id')
+          latest_version=get('/versions/'+latest_id)
+          latest_bindings=(latest_version.get('resources') or {}).get('bindings') or []
+          print('MAIN_ACTIVE_VERSION_ID:',version_id)
+          print('MAIN_LATEST_DRAFT_VERSION_ID:',latest_id)
+          print('LATEST_DRAFT_CREATED_ON:',listing[0].get('created_on'))
+          print('LATEST_DRAFT_METADATA_KEYS:',sorted(latest_version.keys()))
+          print('LATEST_DRAFT_ANNOTATIONS:',latest_version.get('annotations'))
+          print('LATEST_DRAFT_BINDING_DESCRIPTORS:',[(x.get('name'),x.get('type')) for x in latest_bindings])
+          if latest_id != version_id:
+            if {(x.get('name'),x.get('type')) for x in latest_bindings} != {(x.get('name'),x.get('type')) for x in bindings}:
+              raise SystemExit('Latest draft has different resource names or binding types; STOP')
+            print('MAIN_DRAFT_VS_ACTIVE_DIVERGENCE: no Worker deployment approved yet')
+          else:
+            print('MAIN_LATEST_MATCHES_ACTIVE_VERSION')
+          print('MAIN_D1_AND_TWO_ADMIN_SECRETS_PRESERVED_V2_OFF')
+          print('NO D1 WRITE, NO WORKER SETTINGS UPDATE, NO DEPLOY')
+          PY
+      - name: Cleanup ephemeral output
+        if: always()
+        run: rm -f /tmp/main-v2-schema.json /tmp/main-v2-journals.json
