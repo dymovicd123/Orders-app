@@ -1,3 +1,4 @@
+import { assertActivePaymentMethod } from './payment-method-validation.ts'
 import { cleanText, normalizeDate, normalizeExchangeFinancialAction, normalizeOrderStatus, toInt, upperText } from '../core/text.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CriticalOperationHandle } from './critical.ts'
@@ -61,6 +62,7 @@ export async function correctExchangeFinancials(
     const nextAmount = Math.trunc(nextAmountRaw);
     const nextMethod = upperText(input.paymentMethod);
     if (!nextMethod) throw new Error(financialAction === 'refund' ? 'Выберите способ возврата денег.' : 'Выберите способ оплаты доплаты.');
+    if (nextMethod !== upperText(row.payment_method)) await assertActivePaymentMethod(db, nextMethod);
     const nextComment = cleanText(input.comment);
 
     const oldExchangeDate = normalizeDate(row.exchange_date);
