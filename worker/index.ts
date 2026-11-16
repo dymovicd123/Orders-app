@@ -10,7 +10,7 @@ import { addDdsCategory, addDdsArticle, setDdsCategoryActive, setDdsArticleActiv
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { lookupCatalogSkuBarcode, readCatalogSkuBarcode } from './domains/barcode-sku.ts'
-import { BarcodePreparationError, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch } from './domains/barcode-unit-preparation.ts'
+import { BarcodePreparationError, cancelPreparedUnitLabelBatch, prepareUnitLabelBatch, previewUnitBarcodePreparation, readPreparedUnitLabelBatch } from './domains/barcode-unit-preparation.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
@@ -91,6 +91,7 @@ function warehouseSupervisorEndpoint(path: string, method: string) {
     [/^\/api\/inventory\/settings$/, ['PATCH']],
     [/^\/api\/barcodes\/units\/(?:preview|batches)$/, ['GET','POST']],
     [/^\/api\/barcodes\/units\/batches\/UBL1-[0-9a-f-]+$/, ['GET']],
+    [/^\/api\/barcodes\/units\/batches\/UBL1-[0-9a-f-]+\/cancel$/, ['POST']],
     [/^\/api\/inventory\/pending-writeoffs\/apply$/, ['POST']],
     [/^\/api\/inventory\/audit\/resolve$/, ['POST']],
     [/^\/api\/inventory\/movements\/\d+\/reverse$/, ['POST']],
@@ -1328,6 +1329,21 @@ export default {
         try {
           const actor = cleanText(authUser?.login || authUser?.displayName || 'warehouse');
           return json(await prepareUnitLabelBatch(env.DB, input, actor), { status: 200 });
+        } catch (error) {
+          if (error instanceof BarcodePreparationError) {
+            return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+          }
+          throw error;
+        }
+      }
+
+      const barcodeCancelMatch = url.pathname.match(/^\/api\/barcodes\/units\/batches\/(UBL1-[0-9a-f-]+)\/cancel$/);
+      if (barcodeCancelMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          const actor = cleanText(authUser?.login || authUser?.displayName || 'warehouse');
+          return json(await cancelPreparedUnitLabelBatch(env.DB, barcodeCancelMatch[1], actor));
         } catch (error) {
           if (error instanceof BarcodePreparationError) {
             return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
