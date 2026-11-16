@@ -27,6 +27,7 @@ const DB={
     catch(e){sql.exec('ROLLBACK TO SAVEPOINT stage5_http');sql.exec('RELEASE stage5_http');throw e}
   },
 }
+sql.prepare("INSERT INTO reference_values(kind,value,is_active) VALUES('payment_method','KASPI',1),('payment_method','CASH',1)").run()
 const token='stage5-http-session',tokenHash=createHash('sha256').update(token).digest('base64url')
 sql.prepare("INSERT OR IGNORE INTO managers(id,name,is_active) VALUES(9501,'Test manager',1)").run()
 sql.prepare("INSERT INTO app_users(id,login,email,password_hash,role,manager_id,display_name,is_active,must_change_password) VALUES(9501,'stage5person','test-stage5@invalid','not-used','manager',9501,'Test manager',1,0)").run()
