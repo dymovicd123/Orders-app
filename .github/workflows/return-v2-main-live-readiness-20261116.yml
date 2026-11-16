@@ -1,4 +1,4 @@
-name: Return V2 Main LIVE read-only D1 and active Worker audit
+name: Return V2 Main post-release LIVE read-only audit
 on:
   pull_request:
     branches: [main]
@@ -29,6 +29,7 @@ jobs:
           grep -Fq '"name": "orders-app"' wrangler.jsonc
           grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
           grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          grep -Fq '"RETURN_V2_ENABLED": "true"' wrangler.jsonc
           node scripts/return-v2-main-readiness.mjs --remote >/tmp/main-v2-schema.json
           jq -e '.target=="orders-app" and .schema.ready==true and .schema.foundTables==12 and .schema.foundColumns==10' /tmp/main-v2-schema.json >/dev/null
           echo 'READ_ONLY_PRODUCTION_V2_SCHEMA_READY_12_10'
@@ -45,9 +46,12 @@ jobs:
              (SELECT COUNT(*) FROM return_items WHERE contract_quantity_applied<>0) AS marked_legacy_items
           " >/tmp/main-v2-journals.json
           jq -cS '.[0].results[0]' /tmp/main-v2-journals.json
-          jq -e '.[0].results[0] | .unified_postings==0 and .early_postings==0
-            and .unified_lines==0 and .cancellations==0 and .marked_legacy_items==0' /tmp/main-v2-journals.json >/dev/null
-          echo 'READ_ONLY_PRODUCTION_V2_JOURNALS_PRISTINE'
+          jq -e '.[0].results[0] | (.unified_postings|type)=="number"
+            and (.early_postings|type)=="number"
+            and (.unified_lines|type)=="number"
+            and (.cancellations|type)=="number"
+            and (.marked_legacy_items|type)=="number"' /tmp/main-v2-journals.json >/dev/null
+          echo 'READ_ONLY_PRODUCTION_V2_JOURNAL_COUNTERS_VALID'
       - name: Inspect exact 100%-active Main Worker version binding, not latest draft
         shell: bash
         run: |
@@ -79,8 +83,9 @@ jobs:
           if set(secret_bindings)!={'ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
             raise SystemExit('Missing or unreviewed production admin secret bindings')
           flags=[x for x in bindings if x.get('name')=='RETURN_V2_ENABLED']
-          if flags:raise SystemExit('Unexpected V2 flag on active production Worker')
-          if len(bindings)!=3 or {x.get('name') for x in bindings}!={'DB','ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
+          if len(flags)!=1 or flags[0].get('type')!='plain_text' or flags[0].get('text')!='true':
+            raise SystemExit('Return V2 is not enabled on the 100%-active production Worker')
+          if len(bindings)!=4 or {x.get('name') for x in bindings}!={'DB','ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET','RETURN_V2_ENABLED'}:
             raise SystemExit('Unexpected active Worker binding inventory')
           listing=get('/versions?per_page=5').get('items') or []
           if not listing:raise SystemExit('No version inventory returned')
@@ -94,13 +99,26 @@ jobs:
           print('LATEST_DRAFT_ANNOTATIONS:',latest_version.get('annotations'))
           print('LATEST_DRAFT_BINDING_DESCRIPTORS:',[(x.get('name'),x.get('type')) for x in latest_bindings])
           if latest_id != version_id:
-            if {(x.get('name'),x.get('type')) for x in latest_bindings} != {(x.get('name'),x.get('type')) for x in bindings}:
-              raise SystemExit('Latest draft has different resource names or binding types; STOP')
-            print('MAIN_DRAFT_VS_ACTIVE_DIVERGENCE: no Worker deployment approved yet')
+            print('MAIN_LATEST_DRAFT_DIFFERS_FROM_LIVE: active version remains source of truth')
           else:
             print('MAIN_LATEST_MATCHES_ACTIVE_VERSION')
-          print('MAIN_D1_AND_TWO_ADMIN_SECRETS_PRESERVED_V2_OFF')
+          print('MAIN_LIVE_RETURN_V2_ENABLED_TRUE_D1_AND_TWO_ADMIN_SECRETS_PRESERVED')
           print('NO D1 WRITE, NO WORKER SETTINGS UPDATE, NO DEPLOY')
+          PY
+
+      - name: Confirm anonymous authentication and static entry point (GET only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error
+          base='https://orders-app.orders-clothes.workers.dev'
+          for path in ('/api/auth/status','/'):
+            req=urllib.request.Request(base+path,headers={'User-Agent':'Mozilla/5.0'})
+            try:
+              with urllib.request.urlopen(req,timeout=25) as r:status=r.status
+            except urllib.error.HTTPError as ex:status=ex.code
+            print('MAIN_V2_POST_RELEASE_HTTP',path,status)
+            if status!=200:raise SystemExit('Production public smoke did not return HTTP 200')
           PY
       - name: Cleanup ephemeral output
         if: always()
