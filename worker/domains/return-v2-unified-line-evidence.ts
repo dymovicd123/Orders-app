@@ -46,6 +46,7 @@ type ItemRow = {
   line_total:number;stock_writeoff_status:string|null;source_type:string
   is_workshop:number;variant_id:number|null;prior_issued_evidence:number
   old_returned_quantity:number;exchanged_old_qty:number;
+  completed_exchange_new:number;
   posted_physical_v2_qty:number;baselined_old_qty:number
 }
 type ReservationRow = {
@@ -107,6 +108,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
          WHERE ei.order_item_id=oi.id AND ei.role='old'
            AND ex.order_id=oi.order_id AND COALESCE(ex.status,'completed')='completed'),0)
          AS exchanged_old_qty,
+       EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+         WHERE ei.order_item_id=oi.id AND ei.role='new'
+           AND ex.order_id=oi.order_id AND ex.status='completed' AND ei.quantity>0)
+         AS completed_exchange_new,
        COALESCE((SELECT SUM(ul.contracted_quantity)
          FROM return_v2_unified_lines ul
          JOIN return_v2_unified_postings up ON up.id=ul.posting_id
@@ -206,6 +211,7 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const stockStatus=String(item.stock_writeoff_status||'')
     const priorIssued=Number(item.prior_issued_evidence)===1
     const tasks=workshopTasks.get(id)||[]
+    const isConfirmedExchangeReplacement=Number(item.completed_exchange_new)===1
     const expectedHistoricalFulfillment=contractQuantity
       +(exchangedOld??0)
       +(amount(item.posted_physical_v2_qty)??0)
@@ -294,6 +300,10 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
         reasonCode='issued_before_shipping_unconfirmed'
         message='Склад уже списал товар, но отправка клиенту не подтверждена. Не начислять приход.'
       }
+    }else if(dispatched===0&&ds.length===0&&!isWorkshop
+      &&String(order.shipping_status)==='sent'&&!isConfirmedExchangeReplacement){
+      reasonCode='legacy_order_sent_without_line_proof'
+      message='Заказ отмечен отправленным, но нет подтверждения выдачи этой позиции.'
     }else if(dispatched===0&&ds.length===0&&!isWorkshop&&nonCurrent.length===0
       &&fulfilledQty===0&&active.length===1&&unresolvedQty===0
       &&activeQty===contractQuantity&&stockStatus==='reserved'){
