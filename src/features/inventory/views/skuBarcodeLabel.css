@@ -10,3 +10,14 @@
 .sku-barcode-code{font-variant-numeric:tabular-nums;text-align:center;letter-spacing:1px;font-size:14px}
 .sku-barcode-explanation{margin:0;font-size:13px;line-height:1.5}
 .sku-barcode-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+
+.sku-lookup{position:relative;display:flex;align-items:center}
+.sku-lookup-panel{position:absolute;z-index:35;top:calc(100% + 8px);left:0;width:min(420px,calc(100vw - 32px));padding:15px;background:var(--card-bg,#fff);color:var(--text,#202020);border:1px solid rgba(130,130,130,.3);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.16);display:flex;flex-direction:column;gap:10px}
+.sku-lookup-panel form{display:flex;flex-direction:column;gap:6px}
+.sku-lookup-panel label{font-size:12px;font-weight:600}
+.sku-lookup-row{display:flex;align-items:center;gap:6px}
+.sku-lookup-row input{min-width:0;flex:1}
+.sku-lookup-error{color:#b83131;font-size:13px;margin:0}
+.sku-lookup-result{display:flex;flex-direction:column;gap:7px;font-size:13px;overflow-wrap:anywhere}
+.sku-lookup-result small{font-size:11px;color:var(--muted,#666)}
+.sku-lookup-result button{align-self:flex-start}

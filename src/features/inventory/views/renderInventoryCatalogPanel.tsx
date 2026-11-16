@@ -3,6 +3,7 @@ import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from
 import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
 import { CatalogRetirementHistory } from './CatalogRetirementHistory'
+import { SkuBarcodeLookup, type SkuLookupRecord } from './SkuBarcodeLookup'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'catalogActiveProducts'
@@ -397,6 +398,19 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
             placeholder="Название, цвет, материал, размер…"
           />
         </label>
+        <SkuBarcodeLookup onLocate={(item: SkuLookupRecord) => {
+          ctx.setCatalogCategoryFilter('all')
+          setCatalogOnlyWithoutVariants(false)
+          setInventoryQuery(item.productName)
+          setExpandedCatalogProducts({ [String(item.productId)]: true })
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            const tile = document.querySelector(
+              '.catalog-size-tile[data-variant-id="' + item.variantId + '"]'
+            ) as HTMLButtonElement | null
+            tile?.click()
+            tile?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }))
+        }}/>
         <div className="catalog-category-switcher w6-catalog-category-switcher">
           {([
             { value: 'all' as const, label: 'Все' },

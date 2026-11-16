@@ -1,0 +1,29 @@
+name: Branch2 Barcode scanning UI CI
+on:
+  push:
+    branches:
+      - feature/barcode-scan-branch2-20261116
+  pull_request:
+    branches:
+      - branch2
+permissions:
+  contents: read
+jobs:
+  scan-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: SKU barcode encoding and DB lookup
+        run: |
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-barcode-sku-http-domain-20261116.mjs
+      - name: Scanner lookup read-only and catalog integration
+        run: node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+      - name: Build
+        run: npm run build
