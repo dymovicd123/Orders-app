@@ -695,6 +695,28 @@ export async function listOrders(db: D1Database, url: URL) {
           // is repaired automatically during shipping and must not summon the human resolver.
           && !toInt(item.variant_id, 0);
       }),
+      returnHistoryItems: (relations.returnHistoryItemsByOrderId.get(order.id) || []).map(raw => {
+        const item = raw as Record<string, unknown>;
+        const action=cleanText(item.action);
+        const receivedAt=cleanText(item.physical_received_at)||null;
+        const physicallyReturned=action==='physical_return_pending';
+        return {
+          orderItemId:toInt(item.order_item_id,0),
+          productName:cleanText(item.product_name_snapshot)||'Товар',
+          quantity:Math.max(0,toInt(item.contracted_quantity,0)),
+          gender:cleanText(item.gender_snapshot)||null,
+          color:cleanText(item.color_snapshot)||null,
+          material:cleanText(item.material_snapshot)||null,
+          length:cleanText(item.length_snapshot)||null,
+          size:cleanText(item.size_snapshot)||null,
+          sourceType:cleanText(item.source_type)||'warehouse',
+          action,
+          physicallyReturned,
+          physicalReceivedAt:receivedAt,
+          restocked:toInt(item.restocked,0)===1,
+          receiptDestination:cleanText(item.inventory_source)||null,
+        };
+      }),
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
         ...canonicalItemProjection(item as Record<string, unknown>),

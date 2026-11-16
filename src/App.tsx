@@ -1712,13 +1712,6 @@ function App() {
   }, [returnSelectedOrder?.id])
 
   useEffect(() => {
-    if (!returnSelectedOrderId || !returnFormRef.current) return
-    requestAnimationFrame(() => {
-      returnFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }, [returnSelectedOrderId])
-
-  useEffect(() => {
     if (!exchangeSelectedOrderId || !exchangeFormRef.current) return
     requestAnimationFrame(() => {
       exchangeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -3971,7 +3964,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, handleEditOrder, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnPendingInbox, loadReturnPendingInbox, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, handleEditOrder, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnPendingInbox, loadReturnPendingInbox, returnSelectedOrder, refreshOrdersAfterReturn: () => loadDashboard(false, filters, orderPageOffset), saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен">

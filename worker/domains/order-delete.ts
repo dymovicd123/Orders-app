@@ -5,6 +5,7 @@ import { CriticalOperationConflictError } from './critical.ts'
 import { restoreArchivedOrder } from './orders-read.ts'
 import { getOrder, updateOrderCritical } from './orders-write.ts'
 import { previewAdminOrderDeletion } from './order-delete-preview.ts'
+import { assertLegacyMutationAllowedAfterReturnV2 } from './return-v2-legacy-mutation-guard.ts'
 
 export async function deleteOrderSafely(
   db: D1Database,
@@ -14,6 +15,8 @@ export async function deleteOrderSafely(
   checkedBy = '',
 ) {
   if (!orderId) throw new CriticalOperationConflictError('Заказ не найден. Обновите список и повторите действие.')
+  // Must happen BEFORE the old deleter can release or restore physical stock.
+  await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'order_delete')
   const requestId = cleanText(input.requestId) || `order-delete-${orderId}-${crypto.randomUUID()}`
   let order = await getOrder(db, orderId)
   if (!order) throw new CriticalOperationConflictError('Заказ не найден. Возможно, он уже был удалён.')
@@ -314,6 +317,8 @@ export async function deleteOrderSafely(
          WHERE id = ? AND shipping_status = 'sent'`
       ).bind(timestamp, orderId),
     )
+    // The old admin delete may only write to orders with no V2 history.
+    await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'order_delete')
     await db.batch(statements)
   }
 
@@ -330,6 +335,7 @@ export async function deleteOrderSafely(
   const autoCancelledReturns = 0
 
   const externalId = cleanText((order as any).external_id)
+  await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'order_delete')
   const result = await updateOrderCritical(
     db,
     orderId,

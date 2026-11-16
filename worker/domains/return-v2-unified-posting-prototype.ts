@@ -1,0 +1,608 @@
+// Isolated Stage 2 prototype: mixed physical Return + cancellation of unshipped reservations.
+// NO Worker route, UI, or old Return/Exchange/financial consumer imports this module.
+// Any legacy/reconciled item is fail-closed. Full cancellation/reversal is NOT implemented.
+import { previewUnifiedReturnV2LineEvidence, type ReturnV2LineAction } from './return-v2-unified-line-evidence.ts'
+import {readVersionedReturnMoney} from './return-v2-financial-projection.ts'
+import {readOldReturnBaseline} from './return-v2-legacy-contract-baseline.ts'
+import {noUnreversedDispatchSql,noUnsafeCancelledDispatchSql,noUnprovenCancelledDispatchSql} from './return-v2-dispatch-correction-proof.ts'
+import {guardExchangeHistoryInBatch} from './return-v2-safe-exchange-history.ts'
+
+export type ReturnV2ReceiptIntent='pending'|'warehouse'|'boutique'|'no_stock'
+type Selection={orderItemId:number;quantity:number;receiptIntent?:ReturnV2ReceiptIntent}
+type Input={
+  requestId:string;orderId:number;expectedOrderVersion:string;
+  items:Selection[];refundAmount:number;refundMethod?:string
+}
+type Posted={id:number;request_id:string;intent_fingerprint:string;order_id:number;
+  return_id:number;final_total:number;cash_refund:number;full_termination:number}
+type Res={id:number;order_item_id:number;quantity:number;status:string;
+  inventory_source:string;variant_id:number}
+type Stock={id:number;inventory_source:string;variant_id:number;quantity:number;reserved_quantity:number}
+type PreparedLine={orderItemId:number;quantity:number;originalQty:number;unitPrice:number;
+  value:number;action:Exclude<ReturnV2LineAction,'needs_review'>;reservation:Res|null;
+  source:string;variant:number|null;oldStatus:string;receiptIntent:ReturnV2ReceiptIntent;
+  fulfilledQty:number;exchangedOldQty:number;legacyUnloggedShipping:boolean;unrestoredCorrection:boolean}
+export class ReturnV2UnifiedPostingConflict extends Error {
+  readonly status=409
+  readonly code='return_v2_unified_posting_conflict'
+}
+function reject(msg:string):never{throw new ReturnV2UnifiedPostingConflict(msg)}
+function safeInt(value:unknown,min=0):number{
+  if(!Number.isSafeInteger(value)||Number(value)<min)reject('Цена, количество или сумма недостоверны.')
+  return Number(value)
+}
+function changed(db:D1Database,step:string):D1PreparedStatement{
+  return db.prepare(`SELECT json('RETURN_V2_UNIFIED_CONFLICT_`+step+`') WHERE changes()<>1`)
+}
+async function getPosted(db:D1Database,requestId:string){
+  return db.prepare(`SELECT id,request_id,intent_fingerprint,order_id,return_id,
+       final_total,cash_refund,full_termination FROM return_v2_unified_postings
+       WHERE request_id=? LIMIT 1`).bind(requestId).first<Posted>()
+}
+function normalizedInput(input:Input){
+  const requestId=String(input.requestId||'').trim()
+  if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,159}$/.test(requestId))
+    reject('Некорректный идентификатор операции.')
+  const orderId=safeInt(input.orderId,1)
+  const version=String(input.expectedOrderVersion||'')
+  if(!version)reject('Сначала обновите заказ и повторите выбор.')
+  if(!Array.isArray(input.items)||input.items.length<1||input.items.length>100)
+    reject('Выберите хотя бы одну позицию.')
+  const items=input.items.map(x=>({
+    orderItemId:safeInt(x.orderItemId,1),quantity:safeInt(x.quantity,1),
+    receiptIntent:x.receiptIntent===undefined?'pending':x.receiptIntent,
+  }))
+    .sort((a,b)=>a.orderItemId-b.orderItemId)
+  if(items.some(x=>!['pending','warehouse','boutique','no_stock'].includes(x.receiptIntent)))
+    reject('Неизвестное решение о физическом приёме товара.')
+  if(new Set(items.map(x=>x.orderItemId)).size!==items.length)
+    reject('Повторная позиция в списке.')
+  const refund=safeInt(input.refundAmount)
+  const method=String(input.refundMethod||'').trim().toLocaleUpperCase('ru-RU')
+  if((refund>0&&!method)||(refund===0&&method)||method.length>100)
+    reject('Способ выплаты должен соответствовать фактической сумме.')
+  const fingerprint=JSON.stringify({orderId,version,items,refund,method})
+  return {requestId,orderId,version,items,refund,method,fingerprint}
+}
+
+export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
+  const wanted=normalizedInput(input)
+  const replay=async (row:Posted)=>{
+    const r=await db.prepare(`SELECT status FROM returns WHERE id=? AND order_id=?`)
+      .bind(row.return_id,row.order_id).first<{status:string}>()
+    if(row.intent_fingerprint!==wanted.fingerprint||row.order_id!==wanted.orderId
+      ||r?.status!=='completed')reject('Идентификатор повторно использован для другого или отменённого возврата.')
+    return {ok:true,replayed:true,returnId:row.return_id,postingId:row.id,
+      orderId:row.order_id,remainingSale:row.final_total,cashRefund:row.cash_refund,
+      fullTermination:row.full_termination===1}
+  }
+  const already=await getPosted(db,wanted.requestId)
+  if(already)return replay(already)
+  const preview=await previewUnifiedReturnV2LineEvidence(db,wanted.orderId)
+  if(preview.orderVersion!==wanted.version)reject('Заказ изменился после открытия формы.')
+  // A former partial Return may leave ONE ambiguous historical line. It may
+  // not prevent independently verified remaining goods from being returned.
+  // Selected lines must always be fully proven; unselected lines are read-only.
+  if(!preview.lines.length)
+    reject('В заказе не осталось позиций для возврата.')
+  const baseline=await readOldReturnBaseline(db,wanted.orderId)
+  const baselineQtyByItem=new Map(baseline.byItem.map(b=>[b.itemId,b.quantity]))
+  const byId=new Map(preview.lines.map(line=>[line.orderItemId,line]))
+  let totalReduction=0
+  const lines:PreparedLine[]=[]
+  for(const requested of wanted.items) {
+    const line=byId.get(requested.orderItemId)
+    if(!line||line.requiresReview||requested.quantity>line.availableQuantity)
+      reject('Выбранная позиция или количество изменились.')
+    const act=line.proposedAction
+    if(act==='needs_review')reject('Товар требует уточнения.')
+    if(line.reasonCode==='legacy_sent_fulfilled_without_dispatch'
+      &&line.fulfilledQuantity>line.contractQuantity
+      &&requested.quantity!==line.availableQuantity)
+      reject('После частичного обмена можно отменить только всё оставшееся количество этой строки.')
+    if(act!=='physical_return_pending'&&requested.receiptIntent!=='pending')
+      reject('Неотправленную позицию нельзя физически принять повторно: она уже в остатке.')
+    const value=requested.quantity*line.soldUnitPrice
+    if(!Number.isSafeInteger(value)||!Number.isSafeInteger(totalReduction+value))
+      reject('Стоимость позиций слишком велика.')
+    totalReduction+=value
+    const result=(await db.prepare(
+      `SELECT id,order_item_id,quantity,status,inventory_source,variant_id
+        FROM inventory_reservations WHERE order_item_id=?`
+    ).bind(line.orderItemId).all<Res>()).results||[]
+    let reservation:Res|null=null
+    if(act==='cancel_unreserved_obligation'){
+      if(result.length!==0||line.dispatchedQuantity!==0)
+        reject('Нельзя отменять неучтённую позицию с резервом или отправкой.')
+    }else if(act==='cancel_workshop_obligation'){
+      if(result.length!==0||line.dispatchedQuantity!==0)
+        reject('Отказ клиента от цехового изделия не должен изменять складские резервы или отправку.')
+      const task=(await db.prepare(
+        `SELECT COUNT(*) AS count FROM workshop_tasks
+          WHERE order_id=? AND order_item_id=?
+            AND status IN ('active','invoice','ready','done')`
+      ).bind(wanted.orderId,line.orderItemId).first<{count:number}>())
+      if(!task?.count)reject('Связанное цеховое задание не найдено.')
+    }else if(act==='physical_return_pending'){
+      const isLegacy=line.reasonCode==='legacy_sent_fulfilled_without_dispatch'
+      if(result.length!==1||result[0].status!=='fulfilled'
+        ||result[0].quantity!==line.fulfilledQuantity
+        ||(isLegacy?line.dispatchedQuantity!==0
+          :line.dispatchedQuantity!==line.contractQuantity+line.postedV2PhysicalQuantity+line.exchangedOldQuantity))
+        reject('Выдача позиции перестала соответствовать журналу отправок.')
+    }else{
+      if(result.length!==1||result[0].status!==(act==='cancel_unshipped_reservation'?'active':'unresolved')
+        ||result[0].quantity!==line.contractQuantity
+        ||result[0].inventory_source!==line.sourceType)
+        reject('Резерв позиции изменился после расчёта.')
+      reservation=result[0]
+    }
+    const actual=await db.prepare(
+      `SELECT quantity,unit_price,stock_writeoff_status,source_type,variant_id,is_workshop
+        FROM order_items WHERE id=? AND order_id=?`
+    ).bind(line.orderItemId,wanted.orderId).first<{quantity:number;unit_price:number;
+      stock_writeoff_status:string;source_type:string;variant_id:number|null;is_workshop:number}>()
+    if(!actual||actual.quantity!==line.contractQuantity||actual.unit_price!==line.soldUnitPrice
+      ||(act==='cancel_workshop_obligation'&&Number(actual.is_workshop)!==1)
+      ||(act==='cancel_unreserved_obligation'&&(Number(actual.is_workshop)!==0
+        ||!['pending_reservation','not_reserved','unreserved',''].includes(String(actual.stock_writeoff_status||'')))))
+      reject('Количество или цена позиции уже изменились.')
+    // Repeating an UNSHIPPED reserve cancellation is safe only if every
+    // historical reduction on this exact item used the SAME reservation,
+    // kept physical stock at zero delta and formed an unbroken quantity chain.
+    // Sent/received or unresolved prior actions still require separate review.
+    const earlier=(await db.prepare(
+      `SELECT prev.action,prev.original_line_quantity,prev.contracted_quantity,
+        prev.sold_unit_price,prev.reservation_id,prev.reservation_release,
+        prev.stock_quantity_change,pp.order_id,ret.status AS return_status,
+        (SELECT COALESCE(SUM(later.contracted_quantity),0)
+         FROM return_v2_unified_lines later
+         JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+         JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
+         WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id)
+         AS reduction_from_this_post
+       FROM return_v2_unified_lines prev
+       JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+       JOIN returns ret ON ret.id=pp.return_id
+       WHERE prev.order_item_id=? ORDER BY pp.id`
+    ).bind(line.orderItemId).all<{
+      action:string;original_line_quantity:number;contracted_quantity:number;
+      sold_unit_price:number;reservation_id:number|null;reservation_release:number;
+      stock_quantity_change:number;order_id:number;return_status:string;
+      reduction_from_this_post:number
+    }>()).results||[]
+    const activeEarlier=earlier.filter(prev=>prev.return_status==='completed')
+    if(earlier.some(prev=>prev.return_status!=='completed'&&prev.return_status!=='cancelled')
+      ||activeEarlier.some(prev=>
+        prev.order_id!==wanted.orderId
+        ||prev.sold_unit_price!==line.soldUnitPrice
+        ||prev.stock_quantity_change!==0
+        ||prev.original_line_quantity!==line.contractQuantity+prev.reduction_from_this_post
+        ||(act==='cancel_unshipped_reservation'
+          ?(!reservation||prev.action!=='cancel_unshipped_reservation'
+            ||prev.reservation_id!==reservation.id
+            ||prev.reservation_release!==prev.contracted_quantity)
+          :(act==='physical_return_pending'
+            ?(prev.action!=='physical_return_pending'
+              ||prev.reservation_id!==null||prev.reservation_release!==0)
+            :true))))
+      reject('Предыдущие операции с этой позицией не согласованы. Обновите данные и проверьте историю.')
+
+    const effectiveQty=line.contractQuantity-(baselineQtyByItem.get(line.orderItemId)||0)
+    if(effectiveQty<requested.quantity||effectiveQty<=0)
+      reject('Количество уже уменьшено предыдущим возвратом.')
+    lines.push({orderItemId:line.orderItemId,quantity:requested.quantity,
+      originalQty:effectiveQty,unitPrice:line.soldUnitPrice,value,action:act,
+      reservation,source:actual.source_type,variant:actual.variant_id,
+      oldStatus:actual.stock_writeoff_status,receiptIntent:requested.receiptIntent,
+      fulfilledQty:line.fulfilledQuantity,
+      exchangedOldQty:line.exchangedOldQuantity,
+      legacyUnloggedShipping:line.reasonCode==='legacy_sent_fulfilled_without_dispatch',
+      unrestoredCorrection:line.reasonCode==='reshipped_after_unrestored_correction'})
+  }
+  const order=await db.prepare(
+    `SELECT total_amount,updated_at,pricing_mode,external_id,manager_id
+      FROM orders WHERE id=?`
+  ).bind(wanted.orderId).first<{total_amount:number;updated_at:string;
+    pricing_mode:string;external_id:string;manager_id:number|null}>()
+  if(!order||order.updated_at!==wanted.version||order.pricing_mode!=='itemized_v1')
+    reject('Стоимость заказа или тип цены изменились.')
+  const initialTotal=safeInt(order.total_amount)
+  const normalizedInitial=initialTotal-baseline.reduction
+  if(normalizedInitial<0)reject('Старые возвраты превышают остаток стоимости заказа.')
+  const finalTotal=normalizedInitial-totalReduction
+  if(finalTotal<0||totalReduction<=0)reject('Нечего исключать из продажи.')
+  const paid=await db.prepare(
+    `SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) AS sum
+      FROM payments WHERE order_id=?`
+  ).bind(wanted.orderId).first<{sum:number}>()
+  const received=safeInt(paid?.sum)
+  // Every subsequent Return is based on the CURRENT remaining contract.
+  // Prior payouts are still held in the immutable financial history; do not
+  // let a second Return refund the same received cash again.
+  const priorPosting=await db.prepare(
+    'SELECT COUNT(*) AS count FROM return_v2_unified_postings WHERE order_id=?'
+  ).bind(wanted.orderId).first<{count:number}>()
+  const existingPostCount=safeInt(priorPosting?.count)
+  let priorRefund=baseline.previousRefund
+  if(existingPostCount>0){
+    const ledger=await readVersionedReturnMoney(db,wanted.orderId)
+    if(ledger.kind!=='return_v2'||ledger.currentSale!==initialTotal
+      ||ledger.paidIn!==received||ledger.orderVersion!==wanted.version)
+      reject('Предыдущие возвраты или финансовый баланс изменились. Обновите заказ.')
+    priorRefund=ledger.paidOut
+  }
+  if(wanted.refund>received-priorRefund)
+    reject('Выплата превышает фактически оставшиеся у магазина деньги.')
+  const fullTermination=finalTotal===0
+  const grouped=new Map<string,{stock:Stock;release:number}>()
+  for(const line of lines.filter(l=>l.action==='cancel_unshipped_reservation')){
+    const r=line.reservation!
+    if(!r.variant_id)reject('Не найден проверенный артикул резерва.')
+    const key=r.inventory_source+':'+r.variant_id
+    if(!grouped.has(key)){
+      const stockRows=(await db.prepare(
+        `SELECT id,inventory_source,variant_id,quantity,reserved_quantity
+          FROM inventory_stock WHERE inventory_source=? AND variant_id=?`
+      ).bind(r.inventory_source,r.variant_id).all<Stock>()).results||[]
+      if(stockRows.length!==1)reject('Складская позиция неоднозначна.')
+      const stock=stockRows[0]
+      if(stock.quantity<0||stock.reserved_quantity<0)
+        reject('Остаток склада требует проверки.')
+      grouped.set(key,{stock,release:0})
+    }
+    grouped.get(key)!.release+=line.quantity
+  }
+  for(const group of grouped.values()){
+    if(group.release>group.stock.reserved_quantity)
+      reject('Указанный резерв больше фактического зарезервированного количества.')
+  }
+  const stamp=new Date().toISOString(),date=stamp.slice(0,10)
+  const legacyIdsJson=JSON.stringify(baseline.returns.map(x=>x.id))
+  const statements:D1PreparedStatement[]=[
+    guardExchangeHistoryInBatch(db,wanted.orderId),
+    db.prepare(
+      `INSERT INTO returns(order_id,manager_id,return_date,amount,payment_method,
+           status,comment,created_at)
+        SELECT o.id,o.manager_id,?,?,?,'completed','Return V2 unified isolated',?
+        FROM orders o WHERE o.id=? AND o.pricing_mode='itemized_v1'
+          AND o.total_amount=? AND o.updated_at=?
+          AND o.order_status NOT IN ('archived','deleted') AND o.archived_at IS NULL
+          AND (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi
+             WHERE oi.order_id=o.id AND oi.quantity>0)=?
+          AND (SELECT COALESCE(SUM(CASE WHEN p.amount>0 THEN p.amount ELSE 0 END),0)
+             FROM payments p WHERE p.order_id=o.id)=?
+          -- Complete historical Returns must be either already accounted
+          -- by an immutable baseline or matched to this transaction's exact
+          -- read-only baseline list. Cancelled old Returns never count.
+          AND NOT EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id
+            AND COALESCE(r.status,'completed')='completed'
+            AND NOT EXISTS(SELECT 1 FROM return_v2_unified_postings old
+              WHERE old.order_id=o.id AND old.return_id=r.id)
+            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns lb
+              WHERE lb.order_id=o.id AND lb.return_id=r.id)
+            AND r.id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))
+          AND (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
+            AND COALESCE(r.status,'completed')='completed')=?
+          AND NOT EXISTS(SELECT 1 FROM return_v2_postings old WHERE old.order_id=o.id)
+          AND COALESCE((SELECT CASE
+              WHEN r.status='completed' THEN old.final_total
+              WHEN r.status='cancelled' AND EXISTS(
+                SELECT 1 FROM return_v2_unified_cancellations c WHERE c.posting_id=old.id)
+                THEN old.initial_total
+              ELSE -1 END
+            FROM return_v2_unified_postings old
+            JOIN returns r ON r.id=old.return_id
+            WHERE old.order_id=o.id ORDER BY old.id DESC LIMIT 1),o.total_amount)=o.total_amount
+          AND (SELECT COALESCE(SUM(r.amount),0) FROM returns r
+            WHERE r.order_id=o.id AND r.status='completed')=?
+       AND NOT EXISTS(
+         SELECT 1 FROM critical_operations co
+         WHERE co.operation_type='order_edit' AND co.status='started'
+           AND CAST(json_extract(co.context_json,'$.orderId') AS INTEGER)=o.id)
+       AND NOT EXISTS(
+         SELECT 1 FROM admin_order_delete_sagas saga
+         WHERE saga.order_id=o.id
+           AND saga.status IN ('planned','running','review_required','ready_for_final_delete'))
+          -- Old critical payment stages can leave a real payment before its
+          -- financial event/cache is finished. Posting V2 during that window
+          -- would orphan the old event, so refuse the Return atomically.
+          AND NOT EXISTS(
+            SELECT 1 FROM critical_operations co
+            WHERE co.operation_type='order_payment_create' AND co.status='started'
+              AND (CAST(json_extract(co.context_json,'$.orderId') AS INTEGER)=o.id
+                OR CAST(json_extract(co.context_json,'$.plan.orderId') AS INTEGER)=o.id)
+              AND (co.step<>'started' OR co.lease_token IS NOT NULL OR co.target_id IS NOT NULL)
+          )`
+    ).bind(date,wanted.refund,wanted.method||null,stamp,wanted.orderId,initialTotal,
+      wanted.version,initialTotal,received,legacyIdsJson,baseline.activeReturnCount,priorRefund),
+    changed(db,'return_header'),
+    db.prepare(
+      `INSERT INTO return_v2_unified_postings(request_id,intent_fingerprint,order_id,
+       return_id,posted_at,initial_total,final_total,initial_received,cash_refund,
+       refund_method,full_termination)
+       VALUES(?,?,?,last_insert_rowid(),?,?,?,?,?,?,?)`
+    ).bind(wanted.requestId,wanted.fingerprint,wanted.orderId,stamp,normalizedInitial,
+      finalTotal,received,wanted.refund,wanted.method||null,fullTermination?1:0),
+    changed(db,'posting'),
+  ]
+  if(baseline.needsBaseline){
+    statements.push(db.prepare(`INSERT INTO return_v2_legacy_baselines(
+      posting_id,order_id,original_sale,normalized_sale,reduction)
+      SELECT up.id,up.order_id,?,?,? FROM return_v2_unified_postings up
+      WHERE up.request_id=? AND up.initial_total=?`)
+      .bind(initialTotal,normalizedInitial,baseline.reduction,wanted.requestId,normalizedInitial))
+    statements.push(changed(db,'legacy_baseline_header'))
+    for(const old of baseline.returns){
+      statements.push(db.prepare(`INSERT INTO return_v2_legacy_baseline_returns(
+        return_id,posting_id,order_id,original_cash_refund)
+        SELECT r.id,up.id,up.order_id,r.amount
+        FROM returns r JOIN return_v2_unified_postings up
+          ON up.order_id=r.order_id AND up.request_id=?
+        WHERE r.id=? AND r.order_id=? AND r.amount=?
+          AND COALESCE(r.status,'completed')='completed'
+          AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_returns prior
+            WHERE prior.return_id=r.id)`)
+        .bind(wanted.requestId,old.id,wanted.orderId,old.amount))
+      statements.push(changed(db,'legacy_baseline_return'))
+    }
+    for(const old of baseline.lines){
+      statements.push(db.prepare(`INSERT INTO return_v2_legacy_baseline_items(
+        return_item_id,posting_id,order_item_id,quantity,sold_unit_price,reduction)
+        SELECT ri.id,up.id,oi.id,?,?,?
+        FROM return_items ri
+        JOIN returns ret ON ret.id=ri.return_id
+        JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=ret.order_id
+        JOIN return_v2_unified_postings up ON up.order_id=ret.order_id AND up.request_id=?
+        WHERE ri.id=? AND ret.id=? AND ret.order_id=?
+          AND COALESCE(ret.status,'completed')='completed'
+          AND COALESCE(ri.contract_quantity_applied,0)=0 AND ri.quantity=?
+          AND oi.unit_price=? AND oi.line_total=oi.quantity*oi.unit_price`)
+        .bind(old.quantity,old.unitPrice,old.reduction,wanted.requestId,
+          old.returnItemId,old.returnId,wanted.orderId,old.quantity,old.unitPrice))
+      statements.push(changed(db,'legacy_baseline_item'))
+    }
+    for(const item of baseline.byItem){
+      statements.push(db.prepare(`UPDATE order_items
+        SET quantity=quantity-?,line_total=(quantity-?)*unit_price
+        WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
+          AND line_total=quantity*unit_price
+          AND quantity>=?
+          AND (SELECT COALESCE(SUM(b.quantity),0) FROM return_v2_legacy_baseline_items b
+            JOIN return_v2_unified_postings up ON up.id=b.posting_id
+            WHERE b.order_item_id=order_items.id AND up.request_id=?)=?`)
+        .bind(item.quantity,item.quantity,item.itemId,wanted.orderId,
+          item.originalQuantity,item.unitPrice,item.quantity,wanted.requestId,item.quantity))
+      statements.push(changed(db,'legacy_contract_line'))
+    }
+  }
+  // One reserved_quantity compare-and-swap per SKU, even when multiple lines
+  // share the same physical stock. The physical 'quantity' is NEVER updated.
+  for(const {stock,release} of grouped.values()){
+    statements.push(db.prepare(
+      `UPDATE inventory_stock SET reserved_quantity=reserved_quantity-?,
+        last_action='Отмена неотправленной позиции V2',last_source_ref=?,updated_at=?
+        WHERE id=? AND quantity=? AND reserved_quantity=? AND reserved_quantity>=?`
+    ).bind(release,'return-v2:unified:'+wanted.requestId,stamp,stock.id,
+      stock.quantity,stock.reserved_quantity,release))
+    statements.push(changed(db,'release_reserved_cache'))
+  }
+  for(const line of lines){
+    const r=line.reservation
+    if(r){
+      statements.push(db.prepare(
+        `UPDATE inventory_reservations SET
+          quantity=CASE WHEN quantity=? THEN quantity ELSE quantity-? END,
+          status=CASE WHEN quantity=? THEN 'released' ELSE status END,
+          released_at=CASE WHEN quantity=? THEN ? ELSE released_at END,
+          updated_at=?
+          WHERE id=? AND order_id=? AND order_item_id=?
+            AND status=? AND quantity=? AND inventory_source=?
+            AND variant_id IS ?
+            AND ${noUnreversedDispatchSql('inventory_reservations.order_item_id')}`
+      ).bind(line.quantity,line.quantity,line.quantity,line.quantity,stamp,stamp,
+        r.id,wanted.orderId,line.orderItemId,r.status,r.quantity,
+        r.inventory_source,r.variant_id))
+      statements.push(changed(db,'release_item_reservation'))
+    }
+    const guard=line.action==='cancel_unreserved_obligation'
+      ? `AND is_workshop=0
+          AND COALESCE(stock_writeoff_status,'') IN ('pending_reservation','not_reserved','unreserved','')
+          AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+            WHERE r.order_item_id=order_items.id)
+          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+            WHERE di.order_item_id=order_items.id)`
+      :line.action==='cancel_workshop_obligation'
+      ? `AND is_workshop=1
+          AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+            WHERE r.order_item_id=order_items.id)
+          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+            WHERE di.order_item_id=order_items.id)
+          AND EXISTS(SELECT 1 FROM workshop_tasks wt
+            WHERE wt.order_id=order_items.order_id AND wt.order_item_id=order_items.id
+              AND wt.status IN ('active','invoice','ready','done'))`
+      : line.action==='physical_return_pending'&&line.legacyUnloggedShipping
+      ? `AND EXISTS(SELECT 1 FROM inventory_reservations r
+          WHERE r.order_item_id=order_items.id AND r.status='fulfilled' AND r.quantity=?)
+         AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+          WHERE di.order_item_id=order_items.id)
+         AND EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id
+          AND o.shipping_status='sent')
+         AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+          WHERE r.order_item_id=order_items.id AND r.status IN ('active','unresolved'))`
+      : line.action==='physical_return_pending'
+      ? `AND EXISTS(
+          SELECT 1 FROM inventory_reservations r WHERE r.order_item_id=order_items.id
+            AND r.status='fulfilled' AND r.quantity=?
+        ) AND (SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0)
+             FROM order_dispatch_items di WHERE di.order_item_id=order_items.id)=?
+          AND (SELECT COALESCE(SUM(ei.quantity),0)
+            FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+            WHERE ei.order_item_id=order_items.id AND ei.role='old'
+              AND e.order_id=order_items.order_id AND e.status='completed')=?
+          AND ${line.unrestoredCorrection
+             ? noUnprovenCancelledDispatchSql('order_items.id')
+             : noUnsafeCancelledDispatchSql('order_items.id')}
+          AND ${line.unrestoredCorrection
+             ? `EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id
+                   AND o.shipping_status='sent') AND
+                 EXISTS(SELECT 1 FROM order_dispatch_items di
+                   JOIN order_dispatch_corrections dc ON dc.dispatch_item_id=di.id
+                   WHERE di.order_item_id=order_items.id
+                     AND di.cancelled_quantity=di.quantity AND di.quantity>0
+                     AND dc.quantity=di.quantity AND dc.stock_restored=0)
+                 AND` : ''} NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+             WHERE di.order_item_id=order_items.id
+               AND di.source_type<>'workshop' AND di.movement_id IS NOT NULL
+               AND NOT EXISTS(SELECT 1 FROM inventory_movements m
+                     WHERE m.id=di.movement_id AND m.movement_type='sale'
+                       AND m.reference_type='order_dispatch'))
+          AND NOT EXISTS(SELECT 1 FROM inventory_reservations r
+             WHERE r.order_item_id=order_items.id AND r.status IN ('active','unresolved'))`
+      : `AND EXISTS(SELECT 1 FROM inventory_reservations r
+          WHERE r.id=? AND r.order_item_id=order_items.id
+            AND r.quantity=? AND r.status=?)
+         AND ${noUnreversedDispatchSql('order_items.id')}`
+    const guardArgs=['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
+      ? [] : line.action==='physical_return_pending'
+      ? [line.fulfilledQty,...(line.legacyUnloggedShipping?[]:[line.fulfilledQty,line.exchangedOldQty])] : [r!.id,line.quantity===r!.quantity?r!.quantity:r!.quantity-line.quantity,
+        line.quantity===r!.quantity?'released':r!.status]
+    const sameItemHistoryGuard=line.action==='cancel_unshipped_reservation'
+      ? `AND NOT EXISTS(
+          SELECT 1 FROM return_v2_unified_lines prev
+          JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+          JOIN returns prev_return ON prev_return.id=pp.return_id
+          WHERE prev.order_item_id=order_items.id AND prev_return.status='completed'
+            AND (pp.order_id<>order_items.order_id
+              OR prev.action<>'cancel_unshipped_reservation'
+              OR prev.reservation_id IS NOT ?
+              OR prev.sold_unit_price<>order_items.unit_price
+              OR prev.reservation_release<>prev.contracted_quantity
+              OR prev.stock_quantity_change<>0
+              OR prev.original_line_quantity<>order_items.quantity+(
+                SELECT COALESCE(SUM(later.contracted_quantity),0)
+                FROM return_v2_unified_lines later
+                JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+                JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
+                WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id))
+        )`
+      :line.action==='physical_return_pending'
+      ? `AND NOT EXISTS(
+          SELECT 1 FROM return_v2_unified_lines prev
+          JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+          JOIN returns prev_return ON prev_return.id=pp.return_id
+          WHERE prev.order_item_id=order_items.id AND prev_return.status='completed'
+            AND (pp.order_id<>order_items.order_id
+              OR prev.action<>'physical_return_pending'
+              OR prev.reservation_id IS NOT NULL OR prev.reservation_release<>0
+              OR prev.stock_quantity_change<>0
+              OR prev.sold_unit_price<>order_items.unit_price
+              OR prev.original_line_quantity<>order_items.quantity+(
+                SELECT COALESCE(SUM(later.contracted_quantity),0)
+                FROM return_v2_unified_lines later
+                JOIN return_v2_unified_postings lp ON lp.id=later.posting_id
+                JOIN returns later_ret ON later_ret.id=lp.return_id AND later_ret.status='completed'
+                WHERE later.order_item_id=prev.order_item_id AND lp.id>=pp.id))
+        )`
+      : `AND NOT EXISTS(SELECT 1 FROM return_v2_unified_lines prev
+          JOIN return_v2_unified_postings pp ON pp.id=prev.posting_id
+          JOIN returns ret ON ret.id=pp.return_id AND ret.status='completed'
+          WHERE prev.order_item_id=order_items.id)`
+    const priorItemReturnGuard=line.action==='physical_return_pending'
+      ? '' : `AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
+           ON ret.id=ri.return_id WHERE ri.order_item_id=order_items.id
+            AND ret.id<>(SELECT return_id FROM return_v2_unified_postings WHERE request_id=?)
+            AND NOT EXISTS(SELECT 1 FROM return_v2_legacy_baseline_items lb
+              JOIN return_v2_unified_postings up ON up.id=lb.posting_id
+              WHERE lb.return_item_id=ri.id AND up.request_id=?))`
+    statements.push(db.prepare(
+      `UPDATE order_items SET quantity=quantity-?,line_total=(quantity-?)*unit_price,
+       stock_writeoff_status=CASE WHEN quantity=? AND ? NOT IN ('physical_return_pending','cancel_workshop_obligation','cancel_unreserved_obligation')
+         THEN 'reservation_released' ELSE stock_writeoff_status END
+       WHERE id=? AND order_id=? AND quantity=? AND unit_price=?
+         AND stock_writeoff_status=? AND line_total=quantity*unit_price
+         `+sameItemHistoryGuard+`
+         `+priorItemReturnGuard+`
+         `+guard
+    ).bind(line.quantity,line.quantity,line.quantity,line.action,
+      line.orderItemId,wanted.orderId,line.originalQty,line.unitPrice,
+      line.oldStatus,...(line.action==='cancel_unshipped_reservation'?[r!.id]:[]),
+      ...(line.action==='physical_return_pending'?[]:[wanted.requestId,wanted.requestId]),
+      ...guardArgs))
+    statements.push(changed(db,'contract_line'))
+    statements.push(db.prepare(
+      `INSERT INTO return_v2_unified_lines(
+        posting_id,order_item_id,action,contracted_quantity,original_line_quantity,
+        sold_unit_price,contract_reduction,reservation_id,reservation_release,stock_quantity_change,receipt_intent)
+       SELECT id,?,?,?,?,?,?,?,?,0,? FROM return_v2_unified_postings WHERE request_id=?`
+    ).bind(line.orderItemId,
+      ['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)
+        ?'cancel_unresolved_reservation':line.action,
+      line.quantity,line.originalQty,line.unitPrice,
+      line.value,r?.id||null,
+      line.action==='cancel_unshipped_reservation'?line.quantity:0,
+      line.action==='physical_return_pending'?line.receiptIntent:'not_applicable',wanted.requestId))
+    statements.push(changed(db,'line_provenance'))
+    if(['cancel_workshop_obligation','cancel_unreserved_obligation'].includes(line.action)){
+      statements.push(db.prepare(
+        `INSERT INTO return_v2_unified_action_overrides(
+          posting_id,order_item_id,semantic_action)
+          SELECT id,?,? FROM return_v2_unified_postings WHERE request_id=?`
+      ).bind(line.orderItemId,line.action,wanted.requestId))
+      statements.push(changed(db,'action_semantics'))
+    }
+    if(line.action==='physical_return_pending'){
+      statements.push(db.prepare(
+        `INSERT INTO return_items(return_id,order_item_id,product_name_snapshot,quantity,
+         amount,inventory_source,restocked,physical_tracking,physical_received_at,
+         created_at,contract_quantity_applied)
+        SELECT up.return_id,oi.id,oi.product_name_snapshot,?,?,NULL,0,1,NULL,?,1
+        FROM return_v2_unified_postings up JOIN order_items oi
+          ON oi.order_id=up.order_id
+        WHERE up.request_id=? AND oi.id=?`
+      ).bind(line.quantity,line.value,stamp,wanted.requestId,line.orderItemId))
+      statements.push(changed(db,'pending_physical_receipt'))
+    }
+  }
+  statements.push(db.prepare(
+    `UPDATE orders SET total_amount=?,received_amount=?,return_amount=?,
+       debt_amount=MAX(0,?-(?-?)),updated_at=?
+       WHERE id=? AND total_amount=? AND updated_at=?
+         AND (SELECT COALESCE(SUM(oi.line_total),0) FROM order_items oi
+              WHERE oi.order_id=orders.id AND oi.quantity>0)=?
+         AND (SELECT COALESCE(SUM(CASE WHEN pay.amount>0 THEN pay.amount ELSE 0 END),0)
+              FROM payments pay WHERE pay.order_id=orders.id)=?`
+  ).bind(finalTotal,received,priorRefund+wanted.refund,finalTotal,received,
+    priorRefund+wanted.refund,stamp,
+    wanted.orderId,initialTotal,wanted.version,finalTotal,received))
+  statements.push(changed(db,'order_money'))
+  if(wanted.refund>0){
+    statements.push(db.prepare(
+      `INSERT INTO financial_events(event_key,order_id,external_order_id,event_date,event_at,
+         event_type,related_type,amount_delta,payment_method,source_type,source_id,
+         source_ref,reason,comment,is_backfill,created_at)
+        SELECT 'return-v2:unified:'||up.request_id,up.order_id,o.external_id,?,?,
+         'order_refund',NULL,-?,?,'return',up.return_id,'returns:'||up.return_id,
+         'return_v2_unified',NULL,0,?
+        FROM return_v2_unified_postings up JOIN orders o ON o.id=up.order_id
+        WHERE up.request_id=?`
+    ).bind(date,stamp,wanted.refund,wanted.method,stamp,wanted.requestId))
+    statements.push(changed(db,'refund_event'))
+  }
+  try { await db.batch(statements) }
+  catch(error){
+    const now=await getPosted(db,wanted.requestId)
+    if(now)return replay(now)
+    const msg=error instanceof Error?error.message:String(error)
+    if(/RETURN_V2_UNIFIED_CONFLICT|malformed JSON|constraint failed|UNIQUE|FOREIGN KEY/i.test(msg)) {
+      const stage=msg.match(/RETURN_V2_UNIFIED_CONFLICT_([a-z_]+)/)?.[1]||'sql_integrity'
+      reject('Заказ, цена, отправка, резерв или оплата изменились (проверка: '+stage+'). Ничего не проведено.')
+    }
+    throw error
+  }
+  const created=await getPosted(db,wanted.requestId)
+  if(!created)throw Error('Не найден журнал завершённой транзакции.')
+  return {ok:true,replayed:false,returnId:created.return_id,postingId:created.id,
+    orderId:created.order_id,remainingSale:created.final_total,
+    cashRefund:created.cash_refund,fullTermination:created.full_termination===1}
+}

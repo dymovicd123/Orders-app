@@ -3,6 +3,7 @@
 import { cleanText, normalizeDate, normalizeOrderStatus, toInt, upperText } from '../core/text.ts'
 import type { PaymentKind } from '../core/types.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext } from './critical.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql, ReturnV2LegacyMutationBlocked } from './return-v2-legacy-mutation-guard.ts'
 
 export function normalizePaymentKind(value: unknown) {
   const kind = cleanText(value).toLowerCase();
@@ -358,11 +359,15 @@ export async function syncOrderFinancialLedger(
   orderId: number,
   timestamp = new Date().toISOString(),
 ): Promise<OrderFinancialLedger> {
+  const gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'order_money_sync');
   const ledger = await readOrderFinancialLedger(db, orderId);
-  await db.prepare(
+  // History is permanent even when a V2 Return is later cancelled.
+  // An old sync must never overwrite the derived net-held debt at commit time.
+  const suffix=gate.v2SchemaReady?' AND '+legacyV1WriteExclusionSql('orders.id'):'';
+  const result=await db.prepare(
     `UPDATE orders
      SET received_amount = ?, return_amount = ?, debt_amount = ?, updated_at = ?
-     WHERE id = ?`
+     WHERE id = ?`+suffix
   ).bind(
     ledger.receivedAmount,
     ledger.returnAmount,
@@ -370,6 +375,8 @@ export async function syncOrderFinancialLedger(
     timestamp,
     orderId,
   ).run();
+  if(gate.v2SchemaReady && toInt(result.meta?.changes,0)!==1)
+    throw new ReturnV2LegacyMutationBlocked('Заказ перешёл на Return V2 во время пересчёта. Старый финансовый расчёт не записан.');
   return ledger;
 }
 
@@ -399,7 +406,7 @@ export async function createManualOrderPaymentCritical(
   }
 
   const payload = { orderId, paymentDate: requestedPaymentDate, method, amount, paymentKind, comment };
-  const criticalOperation = await beginCriticalOperation(db, 'order_payment_create', input.requestId, payload);
+  const criticalOperation = await beginCriticalOperation(db, 'order_payment_create', input.requestId, payload, {orderId});
   if (criticalOperation.row.status === 'completed') {
     const cached = criticalOperation.cachedResponse && typeof criticalOperation.cachedResponse === 'object'
       ? criticalOperation.cachedResponse as Record<string, unknown>
@@ -418,6 +425,11 @@ export async function createManualOrderPaymentCritical(
   }
 
   try {
+    const gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'manual_payment');
+    // A preflight is not sufficient: the old payment INSERT and money cache
+    // both carry a V2 exclusion in their actual atomic SQL.
+    const v2Exclusion=gate.v2SchemaReady?' AND '+legacyV1WriteExclusionSql('o.id'):'';
+    const v2SyncExclusion=gate.v2SchemaReady?' AND '+legacyV1WriteExclusionSql('orders.id'):'';
     type ManualPaymentPlan = {
       orderId: number;
       externalId: string;
@@ -493,6 +505,7 @@ export async function createManualOrderPaymentCritical(
                      SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
                      FROM payments p WHERE p.order_id = o.id
                    ), 0))
+                   ${v2Exclusion}
                ) THEN ? ELSE NULL END,
                ?, ?, ?)`
           ).bind(
@@ -553,9 +566,20 @@ export async function createManualOrderPaymentCritical(
                FROM payments p WHERE p.order_id = orders.id
              ), 0)),
              updated_at = ?
-         WHERE id = ?`
+         WHERE id = ?`+v2SyncExclusion
       ).bind(plan.timestamp, plan.orderId);
-      await db.batch([event, syncOrder]);
+      // When a V2 posting overtakes a staged legacy payment, a zero-row
+      // cache UPDATE aborts the entire event+cache batch instead of writing
+      // half a financial consequence.
+      const verifySync=db.prepare("SELECT json('V1_MONEY_V2_SYNC_CONFLICT') WHERE changes()<>1");
+      try{
+        await db.batch([event, syncOrder, verifySync]);
+      }catch(error){
+        const detail=cleanText(error instanceof Error?error.message:error);
+        if(/V1_MONEY_V2_SYNC_CONFLICT|malformed JSON/.test(detail))
+          throw new ReturnV2LegacyMutationBlocked('Возврат V2 изменил заказ. Старый платёж не может завершиться без сверки.');
+        throw error;
+      }
       await advanceCriticalOperation(db, criticalOperation, 'ledger_synced', { context });
     }
 

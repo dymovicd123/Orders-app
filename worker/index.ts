@@ -31,6 +31,8 @@ import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelI
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './domains/return-v2-legacy-mutation-guard.ts'
+import { previewStandaloneReturnV2 } from './domains/return-v2-shadow-preview.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
 import { confirmRetiredOrderItemDelivered } from './domains/retired-item-handover.ts'
@@ -40,6 +42,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { handleOrderSelectiveShippingRoute } from './routes/order-selective-shipping.ts'
+import { handleOrderReturnV2Route } from './routes/order-return-v2.ts'
 import { listOrderSourcePicker } from './domains/order-source-picker.ts'
 import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
@@ -583,7 +586,6 @@ export default {
         const result = await listWarehouseDemand(env.DB, url);
         return json(result, result.ok ? undefined : { status: 400 });
       }
-
       // Read-only stock valuation. Catalog costs are administrator-confidential.
       if (url.pathname === '/api/reports/warehouse-capital' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Себестоимость и оценка запасов доступны только администратору.');
@@ -1862,6 +1864,11 @@ export default {
       const orderShippingCorrectionMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/correct$/);
       if (orderShippingCorrectionMatch && request.method === 'POST') {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
+        try { await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping') }
+        catch(error) {
+          const issue=publicApiError(error);
+          return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+        }
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
           if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки».'},{status:409});
@@ -1899,6 +1906,12 @@ export default {
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
+        let oldShipGate;
+        try { oldShipGate=await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping'); }
+        catch(error){
+          const issue=publicApiError(error);
+          return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+        }
         if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся товары через «Отправить товары».'},{status:409});
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
         const existing = await env.DB.prepare(
@@ -2059,7 +2072,15 @@ export default {
             `UPDATE orders
              SET shipping_status = 'sent', shipping_date = ?, updated_at = ?
              WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`
+             +(oldShipGate.v2SchemaReady?' AND '+legacyV1WriteExclusionSql('orders.id'):'')
           ).bind(nextShippingDate, timestamp, id).run();
+          if(oldShipGate.v2SchemaReady&&toInt(shippingUpdate.meta?.changes,0)===0){
+            try { await assertLegacyMutationAllowedAfterReturnV2(env.DB,id,'shipping'); }
+            catch(error){
+              const issue=publicApiError(error);
+              return json({ok:false,...(issue.code?{code:issue.code}:{}),message:issue.message},{status:issue.status});
+            }
+          }
           shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
         }
         // Shipping/physical handover is already committed. Finance is a separate,
@@ -2197,7 +2218,11 @@ export default {
             }
             const criticalResponse = criticalOperationErrorResponse(error);
             if (criticalResponse) return criticalResponse;
-            throw error;
+            // Version-aware metadata corrections use their own optimistic
+            // conflict class, not the legacy editor critical-operation saga.
+            const publicError=publicApiError(error);
+            return json({ok:false,...(publicError.code?{code:publicError.code}:{}),
+              message:publicError.message},{status:publicError.status});
           }
         }
       }
@@ -2270,10 +2295,34 @@ export default {
         }
       }
 
+      // Rollout gate: no versioned Return write is callable before BOTH
+      // explicit enablement and migrated schema. Legacy Return routes stay
+      // unchanged when the new mode is disabled.
+      const versionedReturnResponse=await handleOrderReturnV2Route(
+        env.DB,request,url.pathname,
+        (env as Env & { RETURN_V2_ENABLED?: string }).RETURN_V2_ENABLED==='true',
+        cleanText(authUser?.role)
+      );
+      if(versionedReturnResponse)return versionedReturnResponse;
+
       if (url.pathname === '/api/returns' && request.method === 'GET') {
         return json(await listReturnHistory(env.DB, url));
       }
 
+      // Experimental Branch2-only read-only contract: not connected to Return creation.
+      if (url.pathname === '/api/returns/preview-v2' && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        try {
+          const input = await readJson<{ orderId?: unknown; expectedTotalAmount?: unknown; refundAmount?: unknown; items?: Array<{ orderItemId?: unknown; quantity?: unknown }> }>(request);
+          const preview = await previewStandaloneReturnV2(env.DB, input);
+          return json(preview, { headers: { 'Cache-Control': 'no-store' } });
+        } catch (error) {
+          const info = publicApiError(error);
+          return json({ ok: false, code: info.code || 'return_v2_preview_error', message: info.message },
+            { status: info.status, headers: { 'Cache-Control': 'no-store' } });
+        }
+      }
       if (url.pathname === '/api/returns' && request.method === 'POST') {
         const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }> }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;

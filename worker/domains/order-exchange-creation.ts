@@ -16,6 +16,7 @@ import { noStandaloneReturnSql } from './order-return-capacity.ts'
 import { ensureExchangeWorkshopReplacementTask } from './order-exchange-workshop-task.ts'
 import type { ReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
 import { applyNotIssuedReservationReduction, loadReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 export async function createExchange(
   db: D1Database,
@@ -48,6 +49,7 @@ export async function createExchange(
   let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   const orderId = toInt(input.orderId, 0);
   if (!orderId) throw new Error('orderId is required.');
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'exchange_create');
 
   await syncOrderFinancialLedger(db, orderId);
   const existing = await getOrder(db, orderId);
@@ -436,6 +438,13 @@ export async function createExchange(
     // Return-first and Exchange-first preflight race without orphan exchanges.
     const claimTargetQuantity = Math.max(0, rawOldQuantity - oldQuantity);
     const oldItemClaims: D1PreparedStatement[] = [
+      // This runs in the SAME batch as the Exchange header and claim.
+      // A Return V2 posting cannot be overtaken by a stale legacy Exchange.
+      ...(v2Gate.v2SchemaReady ? [db.prepare(
+        `SELECT json('V1_EXCHANGE_V2_CONFLICT')
+         WHERE EXISTS(SELECT 1 FROM orders o WHERE o.id=?
+           AND NOT (${legacyV1WriteExclusionSql('o.id')}))`
+      ).bind(orderId)] : []),
       db.prepare(
         `UPDATE order_items
          SET quantity = ?, line_total = unit_price * ?,
@@ -461,6 +470,8 @@ export async function createExchange(
         exchangeStatement, 'exchange_created', oldItemClaims,
       );
     } catch (error) {
+      if(v2Gate.v2SchemaReady)
+        await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'exchange_create');
       const message = cleanText(error instanceof Error ? error.message : error);
       if (/LEGACY_EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
         throw new CriticalOperationConflictError(

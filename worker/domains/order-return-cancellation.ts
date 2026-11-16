@@ -12,6 +12,7 @@ import { refundReversalMoneyEventStatement, syncOrderFinancialLedger } from './m
 import { getOrder } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { splitRefundReversalStatements } from './return-exchange-payment-channels.ts'
+import { assertLegacyMutationAllowedAfterReturnV2, legacyV1WriteExclusionSql } from './return-v2-legacy-mutation-guard.ts'
 
 export async function cancelReturn(db: D1Database, returnId: number, input: { requestId?: string; comment?: string }) {
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -27,6 +28,8 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
      WHERE r.id = ?`
   ).bind(returnId).first<Record<string, unknown>>();
   if (!ret) throw new Error('Return not found.');
+  const orderId=toInt(ret.order_id,0);
+  const v2Gate=await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'return_cancel');
   if (cleanText(ret.status) === 'cancelled' && criticalOperation.row.step === 'started') {
     const cancelledOrderId = toInt(ret.order_id, 0);
     if (cancelledOrderId) {
@@ -233,7 +236,14 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
       `UPDATE returns
        SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
        WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
+       + (v2Gate.v2SchemaReady
+          ? ` AND EXISTS(SELECT 1 FROM orders o WHERE o.id=returns.order_id
+                AND ${legacyV1WriteExclusionSql('o.id')})` : '')
     ).bind(timestamp, comment, returnId),
+    // A zero-row Return cancellation must not append a cash recovery event.
+    ...(v2Gate.v2SchemaReady ? [
+      db.prepare("SELECT json('V1_RETURN_CANCEL_V2_CONFLICT') WHERE changes()<>1")
+    ] : []),
   ];
   if (toInt(ret.amount, 0) > 0) {
     const splitReversals = await splitRefundReversalStatements(db, {
@@ -257,7 +267,13 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
       comment,
     })]));
   }
-  await db.batch(cancelStatements);
+  try{
+    await db.batch(cancelStatements);
+  }catch(error){
+    if(v2Gate.v2SchemaReady)
+      await assertLegacyMutationAllowedAfterReturnV2(db,orderId,'return_cancel');
+    throw error;
+  }
 
   await syncOrderFinancialLedger(db, toInt(ret.order_id, 0), timestamp);
   try {

@@ -90,6 +90,30 @@ jobs:
       - name: Run cumulative regression gate
         run: npm run release:check
 
+      - name: Inspect production Return V2 schema (READ ONLY; never deploy)
+        if: >-
+          github.base_ref == 'main' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          startsWith(github.head_ref, 'release/return-v2-main-staging-')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          node scripts/return-v2-main-readiness.mjs --remote
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::warning::Production Return V2 schema is incomplete. No production migration or deployment has been performed. DO NOT MERGE before backup and schema-first release."
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Production read-only schema inspection failed. Stop release."
+            exit "$rc"
+          fi
+          echo "Production Return V2 schema is complete (read-only verification); backup and rollout approvals still required."
+
+
       - name: Verify physical stock and reserved sizes are visible
         run: node scripts/test-inventory-stock-visible-reservations.mjs
 
