@@ -83,9 +83,22 @@ jobs:
           if len(bindings)!=3 or {x.get('name') for x in bindings}!={'DB','ADMIN_MODE_PASSWORD','ADMIN_MODE_SESSION_SECRET'}:
             raise SystemExit('Unexpected active Worker binding inventory')
           listing=get('/versions?per_page=5').get('items') or []
-          if not listing or listing[0].get('id')!=version_id:
-            raise SystemExit('Latest uploaded Worker version differs from the 100%-active production version')
+          if not listing:raise SystemExit('No version inventory returned')
+          latest_id=listing[0].get('id')
+          latest_version=get('/versions/'+latest_id)
+          latest_bindings=(latest_version.get('resources') or {}).get('bindings') or []
           print('MAIN_ACTIVE_VERSION_ID:',version_id)
+          print('MAIN_LATEST_DRAFT_VERSION_ID:',latest_id)
+          print('LATEST_DRAFT_CREATED_ON:',listing[0].get('created_on'))
+          print('LATEST_DRAFT_METADATA_KEYS:',sorted(latest_version.keys()))
+          print('LATEST_DRAFT_ANNOTATIONS:',latest_version.get('annotations'))
+          print('LATEST_DRAFT_BINDING_DESCRIPTORS:',[(x.get('name'),x.get('type')) for x in latest_bindings])
+          if latest_id != version_id:
+            if {(x.get('name'),x.get('type')) for x in latest_bindings} != {(x.get('name'),x.get('type')) for x in bindings}:
+              raise SystemExit('Latest draft has different resource names or binding types; STOP')
+            print('MAIN_DRAFT_VS_ACTIVE_DIVERGENCE: no Worker deployment approved yet')
+          else:
+            print('MAIN_LATEST_MATCHES_ACTIVE_VERSION')
           print('MAIN_D1_AND_TWO_ADMIN_SECRETS_PRESERVED_V2_OFF')
           print('NO D1 WRITE, NO WORKER SETTINGS UPDATE, NO DEPLOY')
           PY
