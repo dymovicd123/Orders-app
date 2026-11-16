@@ -1,3 +1,4 @@
+import { assertActivePaymentMethod } from './payment-method-validation.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeSourceType, toInt } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
@@ -133,6 +134,7 @@ export async function createExchange(
   if (financialAction !== 'none' && !paymentMethod) {
     throw new Error(financialAction === 'refund' ? 'Выберите способ возврата денег по обмену.' : 'Выберите способ оплаты для доплаты по обмену.');
   }
+  if (financialAction !== 'none' && financialAmount > 0) await assertActivePaymentMethod(db, paymentMethod);
   if (financialAction === 'refund' && financialAmount > availableRefundAmount) {
     throw new Error(`Сумма возврата по обмену больше доступной суммы: ${availableRefundAmount}.`);
   }
