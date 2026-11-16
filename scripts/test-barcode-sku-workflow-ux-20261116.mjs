@@ -14,7 +14,7 @@ assert(groups.includes('className="catalog-sku-head-actions"'), 'barcode action 
 assert(styles.includes('.catalog-size-entry .sku-barcode-trigger'), 'size shortcut lacks compact styles')
 assert(styles.includes('@media(max-width:460px)'), 'mobile layout missing')
 
-assert(button.includes('compact ? \'Этикетка SKU\' : \'Штрихкод SKU\''), 'SKU-level label must be explicit')
+assert(button.includes('compact ? \'Код варианта\' : \'Этикетка варианта\''), 'label must clearly describe a common variant code')
 assert(button.includes('fresh.barcode !== label.barcode'), 'print must reject stale / changed code')
 assert(button.includes('!fresh.active'), 'retired SKU must fail closed before printing')
 assert(button.includes('fresh.physicalUnit !== false'), 'SKU label must not impersonate a physical item')
@@ -24,6 +24,9 @@ assert(button.includes('if (!printWindow.closed) printWindow.close()'), 'failed 
 assert(button.includes("event.key === 'Escape'"), 'preview must support Escape')
 
 assert(lookup.includes('if (data.active) {\n          onLocate(data)'), 'valid scan must open exact item without extra click')
+assert(lookup.includes('<section className="sku-lookup"'), 'scanner input must be visible without opening a hidden panel')
+assert(!lookup.includes('setExpanded('), 'scanner must not need a separate open/close click')
+assert(lookup.includes('Найти по штрихкоду'), 'plain-language scanner label missing')
 assert(lookup.includes('inputRef.current?.select()'), 'scanner should be ready for next code')
 assert(lookup.includes('result.active ? <button'), 'retired SKU must not have an open action')
 assert(server.includes("status: active ? 'active' : 'retired'"), 'retired identity must remain addressable')
