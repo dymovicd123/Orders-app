@@ -1,3 +1,4 @@
+import { SkuBarcodeButton } from './SkuBarcodeButton'
 import { useState } from 'react'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
 import { CatalogVariantGroupRetirementAction } from './CatalogVariantGroupRetirementAction'
@@ -509,6 +510,10 @@ export function CatalogPolishExecutionGroups({
                                   >
                                     История · Бутик
                                   </button>
+                                </div>
+
+                                <div className="catalog-sku-actions" aria-label="Маркировка варианта">
+                                  <SkuBarcodeButton key={Number(cardVariant.id)} variantId={Number(cardVariant.id)} />
                                 </div>
 
                                 <div className="catalog-sku-safety-note">
