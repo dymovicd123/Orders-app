@@ -183,7 +183,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         value={editorDraft.orderPaymentMethod}
                         onChange={(value) => updateEditorDraft('orderPaymentMethod', value)}
                         placeholder="Как клиент оплачивает заказ"
-                        options={suggestionValues.paymentMethods}
+                        strictOptions options={suggestionValues.paymentMethods}
                       />
                       <small>КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi. Это не создаёт оплату само по себе.</small>
                     </label>
@@ -497,7 +497,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                   value={payment.method || ''}
                                   onChange={(value) => updateEditorPayment(index, 'method', value)}
                                   placeholder="Выберите способ"
-                                  options={suggestionValues.paymentMethods}
+                                  strictOptions options={suggestionValues.paymentMethods}
                                   disabled={savingOrder}
                                 />
                               </label>
