@@ -438,8 +438,8 @@ export function CatalogPolishExecutionGroups({
                                 const selected = Number(variantCard?.variant?.id || 0) === Number(variant.id)
                                   || (catalogVariantDraft.id === variant.id && showVariantEditor)
                                 return (
-                                  <button
-                                    key={`w6-variant-${variant.id}`}
+                                  <div key={`w6-variant-${variant.id}`} className="catalog-size-entry">
+                                    <button
                                     type="button"
                                     className={`catalog-size-tile catalog-variant-commercial-anchor ${totalQty > 0 ? 'has-stock' : 'is-zero'} ${selected ? 'is-selected' : ''}`}
                                     data-variant-id={variant.id}
@@ -450,7 +450,9 @@ export function CatalogPolishExecutionGroups({
                                     <span className="catalog-size-value">{sizeLabel}</span>
                                     <span className="catalog-size-stock">{totalQty} шт</span>
                                     <small>Склад {warehouseQty} · Бутик {boutiqueQty}</small>
-                                  </button>
+                                    </button>
+                                    <SkuBarcodeButton variantId={Number(variant.id)} compact />
+                                  </div>
                                 )
                               })}
                             </div>
@@ -463,7 +465,10 @@ export function CatalogPolishExecutionGroups({
                                     <h4>{colorGroup.label} · {normalizedText(cardVariant.sizeLabel) || (subgroup.category === 'child' ? 'возраст не указан' : 'размер не указан')}</h4>
                                     <p>{selectedProduct?.name} · {group.label}</p>
                                   </div>
-                                  <button className="secondary compact" type="button" onClick={closeVariantCard}>Закрыть</button>
+                                  <div className="catalog-sku-head-actions">
+                                    <SkuBarcodeButton key={Number(cardVariant.id)} variantId={Number(cardVariant.id)} />
+                                    <button className="secondary compact" type="button" onClick={closeVariantCard}>Закрыть</button>
+                                  </div>
                                 </div>
 
                                 <div className="catalog-sku-identity">
@@ -510,10 +515,6 @@ export function CatalogPolishExecutionGroups({
                                   >
                                     История · Бутик
                                   </button>
-                                </div>
-
-                                <div className="catalog-sku-actions" aria-label="Маркировка варианта">
-                                  <SkuBarcodeButton key={Number(cardVariant.id)} variantId={Number(cardVariant.id)} />
                                 </div>
 
                                 <div className="catalog-sku-safety-note">
