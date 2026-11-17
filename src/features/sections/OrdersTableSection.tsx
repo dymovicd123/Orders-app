@@ -66,6 +66,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     handleOpenExchange,
     handleOpenReturn,
     isAdmin,
+    canManageOrderEdit,
     kaspiMode = false,
     ManagerBadge,
     apiFetch,
@@ -546,13 +547,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       : 'Есть возврат денег'}
                               </span>
                             ) : null}
-                            {(projection.canEdit || (isAdmin && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
+                            {(projection.canEdit || (canManageOrderEdit && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
                               <button
                                 className="primary compact"
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  if(projection.canEdit)handleEditOrder(order, 'orders')
+                                  if(projection.canEdit || canManageOrderEdit)handleEditOrder(order, 'orders')
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
