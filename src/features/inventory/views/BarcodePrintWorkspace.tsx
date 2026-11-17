@@ -14,6 +14,7 @@ type Props = {
   receipt?: ArrivalSkuPrintReceipt
   onDismiss?: () => void
   embeddedAfterArrival?: boolean
+  receiptKind?: 'arrival' | 'stocktake'
   dismissLabel?: string
 }
 
@@ -112,7 +113,7 @@ function renderPrintSheet(target: Window, items: VerifiedPrintItem[], mode: Barc
   target.focus()
 }
 
-export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDismiss, embeddedAfterArrival = false, dismissLabel = 'Не печатать' }: Props) {
+export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDismiss, embeddedAfterArrival = false, receiptKind = 'arrival', dismissLabel = 'Не печатать' }: Props) {
   const [search, setSearch] = useState('')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [onlyStocked, setOnlyStocked] = useState(true)
@@ -345,9 +346,9 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
   return <section className="barcode-workspace" aria-label="Штрихкоды товаров">
     <div className="barcode-page-head">
       <div>{receipt ? <>
-        {!embeddedAfterArrival ? <span className="barcode-arrival-success">Приход сохранён</span> : null}
+        {!embeddedAfterArrival ? <span className="barcode-arrival-success">{receiptKind === 'stocktake' ? 'Ревизия завершена' : 'Приход сохранён'}</span> : null}
         <h3>{embeddedAfterArrival ? 'Выберите количество этикеток' : 'Распечатать этикетки?'}</h3>
-        <p>Поступившие варианты уже выбраны. Можно изменить количество копий. Печать не обязательна.</p>
+        <p>{receiptKind === 'stocktake' ? 'Новые позиции, учтённые при ревизии, уже выбраны. Можно изменить количество копий. Печать необязательна.' : 'Поступившие варианты уже выбраны. Можно изменить количество копий. Печать не обязательна.'}</p>
       </> : <><h3>Штрихкоды</h3><p>Найдите модель, выберите варианты и укажите количество этикеток.</p></>}</div>
       <div className="barcode-arrival-head-actions">
         {receipt && onDismiss ? <button type="button" className="secondary compact"
@@ -367,7 +368,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
     {!refreshing && !ready && !error ?
       <p className="barcode-workspace-error" role="alert">Не все данные загрузились. Нажмите «Обновить остатки». Печать недоступна.</p> : null}
     {ready && <>
-      {receipt ? <div className="barcode-arrival-rows" role="list" aria-label="Поступившие варианты">
+      {receipt ? <div className="barcode-arrival-rows" role="list" aria-label={receiptKind === 'stocktake' ? 'Новые позиции после ревизии' : 'Поступившие варианты'}>
         {[...new Map(receipt.items.map(item => [item.variantId, item])).values()].map(item => {
           const variant = activeVariants.find(row => row.id === item.variantId)
           const balance = balances.values.get(item.variantId) || { warehouse: 0, boutique: 0 }
@@ -379,7 +380,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
               {!variant ? <small className="barcode-print-warning">Вариант отсутствует в действующем каталоге</small> : null}
             </div>
             <div className="barcode-arrival-actual">
-              <span>Поступило <strong>{received} шт.</strong></span>
+              <span>{receiptKind === 'stocktake' ? 'Найдено' : 'Поступило'} <strong>{received} шт.</strong></span>
               <small>Сейчас в {receipt.source === 'warehouse' ? 'складе' : 'бутике'}: {
                 receipt.source === 'warehouse' ? balance.warehouse : balance.boutique
               } шт.</small>
@@ -398,7 +399,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
           </div>
         })}
         {missingReceiptVariants.length ? <p className="barcode-workspace-error" role="alert">
-          Некоторые варианты не найдены в каталоге. Печать недоступна, но приход уже сохранён.
+          Некоторые варианты не найдены в каталоге. Печать недоступна, но {receiptKind === 'stocktake' ? 'результат ревизии уже сохранён' : 'приход уже сохранён'}.
         </p> : null}
       </div> : <div className="barcode-workspace-layout">
         <div className="barcode-models">
