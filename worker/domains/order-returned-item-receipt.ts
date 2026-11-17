@@ -312,7 +312,7 @@ export async function receiveReturnedItem(
       freshnessProtected,
       pendingInventory,
       pendingInventoryCount: pendingInventory ? 1 : 0,
-      barcodePreparation: !isWorkshop && receivedVariantId > 0 && (stockApplied || stockAlreadyApplied)
+      barcodePreparation: !isWorkshop && receivedVariantId > 0 && stockApplied
         && (destination === 'warehouse' || destination === 'boutique')
         ? { variantId: receivedVariantId, source: destination, quantity: Math.max(1, toInt(item.quantity, 1)) }
         : null,
