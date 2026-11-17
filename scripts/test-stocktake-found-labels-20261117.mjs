@@ -72,8 +72,9 @@ assert(controller.includes('stocktakePrintSessionId === stocktakeSession?.id'),
   'Print state must not carry into a different revision')
 assert(controller.includes('setStocktakePrintSessionId(null)'))
 assert(controller.includes('receiptKind="stocktake"')&&controller.includes('embeddedAfterArrival'))
-assert(printer.includes("receiptKind === 'stocktake' ? 'Найдено' : 'Поступило'"),
-  'Printer must not describe a finished stocktake as an arrival')
+assert(printer.includes("receiptKind === 'stocktake' ? <span>Найдено") &&
+  printer.includes('Поступило <strong>{received} шт.</strong>'),
+  'Printer must distinguish a finished stocktake from a saved arrival')
 assert(printer.includes("record.barcode !== skuBarcodeForVariantId(item.variant.id)"),
   'Printer must validate canonical SKU before output')
 assert(!panel.includes('useState('), 'Stocktake panel should remain hook-free')
