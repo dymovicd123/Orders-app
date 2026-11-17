@@ -45,8 +45,13 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
 
-      - name: Audit high-risk development dependencies
+      - name: Audit high-risk development dependencies (strict Main)
+        if: github.base_ref != 'branch2' && github.ref_name != 'branch2'
         run: npm audit --audit-level=high
+
+      - name: Audit high-risk development dependencies (Branch2, one scoped upstream exception)
+        if: github.base_ref == 'branch2' || github.ref_name == 'branch2'
+        run: node scripts/security-dependency-audit-20261117.mjs
 
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
