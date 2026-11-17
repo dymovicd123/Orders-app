@@ -92,6 +92,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     source: 'warehouse' | 'boutique'
     items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
   } | null>(null)
+  const [arrivalCompletion, setArrivalCompletion] = useState<{
+    operationId: string; source: 'warehouse' | 'boutique'; variants: number; units: number
+  } | null>(null)
   const [historyArrivalPrint, setHistoryArrivalPrint] = useState<{ rowId: number; receipt: ArrivalSkuPrintReceipt } | null>(null)
   const [historyArrivalPrintBusyId, setHistoryArrivalPrintBusyId] = useState<number | null>(null)
   const [historyArrivalPrintError, setHistoryArrivalPrintError] = useState<{ rowId: number; message: string } | null>(null)
@@ -2722,12 +2725,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     
               {renderInventoryMovementPanel({
         arrivalPrintReceipt: arrivalBarcodeReceipt,
+        arrivalCompletion,
+        clearArrivalCompletion: () => setArrivalCompletion(null),
         renderArrivalLabels: arrivalBarcodeReceipt ? <BarcodePrintWorkspace
           key={arrivalBarcodeReceipt.operationId + ':' + arrivalBarcodeReceipt.source}
           receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}
           onReload={reloadBarcodePrintData} embeddedAfterArrival
         /> : null,
-        onFinishArrivalResult: () => setArrivalBarcodeReceipt(null),
+        onFinishArrivalResult: () => {
+          setArrivalBarcodeReceipt(null)
+          setArrivalCompletion(null)
+        },
         clearArrivalBarcodeReady: () => setArrivalBarcodeReceipt(null),
         askActionConfirmation,
         onInlineArrivalVariant,
@@ -2765,7 +2773,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         resetInventoryOperationSelection,
         saveInventoryMovement: (codes: string[] = []) => {
           setArrivalBarcodeReceipt(null)
-          return saveInventoryMovement(codes, setArrivalBarcodeReceipt)
+          setArrivalCompletion(null)
+          return saveInventoryMovement(codes, setArrivalBarcodeReceipt, setArrivalCompletion)
         },
         selectInventoryOperationMode,
         selectInventoryOperationVariant,
