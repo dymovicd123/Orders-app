@@ -303,6 +303,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }
 
   function review() {
+    if (matchedSkuId !== null) {setNotice('Сначала примените количество найденного SKU или нажмите «Отмена».');return}
     const mismatch=scannedUnits.find(unit=>int(draftMap.get(String(unit.variantId))?.quantity) <
       scannedUnits.filter(row=>row.variantId===unit.variantId).length)
     if(mismatch){setNotice('Количество меньше числа отсканированных вещей. Исправьте количество или уберите лишнюю метку.');return}
