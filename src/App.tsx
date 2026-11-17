@@ -228,6 +228,7 @@ function App() {
   const accessRole: AccessRole = authUser?.role || 'manager'
   const isAdmin = authUser?.role === 'admin'
   const canManageWarehouse = isAdmin || authUser?.employeeRole === 'Завсклад'
+  const canManageFinance = isAdmin || authUser?.employeeRole === 'Завсклад'
   const authReady = !authChecking
   const handleAuthInvalid = useCallback((reason: 'unauthorized' | 'password_change_required') => {
     setError(null)
@@ -2096,7 +2097,7 @@ function App() {
   function loadCashRegister() { return loadCashRegisterAction() }
 
   const { loadFinancePaymentMethods, saveFinancePaymentMethod, removeFinancePaymentMethod } = createFinancePaymentMethodActions({
-    isAdmin,
+    isAdmin: canManageFinance,
     financePaymentMethods,
     financeMethodDraft,
     setFinancePaymentMethods,
@@ -4007,7 +4008,7 @@ function removeDebtPayment(index: number) {
         <PlanSection ctx={{ apiFetch, askActionConfirmation, currentManagerId: authUser?.managerId || 0, deleteDepartmentPlan, deleteManagerPlan, departmentPlanDraft, editDepartmentPlan, editManagerPlan, exportPlanReportWord, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadPlans, ManagerBadge, ManagerPicker, managerPlanDraft, planBusy, planFilters, planReport, printPlanReportPdf, references, saveDepartmentPlan, saveManagerPlan, sectorStyle, setDepartmentPlanDraft, setManagerPlanDraft, setPlanFilters }} />
         </DeferredSection>
         <DeferredSection active={activeSector === 'finance'} label="Финансы">
-        <FinanceSection ctx={{ apiFetch, active: activeSector === 'finance' && authReady, accessRole, financeMode, financeReportBusy, financeReportFilters, getPeriodRange, sectorStyle, setFinanceReportFilters, financeDashboardCtx: { apiFetch, cashMovementDraft, cashRegister, cashRegisterBusy, cashRegisterCycles, cashRegisterCyclesBusy, cashRegisterCyclesHasMore, cashRegisterCyclesOpen, cashSetupAmount, cashReconcileAmount, cashReconcileComment, financeMethodDraft, financeMethodsBusy, financeMode, financePaymentMethods, financeReport, financeReportBusy, moneyHistory, moneyHistoryBusy, moneyHistoryError, moneyHistoryHasMore, moneyHistoryQuery, moneyHistorySummary, moneyHistoryType, loadMoneyHistory, setMoneyHistoryQuery, setMoneyHistoryType, reloadFinanceReports, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadCashRegister, loadCashRegisterCycles, loadFinancePaymentMethods, ManagerBadge, managerColorFor, normalizeSuggestion, openOrderFromFinance, removeFinancePaymentMethod, saveCashRegisterMovement, saveFinancePaymentMethod, setCashMovementDraft, setCashRegisterCyclesOpen, setCashSetupAmount, setCashReconcileAmount, setCashReconcileComment, setupCashRegister, activateCashRegister, setCashAutoTracking, reconcileCashRegister, reverseCashRegisterMovement, resetCashRegisterCycle, setFinanceMethodDraft, setFinanceMode } }} />
+        <FinanceSection ctx={{ apiFetch, active: activeSector === 'finance' && authReady, accessRole, financeMode, financeReportBusy, financeReportFilters, getPeriodRange, sectorStyle, setFinanceReportFilters, financeDashboardCtx: { apiFetch, canManageFinance, cashMovementDraft, cashRegister, cashRegisterBusy, cashRegisterCycles, cashRegisterCyclesBusy, cashRegisterCyclesHasMore, cashRegisterCyclesOpen, cashSetupAmount, cashReconcileAmount, cashReconcileComment, financeMethodDraft, financeMethodsBusy, financeMode, financePaymentMethods, financeReport, financeReportBusy, moneyHistory, moneyHistoryBusy, moneyHistoryError, moneyHistoryHasMore, moneyHistoryQuery, moneyHistorySummary, moneyHistoryType, loadMoneyHistory, setMoneyHistoryQuery, setMoneyHistoryType, reloadFinanceReports, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadCashRegister, loadCashRegisterCycles, loadFinancePaymentMethods, ManagerBadge, managerColorFor, normalizeSuggestion, openOrderFromFinance, removeFinancePaymentMethod, saveCashRegisterMovement, saveFinancePaymentMethod, setCashMovementDraft, setCashRegisterCyclesOpen, setCashSetupAmount, setCashReconcileAmount, setCashReconcileComment, setupCashRegister, activateCashRegister, setCashAutoTracking, reconcileCashRegister, reverseCashRegisterMovement, resetCashRegisterCycle, setFinanceMethodDraft, setFinanceMode } }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'reports'} label="Отчёты">
