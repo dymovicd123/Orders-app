@@ -11,17 +11,16 @@ const examples=[photographed,skuBarcodeForVariantId(101),skuBarcodeForVariantId(
 for (const code of examples) {
   const encoded=encodeCode128B(code)
   const scale=4,height=100,width=encoded.width*scale
-  const rgba=new Uint8ClampedArray(width*height*4).fill(255)
+  const luminance=new Uint8ClampedArray(width*height).fill(255)
   for (const bar of encoded.bars) {
     for (let x=bar.x*scale;x<(bar.x+bar.width)*scale;x++) {
       for (let y=0;y<height;y++) {
-        const offset=(y*width+x)*4
-        rgba[offset]=rgba[offset+1]=rgba[offset+2]=0
+        luminance[y*width+x]=0
       }
     }
   }
   const reader=new Code128Reader()
-  const image=new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(rgba,width,height)))
+  const image=new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(luminance,width,height)))
   assert.equal(reader.decode(image).getText(),code,'Actual ZXing must decode the label we print: '+code)
 }
 const scanner=readFileSync('src/features/inventory/views/StocktakeBarcodeScanner.tsx','utf8')
