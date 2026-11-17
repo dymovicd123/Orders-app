@@ -289,6 +289,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <tbody>
                     {orders.length ? orders.map((order) => {
                       const projection = projectOrderOperationalState(order, { isAdmin })
+                      const editProjection = canManageOrderEdit ? projectOrderOperationalState(order, { isAdmin: true }) : projection
                       const shipmentDisplay = projectOrderShipmentDisplay(order)
                       const shipmentLinesByItemIndex = new Map(shipmentDisplay.lines.map(line => [line.sourceIndex, line]))
                       const fullyShipped = isOrderShipmentCompleteForActions(order)
@@ -547,17 +548,17 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       : 'Есть возврат денег'}
                               </span>
                             ) : null}
-                            {(projection.canEdit || (canManageOrderEdit && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
+                            {(editProjection.canEdit || (canManageOrderEdit && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
                               <button
                                 className="primary compact"
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  if(projection.canEdit || canManageOrderEdit)handleEditOrder(order, 'orders')
+                                  if(editProjection.canEdit)handleEditOrder(order, 'orders')
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
-                                {projection.canEdit?'Редактировать':'Исправить заказ'}
+                                {editProjection.canEdit?'Редактировать':'Исправить заказ'}
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted ? (
@@ -1038,7 +1039,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       else setLinkedPaymentDraft(d=>d?{...d,error:result.message}:d)
                     })()}}>
                     <div className="modal-head">
-                      <div><div className="card-label">Администратор · безопасная коррекция</div>
+                      <div><div className="card-label">Контролируемое исправление оплаты</div>
                         <h3>Способ оплаты — {linkedPaymentDraft.order.external_id}</h3></div>
                       <button className="ghost compact" type="button" disabled={savingOrder}
                         onClick={()=>setLinkedPaymentDraft(null)}>Закрыть</button>
