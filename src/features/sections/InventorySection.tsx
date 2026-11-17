@@ -21,7 +21,6 @@ import { renderInventoryHistoryPanel } from '../inventory/views/renderInventoryH
 import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandStatistics'
 import { WarehouseReportsWorkspace } from '../inventory/views/WarehouseReportsWorkspace'
 import { WarehouseReceivingWorkspace } from '../inventory/views/WarehouseReceivingWorkspace'
-import { UnitBarcodePreparation } from '../inventory/views/UnitBarcodePreparation'
 import { BarcodePrintWorkspace } from '../inventory/views/BarcodePrintWorkspace'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
@@ -88,6 +87,7 @@ type SectionContext = Record<string, any> & {
 }
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
+  const arrivalPrintRef = useRef<HTMLElement | null>(null)
   const [arrivalBarcodeReceipt, setArrivalBarcodeReceipt] = useState<{
     operationId: string
     source: 'warehouse' | 'boutique'
@@ -1773,6 +1773,24 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     openOrderStockHandoverById,
   })
 
+  const reloadBarcodePrintData = async () => {
+    const [freshCatalog, warehouse, boutique] = await Promise.all([
+      loadCatalogData(true),
+      loadInventoryData('warehouse', true, '', false),
+      loadInventoryData('boutique', true, '', false),
+    ])
+    return freshCatalog?.ok && warehouse?.ok && boutique?.ok
+      ? { catalog: freshCatalog, warehouse, boutique } : null
+  }
+
+  useEffect(() => {
+    if (!arrivalBarcodeReceipt || activeSector !== 'inventory' || inventoryPanel !== 'movement') return
+    const frame = window.requestAnimationFrame(() => {
+      arrivalPrintRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [arrivalBarcodeReceipt, activeSector, inventoryPanel])
+
   const warehousePhysicalReceivingCount = Math.max(0, Number(returnPendingInbox?.pendingQuantity || 0))
     + Math.max(0, Number(exchangePendingInbox?.pendingQuantity || 0))
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
@@ -2277,15 +2295,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               <div style={inventoryPanelStyle('barcodes')}>
                 {isAdmin && inventoryPanel === 'barcodes' ? <BarcodePrintWorkspace
                   catalog={catalogData} stock={inventoryData}
-                  onReload={async () => {
-                    const [freshCatalog, warehouse, boutique] = await Promise.all([
-                      loadCatalogData(true),
-                      loadInventoryData('warehouse', true, '', false),
-                      loadInventoryData('boutique', true, '', false),
-                    ])
-                    return freshCatalog?.ok && warehouse?.ok && boutique?.ok
-                      ? { catalog: freshCatalog, warehouse, boutique } : null
-                  }} /> : null}
+                  onReload={reloadBarcodePrintData} /> : null}
               </div>
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
               <div style={inventoryPanelStyle('reports')}><WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} /></div>
@@ -2740,26 +2750,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         updateInventoryDirectProductInput
       })}
               {inventoryPanel === 'movement' && inventoryDraft.movementType === 'arrival' && arrivalBarcodeReceipt
-                ? <section className="inventory-post-arrival-labels" style={inventoryPanelStyle('movement')}>
-                  <div className="inventory-post-arrival-labels-header">
-                    <div>
-                      <strong>Приход сохранён · подготовка этикеток</strong>
-                      <p>Это отдельная маркировка уже принятых вещей, без повторного добавления в остаток.
-                        Для каждой вещи создаётся свой код. Этикетки можно подготовить сейчас или позднее через остатки.</p>
-                    </div>
-                    <button type="button" className="secondary compact"
-                      onClick={() => setArrivalBarcodeReceipt(null)}>Закрыть</button>
-                  </div>
-                  <div className="inventory-post-arrival-labels-list">
-                    {arrivalBarcodeReceipt.items.map(item => <div key={arrivalBarcodeReceipt.operationId + ':' + item.variantId}
-                      className="inventory-post-arrival-labels-row">
-                      <div><strong>{item.productName}</strong><span>{item.variantLabel} · Поступило {item.quantity} шт.</span></div>
-                      <UnitBarcodePreparation key={arrivalBarcodeReceipt.operationId + ':' + item.variantId}
-                        variantId={item.variantId} productName={item.productName} variantLabel={item.variantLabel}
-                        initialSource={arrivalBarcodeReceipt.source} initialQuantity={item.quantity}
-                        buttonLabel="Подготовить этикетки" />
-                    </div>)}
-                  </div>
+                ? <section className="inventory-post-arrival-labels" ref={arrivalPrintRef} style={inventoryPanelStyle('movement')}>
+                  <BarcodePrintWorkspace
+                    key={arrivalBarcodeReceipt.operationId + ':' + arrivalBarcodeReceipt.source + ':' +
+                      arrivalBarcodeReceipt.items.map(item => item.variantId + '-' + item.quantity).join(',')}
+                    receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}
+                    onReload={reloadBarcodePrintData}
+                    onDismiss={() => setArrivalBarcodeReceipt(null)}
+                  />
                 </section> : null}
 
               {renderInventoryHistoryPanel({

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 const movement = readFileSync('src/features/inventory/inventoryMovementActions.ts', 'utf8')
 const panel = readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx', 'utf8')
 const section = readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
-const label = readFileSync('src/features/inventory/views/UnitBarcodePreparation.tsx', 'utf8')
+const label = readFileSync('src/features/inventory/views/BarcodePrintWorkspace.tsx', 'utf8')
 const domain = readFileSync('worker/domains/inventory-movement.ts', 'utf8')
 const start = movement.indexOf('const finishMovement = async')
 const end = movement.indexOf('const isArrivalRecoveryResult', start)
@@ -28,9 +28,15 @@ assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeRe
 assert(panel.includes('ctx.clearArrivalBarcodeReady()'), 'A new operation clears stale barcode suggestions')
 assert(section.includes('inventoryDraft.movementType === \'arrival\' && arrivalBarcodeReceipt'),
   'Label offer must not appear on other inventory operations')
-assert(section.includes('<UnitBarcodePreparation') && section.includes('initialSource={arrivalBarcodeReceipt.source}'),
-  'Reuse the constrained existing label printer and preserve source')
-assert(label.includes("if (!initialSource && !data.locations.some("),
-  'Arrival preselection must not silently switch to a different stock location')
+assert(section.includes('receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}') &&
+  section.includes('onReload={reloadBarcodePrintData}') &&
+  section.includes('onDismiss={() => setArrivalBarcodeReceipt(null)}'),
+  'Offer a shared SKU printer preselected from the verified arrival, with optional skip')
+assert(!section.includes('<UnitBarcodePreparation'),
+  'Never send completed arrival through the legacy individual-unit preparation UI')
+assert(label.includes('receipt.source') && label.includes('receipt.items'),
+  'Print receipt keeps original stock location and canonical confirmed line items')
+assert(label.includes('missingReceiptVariants.length === 0'),
+  'Stale or retired arrival SKU identities must block printing, not stock entry')
 assert(domain.includes("movementType === 'arrival'"), 'Existing canonical stock movement remains authoritative')
-console.log('POST_ARRIVAL_UNIT_LABELS_PASS: canonical arrival, verified variants, optional labels, no duplicate stock')
+console.log('POST_ARRIVAL_SKU_PRINT_PASS: canonical arrival, verified variants, optional shared SKU labels, no duplicate stock')
