@@ -22,3 +22,12 @@
 .unit-barcode-cancel-warning{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid #e7c6b9;border-radius:9px;background:rgba(184,72,35,.05);font-size:12px;line-height:1.4}
 .unit-barcode-cancel-warning span{flex:1 1 180px}
 @media(max-width:550px){.unit-barcode-recent-row{align-items:flex-start;flex-direction:column}}
+
+.unit-barcode-test{width:100%;border-top:1px solid var(--line,#dce3ea);padding-top:10px}
+.unit-barcode-test summary{cursor:pointer;font-weight:650;font-size:13px}
+.unit-barcode-test p{line-height:1.5;margin:8px 0;font-size:12px}
+.unit-barcode-test-codes{display:grid;gap:6px;max-height:230px;overflow:auto}
+.unit-barcode-test-code{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 8px;border:1px solid var(--line,#dce3ea);border-radius:8px}
+.unit-barcode-test-code code{font-size:12px;word-break:break-all;user-select:text}
+.unit-barcode-test-code button{flex-shrink:0}
+@media(max-width:550px){.unit-barcode-test-code{align-items:flex-start;flex-direction:column}}
