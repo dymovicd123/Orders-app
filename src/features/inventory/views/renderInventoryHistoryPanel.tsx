@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import type { InventoryMovementRecord } from '../../../app/types'
+import type { ArrivalSkuPrintReceipt } from './BarcodePrintWorkspace'
 import type { InventoryRenderContext } from './types'
 import '../../../styles/w8-3-daily-surfaces.css'
 
@@ -28,7 +31,13 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'setHistoryQuery'
   | 'setHistoryVariantFilter'
   | 'sourceLabel'
->
+> & {
+  historyArrivalPrint: { rowId: number; receipt: ArrivalSkuPrintReceipt } | null
+  historyArrivalPrintBusyId: number | null
+  historyArrivalPrintError: { rowId: number; message: string } | null
+  onOpenHistoryArrivalPrint: (row: InventoryMovementRecord) => Promise<void>
+  historyArrivalPrintContent: ReactNode
+}
 
 
 export function renderInventoryHistoryPanel(ctx: PanelContext) {
@@ -58,7 +67,12 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     setHistoryMode,
     setHistoryQuery,
     setHistoryVariantFilter,
-    sourceLabel
+    sourceLabel,
+    historyArrivalPrint,
+    historyArrivalPrintBusyId,
+    historyArrivalPrintError,
+    onOpenHistoryArrivalPrint,
+    historyArrivalPrintContent,
   } = ctx
   const historyVariantIdentity = historyVariantFilter
     ? [historyVariantFilter.productName, historyVariantFilter.color, historyVariantFilter.size].filter(Boolean).join(' · ')
@@ -138,7 +152,22 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                                   </div>
                                 ) : null}
                                 {entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.comment}</strong></div> : null}
-                                <div className="history-card-actions">{entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}</div>
+                                <div className="history-card-actions">
+                                   {entry.row.movementType === 'arrival' && entry.row.referenceType === 'manual'
+                                     && entry.row.referenceId && !entry.row.reversedAt
+                                     ? <button className="secondary compact" type="button"
+                                       disabled={historyArrivalPrintBusyId !== null}
+                                       onClick={() => void onOpenHistoryArrivalPrint(entry.row)}>
+                                       {historyArrivalPrintBusyId === entry.row.id ? 'Загружаю товары…' : 'Распечатать этикетки прихода'}
+                                     </button> : null}
+                                   {entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}
+                                 </div>
+                                 {historyArrivalPrintError?.rowId === entry.row.id
+                                   ? <p className="barcode-workspace-error" role="alert">{historyArrivalPrintError?.message}</p> : null}
+                                 {historyArrivalPrint?.rowId === entry.row.id
+                                   ? <div className="history-arrival-print-inline" id={'history-arrival-print-' + entry.row.id}>
+                                       {historyArrivalPrintContent}
+                                     </div> : null}
                               </div>
                             </details>
                           ))}

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import type { ArrivalSkuPrintReceipt } from './BarcodePrintWorkspace'
 import type { InventoryRenderContext } from './types'
 import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 
@@ -18,7 +20,9 @@ type PanelContext = { askActionConfirmation: (message: string) => Promise<boolea
 }) => void; clearArrivalBarcodeReady:()=>void; onInlineCorrectionVariant: (seed: {
   productId: number | string; productName: string; category: 'adult'|'child';
   gender:string;material:string;length:string;color:string;size:string;quantity:number;
-}) => void }
+}) => void; arrivalPrintReceipt?: ArrivalSkuPrintReceipt | null; arrivalCompletion?: {
+  operationId: string; source: 'warehouse'|'boutique'; variants: number; units: number
+} | null; renderArrivalLabels?: ReactNode; onFinishArrivalResult?: () => void; clearArrivalCompletion?: () => void }
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
   const mode = ctx.inventoryDraft.movementType as 'arrival' | 'writeoff' | 'manual_set' | 'transfer'
@@ -56,16 +60,22 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onInlineArrivalVariant={ctx.onInlineArrivalVariant}
       onInlineCorrectionVariant={ctx.onInlineCorrectionVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
+      arrivalPrintAvailable={Boolean(ctx.arrivalPrintReceipt?.items.length)}
+      arrivalCompletion={ctx.arrivalCompletion}
+      arrivalLabelPrinter={ctx.renderArrivalLabels}
+      onFinishArrivalResult={ctx.onFinishArrivalResult}
       onMode={next => {
         ctx.clearInventoryMovementError()
         ctx.resetInventoryArrivalForm()
         ctx.clearArrivalBarcodeReady()
+        ctx.clearArrivalCompletion?.()
         ctx.selectInventoryOperationMode(next)
       }}
       onSource={next => {
         ctx.clearInventoryMovementError()
         if(mode==='arrival'&&ctx.inventoryArrivalSummary.rows > 0)ctx.resetInventoryArrivalForm()
         ctx.clearArrivalBarcodeReady()
+        ctx.clearArrivalCompletion?.()
         ctx.changeInventoryOperationSource(next)
       }}
       onReason={value=>{ctx.clearInventoryMovementError();ctx.setInventoryDraft((current:any)=>({...current,comment:value}))}}
@@ -89,6 +99,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
         ctx.resetInventoryArrivalForm()
         ctx.resetInventoryOperationSelection()
         ctx.clearArrivalBarcodeReady()
+        ctx.clearArrivalCompletion?.()
       }}
       onRefresh={()=>{ctx.setMovementSourceRefreshToken((value:number)=>value+1);void ctx.refreshActiveStocktakes()}}
     />

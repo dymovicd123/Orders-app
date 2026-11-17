@@ -23,15 +23,17 @@ assert(movement.includes("onSuccess: async (recoveryResult) => { await finishMov
   'Catalog recovery must use the exact same post-commit safe flow')
 assert(panel.includes("onSave={codes=>ctx.saveInventoryMovement(codes)}"),
   'Preserve the original inventory operation callback and all existing barcode/writeoff tests')
-assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt)'),
+assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt, setArrivalCompletion)'),
   'Warehouse section forwards only a post-commit arrival result to optional UI')
 assert(panel.includes('ctx.clearArrivalBarcodeReady()'), 'A new operation clears stale barcode suggestions')
-assert(section.includes('inventoryDraft.movementType === \'arrival\' && arrivalBarcodeReceipt'),
-  'Label offer must not appear on other inventory operations')
+assert(section.includes('arrivalPrintReceipt: arrivalBarcodeReceipt') &&
+  panel.includes('arrivalPrintAvailable={Boolean(ctx.arrivalPrintReceipt?.items.length)}'),
+  'Only a completed arrival result may expose optional print action')
 assert(section.includes('receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}') &&
   section.includes('onReload={reloadBarcodePrintData}') &&
-  section.includes('onDismiss={() => setArrivalBarcodeReceipt(null)}'),
-  'Offer a shared SKU printer preselected from the verified arrival, with optional skip')
+  section.includes('onFinishArrivalResult: () => {') &&
+  section.includes('setArrivalBarcodeReceipt(null)') && section.includes('setArrivalCompletion(null)'),
+  'Offer a shared SKU printer in the completion step, with optional finish')
 assert(!section.includes('<UnitBarcodePreparation'),
   'Never send completed arrival through the legacy individual-unit preparation UI')
 assert(label.includes('receipt.source') && label.includes('receipt.items'),

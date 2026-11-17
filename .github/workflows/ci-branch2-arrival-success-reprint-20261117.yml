@@ -1,0 +1,44 @@
+name: Branch2 arrival success step and history labels CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx
+      - src/features/inventory/views/renderInventoryMovementPanel.tsx
+      - src/features/inventory/views/renderInventoryHistoryPanel.tsx
+      - src/features/inventory/views/BarcodePrintWorkspace.tsx
+      - src/features/sections/InventorySection.tsx
+      - src/styles/193-unified-inventory-operations.css
+      - src/styles/w8-3-daily-surfaces.css
+      - worker/domains/inventory-arrival-label-reprint.ts
+      - worker/index.ts
+      - scripts/test-arrival-completion-history-reprint-20261117.mjs
+      - scripts/test-post-arrival-sku-print-20261117.mjs
+      - scripts/test-post-arrival-unit-labels-20261117.mjs
+      - .github/workflows/ci-branch2-arrival-success-reprint-20261117.yml
+permissions:
+  contents: read
+jobs:
+  arrival-success-reprint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Saved arrival result, full history reprint and stock safety
+        run: |
+          node scripts/test-arrival-completion-history-reprint-20261117.mjs
+          node scripts/test-post-arrival-sku-print-20261117.mjs
+          node scripts/test-post-arrival-unit-labels-20261117.mjs
+          node scripts/test-barcode-print-workspace-20261117.mjs
+          node scripts/test-barcode-print-v2-20261117.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-materialization-reliability.mjs
+          node scripts/test-arrival-canonical-barcode-sku-20261030.mjs
+          node scripts/test-inventory-writeoff-review.mjs
+      - name: TypeScript and Vite
+        run: npm run build

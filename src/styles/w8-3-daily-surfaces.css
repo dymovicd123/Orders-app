@@ -10,3 +10,9 @@
 .inventory-attention-subgroup-head>b{min-width:30px;min-height:30px;display:grid;place-items:center;border-radius:999px;background:rgba(90,110,140,.1)}
 .inventory-attention-sublist{display:grid;gap:8px}.inventory-attention-sublist>article{margin:0}
 @media(max-width:760px){.inventory-history-focus{width:100%;grid-template-columns:auto minmax(0,1fr)}.inventory-history-focus em{grid-column:1/-1}.inventory-attention-subgroup{padding:10px}}
+
+
+.history-arrival-print-inline{margin:16px 0 0;padding:16px;border:1px solid var(--line,#dce3e8);border-radius:12px;background:var(--card-bg,#fff);scroll-margin-top:18px}
+.history-arrival-print-inline .barcode-workspace{padding:0;max-width:none}
+.history-arrival-print-inline .barcode-print-footer{position:static;box-shadow:none}
+@media(max-width:650px){.history-arrival-print-inline{margin:12px 0 0;padding:10px}}

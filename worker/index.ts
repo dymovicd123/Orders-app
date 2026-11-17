@@ -23,6 +23,7 @@ import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physica
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
+import { readSavedArrivalLabels } from './domains/inventory-arrival-label-reprint.ts'
 import { readWarehouseCapital } from './domains/warehouse-capital.ts'
 import { listProductKpis, removeProductKpi, saveProductKpi } from './domains/product-kpi.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
@@ -1238,6 +1239,13 @@ export default {
 
       if (url.pathname === '/api/inventory/history' && request.method === 'GET') {
         return json(await listInventoryHistory(env.DB, url));
+      }
+
+      const savedArrivalLabelsMatch = url.pathname.match(/^\/api\/inventory\/arrivals\/([^/]+)\/labels$/);
+      if (savedArrivalLabelsMatch && request.method === 'GET') {
+        const operationId = decodeURIComponent(savedArrivalLabelsMatch[1]);
+        const result = await readSavedArrivalLabels(env.DB, operationId);
+        return json(result, { status: result.ok ? 200 : 404 });
       }
 
       if (url.pathname === '/api/inventory/check-history' && request.method === 'GET') {

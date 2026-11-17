@@ -13,6 +13,8 @@ type Props = {
   onReload: () => Promise<{ catalog: CatalogResponse; warehouse: InventoryResponse; boutique: InventoryResponse } | null>
   receipt?: ArrivalSkuPrintReceipt
   onDismiss?: () => void
+  embeddedAfterArrival?: boolean
+  dismissLabel?: string
 }
 
 export type ArrivalSkuPrintReceipt = {
@@ -110,7 +112,7 @@ function renderPrintSheet(target: Window, items: VerifiedPrintItem[], mode: Barc
   target.focus()
 }
 
-export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDismiss }: Props) {
+export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDismiss, embeddedAfterArrival = false, dismissLabel = 'Не печатать' }: Props) {
   const [search, setSearch] = useState('')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [onlyStocked, setOnlyStocked] = useState(true)
@@ -343,13 +345,13 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
   return <section className="barcode-workspace" aria-label="Штрихкоды товаров">
     <div className="barcode-page-head">
       <div>{receipt ? <>
-        <span className="barcode-arrival-success">Приход сохранён</span>
-        <h3>Распечатать этикетки?</h3>
-        <p>Поступившие варианты уже выбраны. Количество копий можно изменить, печать необязательна.</p>
+        {!embeddedAfterArrival ? <span className="barcode-arrival-success">Приход сохранён</span> : null}
+        <h3>{embeddedAfterArrival ? 'Выберите количество этикеток' : 'Распечатать этикетки?'}</h3>
+        <p>Поступившие варианты уже выбраны. Можно изменить количество копий. Печать не обязательна.</p>
       </> : <><h3>Штрихкоды</h3><p>Найдите модель, выберите варианты и укажите количество этикеток.</p></>}</div>
       <div className="barcode-arrival-head-actions">
         {receipt && onDismiss ? <button type="button" className="secondary compact"
-          disabled={printing} onClick={onDismiss}>Не печатать</button> : null}
+          disabled={printing} onClick={onDismiss}>{dismissLabel}</button> : null}
         <button type="button" className="secondary compact" onClick={() => void refresh()} disabled={refreshing || printing}>
           {refreshing ? 'Обновляю…' : 'Обновить остатки'}
         </button>
