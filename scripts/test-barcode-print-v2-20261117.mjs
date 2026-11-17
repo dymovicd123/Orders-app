@@ -50,7 +50,7 @@ assert(page.includes('colorGroups.map') && page.includes('aria-expanded={expande
   page.includes('value={colorFilter}') && page.includes('value={sizeFilter}') &&
   page.includes('value={variantQuery}'),
   'Large multi-variant products must have collapsible groups and narrow filters')
-assert(page.includes('Заполнить количество по остатку') &&
+assert(page.includes('По остатку: {visibleVariants.length} вариантов') &&
   page.includes("onClick={useVisibleStock}"),
   'High-volume printing needs a single action to fill visible variants from stock')
 assert(page.includes("name=\"barcode-paper-mode\"") &&
