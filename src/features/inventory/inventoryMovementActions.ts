@@ -340,7 +340,7 @@ export function createInventoryMovementActions({
           onArrivalCompleted({
             operationId: result.operationId || '',
             source: inventoryDraft.source === 'boutique' ? 'boutique' : 'warehouse',
-            variants: Math.max(0, Number(result.applied || cleanItems.length)),
+            variants: cleanItems.length,
             units: cleanItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0),
           })
         }
