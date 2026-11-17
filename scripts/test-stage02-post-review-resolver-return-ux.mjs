@@ -132,7 +132,11 @@ const historyPanel = read('src/features/inventory/views/renderInventoryHistoryPa
 assert.ok(historyPanel.includes('Физическая операция') && historyPanel.includes('transferLineQuantity'), 'Inventory history still hides physical operation quantity behind stock delta')
 
 const header = read('src/features/sections/OrdersHeaderSection.tsx')
-assert.ok(header.includes('order-tab-attention'))
+const inventoryUi = read('src/features/sections/InventorySection.tsx')
+assert.ok(!header.includes('order-tab-attention') && !header.includes('pendingPhysicalQuantity'),
+  'Orders Return/Exchange tabs must not display physical receiving urgency badges')
+assert.ok(inventoryUi.includes('warehouse-receiving-nav-count') && inventoryUi.includes('warehousePhysicalReceivingCount'),
+  'Physical intake count must stay in Warehouse navigation')
 assert.ok(header.includes("panel.kind === 'returns'") && header.includes("panel.kind === 'exchange'"))
 
 // Run the exact production Return preparation + POST module compiled by esbuild.
