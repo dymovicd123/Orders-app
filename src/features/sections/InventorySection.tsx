@@ -2283,7 +2283,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                       loadInventoryData('warehouse', true, '', false),
                       loadInventoryData('boutique', true, '', false),
                     ])
-                    return Boolean(freshCatalog?.ok && warehouse?.ok && boutique?.ok)
+                    return freshCatalog?.ok && warehouse?.ok && boutique?.ok
+                      ? { catalog: freshCatalog, warehouse, boutique } : null
                   }} /> : null}
               </div>
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
