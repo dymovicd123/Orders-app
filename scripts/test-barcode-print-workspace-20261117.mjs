@@ -38,8 +38,9 @@ assert(page.includes('const ready = Boolean(!refreshing && !loadError && catalog
   page.includes('stock.warehouse?.ok && stock.boutique?.ok'),
   'Partial/failed snapshots must not display misleading zero stock')
 assert(page.includes('const canPrint = ready && !printing') &&
-  page.includes('!invalidStock && excess.length === 0'),
-  'Print must remain disabled with invalid stock')
+  page.includes('totalLabels <= MAX_LABELS') &&
+  !page.includes('!invalidStock && excess.length === 0'),
+  'Print must be bounded, but extra labels must not be blocked by inventory quantity')
 assert(page.includes('const target = window.open(') &&
   page.indexOf('const target = window.open(') < page.indexOf("await fetch('/api/barcodes/sku/'"),
   'Print popup should open synchronously before network validation')
@@ -48,16 +49,17 @@ assert(page.includes('record.physicalUnit !== false') &&
   page.includes('textOf(record.size) !== textOf(item.variant.sizeLabel)'),
   'Selected barcode identities require a fresh server preflight')
 assert(page.includes('const current = await onReload()') &&
-  page.includes("const matches = current[source].items.filter(row => row.variantId === item.variant.id)") &&
-  page.includes('if (item.quantity > physical)'),
-  'Print must revalidate actual quantities at both sources before generating labels')
-assert(page.includes('MAX_LABELS = 300') && page.includes('totalLabels <= MAX_LABELS'),
-  'Mass-print action lacks a bounded cap')
+  page.includes('const latestVariant = current.catalog.variants.find') &&
+  !page.includes('if (item.quantity > physical)'),
+  'Print must refresh catalog identities but never block legitimate additional copies')
+assert(page.includes('MAX_LABELS = MAX_BARCODE_PRINT_LABELS') && page.includes('totalLabels <= MAX_LABELS'),
+  'Mass-print action lacks a visible bounded cap')
 assert(page.includes('Каждый вариант') || page.includes('Один вариант имеет один общий код'),
   'Human print instructions should explain SKU copies')
 assert(page.includes('window.print()') && page.includes('58mm 35mm') &&
+  page.includes('@page{size:A4;margin:0}') &&
   page.includes('Печатать / Сохранить в PDF'),
-  'Print preview must explain the correct physical label sheet')
+  'Print preview must provide both thermal and A4 sheet layouts')
 assert(navigationCss.includes('grid-template-columns: repeat(3,minmax(0,1fr))') &&
   navigationCss.includes('overflow: visible'),
   'Warehouse tabs must be fully visible on narrow screens, not hidden behind horizontal scrolling')
