@@ -163,7 +163,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                                    {entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}
                                  </div>
                                  {historyArrivalPrintError?.rowId === entry.row.id
-                                   ? <p className="barcode-workspace-error" role="alert">{historyArrivalPrintError.message}</p> : null}
+                                   ? <p className="barcode-workspace-error" role="alert">{historyArrivalPrintError?.message}</p> : null}
                                  {historyArrivalPrint?.rowId === entry.row.id
                                    ? <div className="history-arrival-print-inline" id={'history-arrival-print-' + entry.row.id}>
                                        {historyArrivalPrintContent}
