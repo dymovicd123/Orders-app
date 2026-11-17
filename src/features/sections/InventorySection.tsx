@@ -2703,7 +2703,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         removeInventoryVariantOperationItem,
         resetInventoryArrivalForm,
         resetInventoryOperationSelection,
-        saveInventoryMovement,
+        saveInventoryMovement: (codes: string[] = []) => {
+          setArrivalBarcodeReceipt(null)
+          return saveInventoryMovement(codes, setArrivalBarcodeReceipt)
+        },
         selectInventoryOperationMode,
         selectInventoryOperationVariant,
         selectedInventoryOperationGroup,
