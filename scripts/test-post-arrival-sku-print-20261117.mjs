@@ -11,7 +11,7 @@ const printCss = readFileSync('src/features/inventory/views/barcodePrintWorkspac
 assert(section.includes('receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}'),
   'Printer must use actual canonical arrival receipt and current catalogue')
 assert(section.includes('onFinishArrivalResult: () => setArrivalBarcodeReceipt(null)') &&
-  section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt)'),
+  section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt, setArrivalCompletion)'),
   'Finishing the success step must never repeat or reverse the saved arrival')
 const operations = readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 assert(operations.includes("setStage('complete')") &&
