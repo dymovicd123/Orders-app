@@ -4,6 +4,7 @@ import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
+ gender:string;color:string;material:string;length:string;size:string;
  proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'cancel_workshop_obligation'|'cancel_unreserved_obligation'|'needs_review';
  status:string;message:string;requiresReview:boolean;availableQuantity:number;
  selectedQuantity:number;soldUnitPrice:number;selectedSaleValue:number
@@ -31,6 +32,15 @@ const labels:Record<Intent,string>={
  warehouse:'Уже получили — добавить на склад',
  boutique:'Уже получили — добавить в бутик',
  no_stock:'Уже получили — без добавления в остатки'
+}
+function returnV2Characteristics(line:Line):string {
+  const fields:[string,string][]=[
+    ['Пол',line.gender],['Цвет',line.color],['Материал',line.material],
+    ['Длина',line.length],['Размер/возраст',line.size],
+  ]
+  return fields.filter(([,value])=>String(value||'').trim())
+    .map(([label,value])=>`${label}: ${String(value).trim()}`).join(' · ')
+    ||'Характеристики не указаны'
 }
 const money=(n:unknown)=>Number.isFinite(Number(n))?Math.max(0,Math.trunc(Number(n))):0
 async function loadJson(res:Response){
@@ -255,6 +265,7 @@ export function OrderReturnV2Flow({
            <span className="return-smart-check">{quantity>0?'✓':''}</span>
            <span className="return-smart-main">
              <strong>{line.productName}</strong>
+             <small className="return-smart-characteristics">{returnV2Characteristics(line)}</small>
              <span className={`return-v2-item-status ${shipped?'is-shipped':workshop?'is-workshop':'is-unissued'}`}>{line.status} · {line.sourceType==='boutique'?'Бутик':line.sourceType==='workshop'?'Цех':'Склад'}</span>
              <small>{line.availableQuantity} шт. · цена продажи {formatMoney(line.soldUnitPrice)} ₸/шт.</small>
            </span>
