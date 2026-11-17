@@ -10,6 +10,10 @@ const printer = readFileSync('src/features/inventory/views/BarcodePrintWorkspace
 const api = readFileSync('worker/index.ts', 'utf8')
 const css = readFileSync('src/styles/193-unified-inventory-operations.css', 'utf8')
 
+assert(section.includes('setArrivalCompletion') &&
+  section.includes('arrivalCompletion,') &&
+  arrival.includes('observedArrivalCompletion.current = completed.operationId'),
+  'Confirmed arrivals including resolver paths must show the result independent of label readiness')
 assert(arrival.includes("type Stage = 'select' | 'quantities' | 'review' | 'complete'") &&
   arrival.includes("setStage('complete')") &&
   arrival.includes("if (mode === 'arrival' && stage === 'complete') return") &&
