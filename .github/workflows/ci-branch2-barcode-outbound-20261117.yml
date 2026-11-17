@@ -1,0 +1,29 @@
+name: Branch2 scanned transfer and writeoff CI
+on:
+  pull_request:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  barcode-outbound:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Real SQLite physical barcode operations test
+        run: node scripts/test-barcode-operation-unit-20261117.mjs
+      - name: Existing warehouse operations, barcode and stocktake tests
+        run: |
+          node scripts/test-w6-unified-operations.mjs
+          node scripts/test-inventory-writeoff-review.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-transfer-canonical-barcode-identity-20261030.mjs
+          node scripts/test-stocktake-barcode-scan-20261117.mjs
+          node scripts/test-barcode-unit-label-preparation-20261116.mjs
+      - name: TypeScript and production-client build
+        run: npm run build
