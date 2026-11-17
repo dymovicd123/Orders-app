@@ -105,9 +105,11 @@ type PanelContext = Pick<InventoryRenderContext,
 > & {
   stocktakeLabelCount: number
   stocktakePrintOpen: boolean
+  stocktakePrintFormOpen: boolean
   stocktakeLabelPrinter: ReactNode
   onStocktakePrintOpen: () => void
   onStocktakePrintClose: () => void
+  onStocktakePrintBackToOutcome: () => void
 }
 
 
@@ -207,9 +209,11 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     toggleStocktakeInlineSize,
     stocktakeLabelCount,
     stocktakePrintOpen,
+    stocktakePrintFormOpen,
     stocktakeLabelPrinter,
     onStocktakePrintOpen,
     onStocktakePrintClose,
+    onStocktakePrintBackToOutcome,
   } = ctx
 
   const selectedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) =>
@@ -251,7 +255,32 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                     </div>
     
                     {stocktakeSession?.status === 'completed' ? (
-                      <section className="stocktake-outcome-card" aria-live="polite">
+                      stocktakePrintOpen && stocktakeLabelCount > 0 ? (
+                        <section className="stocktake-postcheck-choice" data-stocktake-print-choice="true" aria-live="polite" aria-label="Ревизия завершена — выбор печати этикеток">
+                          <div className="stocktake-postcheck-header">
+                            <span className="stocktake-step-kicker">Ревизия успешно завершена</span>
+                            <h4>Распечатать этикетки для найденных товаров?</h4>
+                            <p>Остатки {stocktakeSession.source === 'warehouse' ? 'склада' : 'бутика'} уже обновлены. Найдено {stocktakeLabelCount} шт. с определёнными SKU. Печать не добавляет товары повторно.</p>
+                          </div>
+                          <div className="stocktake-postcheck-stats">
+                            <span>Проверено: <strong>{stocktakeSession.totalItems} поз.</strong></span>
+                            <span>Стало больше: <strong>+{completedAddedUnits} шт.</strong></span>
+                            <span>Этикеток: <strong>{stocktakeLabelCount} шт.</strong></span>
+                          </div>
+                          {completedUnknownRows.length ? <p className="stocktake-postcheck-warning" role="status">Есть {completedUnknownRows.length} неопределённых позиций. Они не включены в печать: сначала уточните SKU в «Нужно уточнить».</p> : null}
+                          {stocktakePrintFormOpen ? <div className="stocktake-postcheck-printer">
+                            <div className="stocktake-postcheck-top-actions">
+                              <button type="button" className="secondary" onClick={onStocktakePrintClose}>← К выбору</button>
+                              <button type="button" className="secondary" onClick={dismissStocktakeOutcome}>Готово</button>
+                            </div>
+                            {stocktakeLabelPrinter}
+                          </div> : <div className="stocktake-postcheck-main-actions">
+                            <button type="button" className="primary" onClick={onStocktakePrintOpen}>Распечатать этикетки</button>
+                            <button type="button" className="secondary" onClick={dismissStocktakeOutcome}>Завершить без печати</button>
+                            <button type="button" className="ghost compact" onClick={onStocktakePrintBackToOutcome}>Посмотреть результаты ревизии</button>
+                          </div>}
+                        </section>
+                      ) : <section className="stocktake-outcome-card" aria-live="polite">
                         <div className="stocktake-outcome-head">
                           <span className="stocktake-step-kicker">Проверка завершена</span>
                           <h4>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeSession.totalItems} поз.</h4>
@@ -275,13 +304,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                             Этикетки уже подготовлены по найденным количествам. Печать необязательна и не меняет остатки.</p>
                           {completedUnknownRows.length ? <small>Позиции без определённого SKU не включены в печать. Их сначала нужно уточнить.</small> : null}
                         </div> : null}
-                        {stocktakePrintOpen && stocktakeLabelCount > 0 ? <div className="stocktake-outcome-label-print" role="region" aria-label="Печать после ревизии">
-                          <div className="stocktake-outcome-actions">
-                            <button type="button" className="secondary compact" onClick={onStocktakePrintClose}>← К результату ревизии</button>
-                            <button type="button" className="secondary compact" onClick={dismissStocktakeOutcome}>Готово</button>
-                          </div>
-                          {stocktakeLabelPrinter}
-                        </div> : <div className="stocktake-outcome-actions">
+                        {<div className="stocktake-outcome-actions">
                           {completedUnknownRows.length ? <button className="secondary" type="button" onClick={openStocktakeOutcomeIssues}>Уточнить найденные · {completedUnknownRows.length}</button> : null}
                           {stocktakeLabelCount > 0 ? <>
                             <button className="primary" type="button" onClick={onStocktakePrintOpen}>Распечатать этикетки</button>

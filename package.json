@@ -31,7 +31,8 @@
     "jspdf": "^4.2.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "@zxing/browser": "0.2.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.0",
