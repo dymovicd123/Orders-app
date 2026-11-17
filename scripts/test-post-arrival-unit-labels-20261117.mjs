@@ -23,7 +23,7 @@ assert(movement.includes("onSuccess: async (recoveryResult) => { await finishMov
   'Catalog recovery must use the exact same post-commit safe flow')
 assert(panel.includes("onSave={codes=>ctx.saveInventoryMovement(codes)}"),
   'Preserve the original inventory operation callback and all existing barcode/writeoff tests')
-assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt)'),
+assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt, setArrivalCompletion)'),
   'Warehouse section forwards only a post-commit arrival result to optional UI')
 assert(panel.includes('ctx.clearArrivalBarcodeReady()'), 'A new operation clears stale barcode suggestions')
 assert(section.includes('arrivalPrintReceipt: arrivalBarcodeReceipt') &&
