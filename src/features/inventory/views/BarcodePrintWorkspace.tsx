@@ -11,6 +11,14 @@ type Props = {
   catalog: CatalogResponse | null
   stock: StockSnapshots
   onReload: () => Promise<{ catalog: CatalogResponse; warehouse: InventoryResponse; boutique: InventoryResponse } | null>
+  receipt?: ArrivalSkuPrintReceipt
+  onDismiss?: () => void
+}
+
+export type ArrivalSkuPrintReceipt = {
+  operationId: string
+  source: 'warehouse' | 'boutique'
+  items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
 }
 
 type PrintItem = { variant: CatalogVariantRecord; quantity: number }
@@ -102,7 +110,7 @@ function renderPrintSheet(target: Window, items: VerifiedPrintItem[], mode: Barc
   target.focus()
 }
 
-export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
+export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDismiss }: Props) {
   const [search, setSearch] = useState('')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [onlyStocked, setOnlyStocked] = useState(true)
@@ -112,7 +120,17 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
   const [openedColors, setOpenedColors] = useState<Record<string, boolean>>({})
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({})
   const [printMode, setPrintMode] = useState<BarcodePrintMode>('a4')
-  const [counts, setCounts] = useState<Record<number, number>>({})
+  const [counts, setCounts] = useState<Record<number, number>>(() => {
+    const initial: Record<number, number> = {}
+    for (const item of receipt?.items || []) {
+      const id = Number(item.variantId)
+      const quantity = Number(item.quantity)
+      if (!Number.isSafeInteger(id) || id <= 0 ||
+        !Number.isSafeInteger(quantity) || quantity <= 0) continue
+      initial[id] = (initial[id] || 0) + quantity
+    }
+    return initial
+  })
   const [refreshing, setRefreshing] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
@@ -226,8 +244,10 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     const balance = balances.values.get(item.variant.id)
     return item.quantity > (balance?.warehouse || 0) + (balance?.boutique || 0)
   })
+  const missingReceiptVariants = (receipt?.items || []).filter(item =>
+    !activeVariants.some(variant => variant.id === Number(item.variantId)))
   const invalidStock = selectedPrint.some(item => balances.repeated.has(item.variant.id))
-  const canPrint = ready && !printing && totalLabels > 0 && totalLabels <= MAX_LABELS
+  const canPrint = ready && !printing && totalLabels > 0 && totalLabels <= MAX_LABELS && missingReceiptVariants.length === 0
 
   const print = async () => {
     if (!canPrint) return
