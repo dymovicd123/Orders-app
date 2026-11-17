@@ -78,6 +78,7 @@ export function createReturnExchangeAftercareActions({
     productName: string
     externalId: string
     freshnessDecision?: 'already_counted' | 'arrived_after_check'
+    onBarcodePreparationReady?: (details: { variantId: number; source: 'warehouse' | 'boutique'; quantity: number }) => void
     deferRefresh?: boolean
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
@@ -99,6 +100,7 @@ export function createReturnExchangeAftercareActions({
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
         freshnessProtected?: boolean
+        barcodePreparation?: { variantId?: number; source?: 'warehouse' | 'boutique'; quantity?: number } | null
       } = {}
 
       while (true) {
@@ -167,6 +169,15 @@ export function createReturnExchangeAftercareActions({
           : `«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
+      }
+      const barcode = result.barcodePreparation
+      if (barcode && Number(barcode.variantId) > 0 && barcode.source === input.destination
+          && input.onBarcodePreparationReady) {
+        input.onBarcodePreparationReady({
+          variantId: Number(barcode.variantId),
+          source: barcode.source,
+          quantity: Math.max(1, Number(barcode.quantity || 1)),
+        })
       }
       return true
     } catch (err) {
