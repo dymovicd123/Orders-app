@@ -1,0 +1,106 @@
+name: Branch2 DDS correction and Zavsklad controlled release (NO Main)
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-dds-audit-supervisor-release-20261117.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-controlled-dds-worker-release
+  cancel-in-progress: false
+jobs:
+  branch2-only:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Strict one-shot Branch2-only release gate
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '6e6b1d54a2e0a51d2e7c8f578f6de407a96cd2ab'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('wrangler.jsonc').read_text())
+          assert cfg['name']=='orders-app-branch2'
+          assert cfg['main']=='worker/index.ts'
+          assert cfg.get('env') is None
+          assert cfg['d1_databases']==[{
+            'binding':'DB','database_name':'orders_db_branch2_mirror_20261027',
+            'database_id':'0904a573-21ff-44d8-93b0-c9200f771702'
+          }]
+          cfg['keep_vars']=True
+          cfg['send_metrics']=False
+          Path('.branch2-dds-release-config.jsonc').write_text(json.dumps(cfg,indent=2)+'\n')
+          print('EXACT_BRANCH2_SOURCE_ONLY_PASS')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: DDS old/new journal, history pagination and finance safety regression
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/branch2-dds-0139-release-guard-20261117.py
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-edit-pagination-supervisor-20261117.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+          node scripts/test-payment-method-validation-20261116.mjs
+          npm run build
+      - name: Verify production-target isolation by Wrangler dry-run
+        run: |
+          npx --no-install wrangler deploy --config .branch2-dds-release-config.jsonc --name orders-app-branch2 --keep-vars --strict --dry-run --outdir .branch2-dds-release-preview
+      - name: Read-only test Worker and DDS schema preflight
+        run: python3 scripts/branch2-dds-0139-release-guard-20261117.py before
+      - name: Apply ONLY 0139 additive audit schema to Branch2 D1
+        run: |
+          npx --no-install wrangler d1 execute DB --config wrangler.jsonc --remote --yes --file migrations/0139_dds_entry_edits_audit.sql
+      - name: Read-only verify audit schema and unchanged DDS amounts
+        run: python3 scripts/branch2-dds-0139-release-guard-20261117.py after
+      - name: Deploy only Branch2 Worker with DDS editor, preserving all secrets
+        run: |
+          npx --no-install wrangler deploy --config .branch2-dds-release-config.jsonc --name orders-app-branch2 --keep-vars --strict
+      - name: Verify active Branch2 bindings after deploy
+        run: python3 scripts/branch2-dds-0139-release-guard-20261117.py worker-after
+      - name: Public Branch2 health and client assets smoke (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request,urllib.error
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def get(path):
+              for attempt in range(1,6):
+                  request=urllib.request.Request(base+path,headers={
+                      'User-Agent':'OrdersDdsBranch2ReadOnlyVerification/1.0',
+                      'Accept':'application/json,text/html,*/*'})
+                  try:
+                      with urllib.request.urlopen(request,timeout=25) as response:
+                          if response.status==200:return response.read()
+                          print('HTTP_STATUS',path,response.status)
+                  except urllib.error.HTTPError as error:
+                      print('HTTP_ERROR',path,error.code,'attempt',attempt)
+                  except Exception as error:
+                      print('HTTP_EXCEPTION',path,type(error).__name__,'attempt',attempt)
+                  time.sleep(2)
+              raise SystemExit('BRANCH2_SMOKE_FAILED '+path)
+          health=json.loads(get('/api/health'))
+          if health.get('ok') is not True:raise SystemExit('HEALTH_NOT_OK')
+          page=get('/').decode('utf8','replace')
+          if '<html' not in page.lower():raise SystemExit('ROOT_HTML_NOT_OK')
+          match=re.search(r'<script[^>]*src="(/assets/[^"]+)"',page)
+          if not match or len(get(match.group(1)))<1000:raise SystemExit('ASSET_NOT_OK')
+          print('BRANCH2_DDS_EDIT_SUPERVISOR_RELEASE_VERIFIED_NO_MAIN_WRITES')
+          PY
