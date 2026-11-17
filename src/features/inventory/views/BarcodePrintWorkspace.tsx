@@ -236,6 +236,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
       setError('Браузер заблокировал печать. Разрешите всплывающие окна для Orders-app.')
       return
     }
+    target.document.body.innerHTML = '<p style="font:14px Arial,sans-serif;padding:18px">Проверяю варианты перед печатью…</p>'
     setPrinting(true)
     setError('')
     setNotice('')
@@ -250,12 +251,6 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
           displayLabel(latestVariant) !== displayLabel(item.variant)) {
           throw new Error('Характеристики товара изменились. Список обновлён — проверьте выбор перед печатью.')
         }
-        const physical = (['warehouse', 'boutique'] as const).reduce((sum, source) => {
-          const matches = current[source].items.filter(row => row.variantId === item.variant.id)
-          if (matches.length > 1) throw new Error('Для варианта обнаружены повторные строки остатка. Печать остановлена.')
-          return sum + stockNumber(matches[0]?.quantity)
-        }, 0)
-        if (physical < 0) throw new Error('Не удалось прочитать физический остаток.')
         const result = await fetch('/api/barcodes/sku/' + encodeURIComponent(String(item.variant.id)), {
           method: 'GET', credentials: 'same-origin', cache: 'no-store',
         })
@@ -345,7 +340,13 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
       <div className="barcode-workspace-layout">
         <div className="barcode-models">
           <label className="barcode-model-search"><span>Поиск товара</span>
-            <input value={search} onChange={event => setSearch(event.target.value)}
+            <input value={search} onChange={event => {
+                setSearch(event.target.value)
+                setSelectedProductId(null)
+                setColorFilter('')
+                setSizeFilter('')
+                setVariantQuery('')
+              }}
               type="search" placeholder="Название модели…" autoComplete="off"/>
           </label>
           <label className="barcode-only-stock">
@@ -404,8 +405,8 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
             </div>
             <div className="barcode-color-groups">
               {colorGroups.map((group, index) => {
-                const expanded = Boolean(colorFilter || sizeFilter || variantQuery.trim()) ||
-                  (openedColors[group.key] ?? index === 0)
+                const expanded = openedColors[group.key] ??
+                  (Boolean(colorFilter || sizeFilter || variantQuery.trim()) || index === 0)
                 return <section key={group.key} className="barcode-color-group">
                   <button type="button" className="barcode-color-heading"
                     aria-expanded={expanded} onClick={() => {
@@ -468,8 +469,8 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
               <strong>{item.quantity} шт.</strong>
             </li>)}</ul>
           </details> : null}
-          {invalidStock ? <small className="barcode-print-warning">
-            Обнаружены повторные строки остатка. Уточните количество в складском учёте.
+          {invalidStock ? <small className="barcode-print-notice">
+            У некоторых вариантов повторяются строки остатков. Печать кода допустима, но количество стоит уточнить.
           </small> : null}
           {excess.length ? <small className="barcode-print-notice">
             Для {excess.length} вариантов копий больше, чем числится на складе.
@@ -492,7 +493,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
             </label>
           </fieldset>
           {totalLabels > 0 ? <button type="button" className="secondary compact"
-            onClick={() => { setCounts({}); setNotice('Выбор очищен.') }} disabled={printing}>Очистить выбор</button> : null}
+            onClick={() => { setCounts({}); setQuantityDrafts({}); setNotice('Выбор очищен.') }} disabled={printing}>Очистить выбор</button> : null}
           <button type="button" className="primary barcode-print-main-action" disabled={!canPrint}
             onClick={() => void print()}>{printing ? 'Проверяю коды…' : 'Открыть печать'}</button>
         </div>
