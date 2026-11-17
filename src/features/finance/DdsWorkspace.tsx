@@ -358,7 +358,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
       </section>
     </>}
 
-    {canManage&&view==='funds'&&<div className="dds-funding-page">
+    {isAdmin&&view==='funds'&&<div className="dds-funding-page">
       <form className="dds-primary-form dds-funding-form" onSubmit={event=>void saveFunds(event)}>
         <div className="dds-section-title"><div>
           <h3>Пополнить баланс</h3>
