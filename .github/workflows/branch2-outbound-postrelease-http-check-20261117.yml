@@ -1,0 +1,87 @@
+name: Branch2 outbound barcode post-release HTTP diagnostics (READ ONLY)
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-outbound-postrelease-http-check-20261117.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard exact Branch2 postrelease source and scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD^)" = 'bedcb9c116a0d030eac8bccde7268be0652a60af'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-outbound-postrelease-http-check-20261117.yml'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path('wrangler.jsonc').read_text())
+          assert c['name']=='orders-app-branch2'
+          assert c['d1_databases'][0]['database_id']=='0904a573-21ff-44d8-93b0-c9200f771702'
+          assert c['vars']['RETURN_V2_ENABLED']=='true'
+          print('BRANCH2_EXACT_ISOLATED_SCOPE_PASS')
+          PY
+      - name: Verify 100 percent active Branch2 Worker and 0141 ledger (read only)
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app-branch2/deployments?per_page=1" |
+            jq -e '.result.deployments[0].versions | length==1 and .[0].percentage==100'
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            -d '{"sql":"SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type=\u0027table\u0027 AND name=\u0027inventory_outbound_unit_scans\u0027) AS table_ready,(SELECT COUNT(*) FROM sqlite_master WHERE type=\u0027trigger\u0027 AND name IN (\u0027trg_outbound_unit_scan_guard\u0027,\u0027trg_outbound_unit_scan_apply\u0027,\u0027trg_outbound_unit_scan_immutable_update\u0027,\u0027trg_outbound_unit_scan_immutable_delete\u0027)) AS trigger_count,(SELECT COUNT(*) FROM inventory_outbound_unit_scans) AS applied_scans","params":[]}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/0904a573-21ff-44d8-93b0-c9200f771702/query" |
+            jq -e '.success==true and .result[0].results[0].table_ready==1 and .result[0].results[0].trigger_count==4'
+      - name: HTTP health, HTML and asset with retries and diagnostics
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.error,urllib.request
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def fetch(path):
+              try:
+                  req=urllib.request.Request(base+path,headers={'User-Agent':'OrdersBranch2OutboundHTTPDiagnostic/1.0','Accept':'*/*'})
+                  with urllib.request.urlopen(req,timeout=25) as r:
+                      body=r.read()
+                      print('HTTP',path,'status',r.status,'bytes',len(body),'type',r.headers.get('content-type'),flush=True)
+                      return r.status,body
+              except urllib.error.HTTPError as e:
+                  body=e.read()
+                  print('HTTP',path,'status',e.code,'bytes',len(body),'type',e.headers.get('content-type'),flush=True)
+                  return e.code,body
+          ok=False
+          for attempt in range(7):
+              print('ATTEMPT',attempt+1,flush=True)
+              try:
+                  status,health=fetch('/api/health')
+                  html_status,html=fetch('/')
+                  if status!=200 or not json.loads(health).get('ok') or html_status!=200:raise ValueError('health or html invalid')
+                  match=re.search(rb'<script[^>]*src="(/assets/[^"]+)"',html)
+                  if not match:raise ValueError('asset script tag not found')
+                  script=match.group(1).decode()
+                  js_status,js=fetch(script)
+                  if js_status!=200 or len(js)<1000:
+                      print('ASSET_DIAG',script,'first_bytes',repr(js[:100]),flush=True)
+                      raise ValueError('asset unavailable or too short')
+                  auth_status,_=fetch('/api/inventory/stocktakes/REV-TEST-NO-AUTH/scans')
+                  if auth_status not in (401,403):raise ValueError('protected stocktake scanner did not deny unauthorized access')
+                  ok=True
+                  break
+              except Exception as e:
+                  print('DIAGNOSTIC_RETRY',type(e).__name__,str(e),flush=True)
+                  time.sleep(2)
+          if not ok:raise SystemExit('BRANCH2_OUTBOUND_POSTRELEASE_HTTP_VERIFY_FAILED')
+          print('BRANCH2_OUTBOUND_ACTIVE_HTTP_HEALTH_ASSETS_AUTH_PASS')
+          PY
