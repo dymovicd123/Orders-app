@@ -33,7 +33,7 @@ assert(page.includes('Склад <strong>{balance.warehouse}') &&
   page.includes('Бутик <strong>{balance.boutique}') &&
   page.includes('Всего {physical} шт.'),
   'Warehouse and boutique quantities are not distinguishable')
-assert(page.includes('const ready = Boolean(!refreshing && !error && catalog?.ok') &&
+assert(page.includes('const ready = Boolean(!refreshing && !loadError && catalog?.ok') &&
   page.includes('stock.warehouse?.ok && stock.boutique?.ok'),
   'Partial/failed snapshots must not display misleading zero stock')
 assert(page.includes('const canPrint = ready && !printing') &&
