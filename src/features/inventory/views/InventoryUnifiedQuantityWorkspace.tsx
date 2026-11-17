@@ -237,42 +237,68 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     setFirstVariant(old => ({ ...old, color: '', size: '', quantity: '' }))
     setNotice('')
   }
+
   async function scanOperationUnit() {
     const code = scanCode.trim().toUpperCase()
     if (!code || scanRunningRef.current || busy || loading || error || stage==='review') return
+    const context = scanContextRef.current
     scanRunningRef.current=true;setScanBusy(true);setScanError('');setScanNotice('')
     try {
-      if (!code.startsWith('OCU1-')) throw new Error('Для операции нужен индивидуальный код физической вещи, не общий SKU.')
       const response=await fetch('/api/barcodes/lookup?code='+encodeURIComponent(code),{
         method:'GET',credentials:'same-origin',cache:'no-store',
       })
-      const data=await response.json() as {
-        ok?:boolean;message?:string;barcodeType?:string;unitId?:string;variantId?:number;
-        productName?:string;source?:string;status?:string;active?:boolean;
+      const data=await response.json() as OperationBarcodeLookup
+      if (context !== scanContextRef.current) return
+      if (!response.ok) throw new Error(data.message||'Не удалось найти код товара.')
+      const match=resolveOperationBarcode(code,data,source)
+      const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===match.variantId))
+      const row=group?.rows.find(row=>Number(row.variantId)===match.variantId)
+      if (!group||!row) throw new Error('Вариант не найден в списке выбранной точки. Обновите остатки или выберите товар вручную.')
+      if (match.kind==='sku') {
+        setMatchedSkuId(match.variantId)
+        const existing=int(draftMap.get(String(match.variantId))?.quantity)
+        setSkuQuantityDraft(existing>0?String(existing):'')
+        setSelected(current=>current.includes(group.key)?current:[...current,group.key])
+        setCurrent(group.key);setStage('quantities')
+        setScanNotice('Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
+        window.requestAnimationFrame(()=>skuQuantityRef.current?.focus())
+        return
       }
-      if (!response.ok||!data.ok||data.barcodeType!=='unit'||!data.active||!data.unitId) {
-        throw new Error(data.message||'Индивидуальный код недействителен.')
-      }
-      if (data.source!==source||!['prepared','on_hand'].includes(data.status||'')) {
-        throw new Error('Вещь не числится в исходной точке или уже выбыла.')
-      }
-      if (scansRef.current.some(unit=>unit.unitId===data.unitId||unit.code===code)) {
+      if (scansRef.current.some(unit=>unit.unitId===match.unitId||unit.code===code)) {
         setScanNotice('Эта вещь уже отсканирована. Повторный код не добавлен.');return
       }
       if (scansRef.current.length>=60) throw new Error('Не больше 60 сканированных вещей за операцию.')
-      const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===Number(data.variantId)))
-      const row=group?.rows.find(row=>Number(row.variantId)===Number(data.variantId))
-      if (!group||!row) throw new Error('Комбинации нет в остатках выбранной точки. Обновите список.')
-      const scannedQty=scansRef.current.filter(unit=>unit.variantId===Number(data.variantId)).length
-      const desired=Math.max(int(draftMap.get(String(data.variantId))?.quantity),scannedQty)+1
+      const scannedQty=scansRef.current.filter(unit=>unit.variantId===match.variantId).length
+      const desired=Math.max(int(draftMap.get(String(match.variantId))?.quantity),scannedQty)+1
       p.onQuantity(row,String(desired))
-      const next=[...scansRef.current,{code,unitId:data.unitId,variantId:Number(data.variantId),name:data.productName||row.productName}]
+      const next=[...scansRef.current,{code,unitId:match.unitId,variantId:match.variantId,name:match.productName||row.productName}]
       scansRef.current=next;setScannedUnits(next)
+      setMatchedSkuId(null);setSkuQuantityDraft('')
       setSelected(current=>current.includes(group.key)?current:[...current,group.key])
       setCurrent(group.key);setStage('quantities')
-      setScanNotice('Вещь добавлена в количество. Подтвердите операцию для проведения.')
+      setScanNotice('Индивидуальная вещь учтена в количестве. Проверьте результат перед подтверждением.')
+      window.requestAnimationFrame(()=>scanInputRef.current?.focus())
     } catch(cause) { setScanError(cause instanceof Error?cause.message:'Не удалось прочитать код.') }
     finally { setScanCode('');setScanBusy(false);scanRunningRef.current=false }
+  }
+
+  function applySkuQuantity() {
+    if (!matchedSkuRow || !matchedSkuId || busy || loading) return
+    if (!/^(0|[1-9][0-9]{0,5})$/.test(skuQuantityDraft.trim())) {
+      setScanError('Укажите целое количество от 0 до 999999. Ноль убирает вариант из операции.')
+      return
+    }
+    const quantity=Number(skuQuantityDraft.trim())
+    if (quantity < scannedSkuMin) {
+      setScanError('Нельзя указать меньше '+scannedSkuMin+' шт.: столько индивидуальных вещей уже отсканировано.')
+      return
+    }
+    p.onQuantity(matchedSkuRow,String(quantity))
+    setScanNotice(quantity===0 ? 'Количество очищено. Вещи не перемещены и не списаны.'
+      : 'Для варианта установлено '+quantity+' шт. Можно искать следующий товар или проверить результат.')
+    setScanError('')
+    setMatchedSkuId(null);setSkuQuantityDraft('')
+    window.requestAnimationFrame(()=>scanInputRef.current?.focus())
   }
 
   function review() {
