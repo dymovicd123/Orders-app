@@ -1,0 +1,53 @@
+.barcode-workspace{display:grid;gap:16px;padding:18px 0 10px;min-width:0;max-width:1440px;margin:auto}
+.barcode-page-head{display:flex;align-items:start;justify-content:space-between;gap:16px}
+.barcode-page-head h3{font-size:24px;font-weight:720;margin:0 0 5px;letter-spacing:-.45px}
+.barcode-page-head p,.barcode-variants-head p{margin:0;color:var(--muted,#687588);line-height:1.5;font-size:13px}
+.barcode-workflow-hint{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 15px;border-radius:12px;border:1px solid var(--line,#dce3e8);background:var(--card-bg,#fff);font-size:13px;line-height:1.45}
+.barcode-workflow-hint strong{font-weight:700;margin-right:4px}
+.barcode-workflow-hint span:not(:last-child)::after{content:'›';color:var(--muted,#738093);margin-left:12px}
+.barcode-workflow-note{font-size:12px;line-height:1.55;color:var(--muted,#64748b);margin:-5px 0 0}
+.barcode-workspace-status{font-size:13px;border-radius:9px;padding:10px 12px;background:rgba(39,104,176,.07);margin:0}
+.barcode-workspace-error{font-size:13px;border-radius:9px;padding:10px 12px;border:1px solid rgba(191,63,55,.3);background:rgba(190,63,55,.045);color:#ae3737;margin:0}
+.barcode-workspace-layout{display:grid;grid-template-columns:minmax(230px,.92fr) minmax(0,2.2fr);gap:16px;align-items:start}
+.barcode-models,.barcode-variants{min-width:0;border:1px solid var(--line,#dce3e8);background:var(--card-bg,#fff);border-radius:14px;overflow:hidden}
+.barcode-models{display:flex;flex-direction:column;padding:14px;gap:11px}
+.barcode-model-search{display:grid;gap:7px;min-width:0;font-weight:650;font-size:13px}
+.barcode-model-search input{height:44px;width:100%;min-width:0;border:1px solid var(--line,#cdd5dc);background:var(--input-bg,#fff);color:var(--text,#172331);border-radius:10px;padding:0 12px;font-size:14px}
+.barcode-model-search input:focus,.barcode-variant-input input:focus{outline:2px solid rgba(42,110,179,.2);outline-offset:1px;border-color:#658cba}
+.barcode-only-stock{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text,#25354b);cursor:pointer}
+.barcode-only-stock input{width:16px;height:16px;accent-color:#386c9a}
+.barcode-models-count{color:var(--muted,#657486);font-size:12px}
+.barcode-model-list{display:grid;gap:5px;max-height:560px;overflow:auto;overscroll-behavior:contain;padding-right:2px}
+.barcode-model-button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:11px 12px;width:100%;border:1px solid transparent;border-radius:9px;cursor:pointer;background:transparent;color:var(--text,#1e2f42)}
+.barcode-model-button:hover{background:rgba(49,109,169,.07)}
+.barcode-model-button.is-active{border-color:rgba(43,105,167,.38);background:rgba(49,109,169,.1)}
+.barcode-model-button strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.barcode-model-button span{font-size:11px;color:var(--muted,#687588);line-height:1.4}
+.barcode-variants{min-height:265px}
+.barcode-variants-head{padding:17px 18px;border-bottom:1px solid var(--line,#dce3e8)}
+.barcode-section-kicker{display:block;color:var(--muted,#64748b);font-size:11px;font-weight:650;margin-bottom:5px}
+.barcode-variants-head h4{font-size:18px;margin:0 0 4px;line-height:1.3}
+.barcode-variant-table-head,.barcode-variant-row{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(150px,.92fr) 108px;align-items:center;gap:16px}
+.barcode-variant-table-head{padding:12px 18px;background:rgba(116,134,153,.045);font-size:11px;font-weight:650;color:var(--muted,#64748b)}
+.barcode-variant-list{display:grid}
+.barcode-variant-row{padding:13px 18px;border-top:1px solid var(--line,#e6e9ee)}
+.barcode-variant-name{display:grid;gap:5px;min-width:0}
+.barcode-variant-name strong{font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+.barcode-variant-name small,.barcode-variant-stocks small,.barcode-variant-input small{font-size:11px;color:var(--muted,#64748b);line-height:1.4}
+.barcode-variant-stocks{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:12px}
+.barcode-variant-stocks span{white-space:nowrap}
+.barcode-variant-stocks small{grid-column:1 / -1}
+.barcode-variant-input{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.barcode-variant-input input{height:40px;width:90px;min-width:0;border:1px solid var(--line,#cdd5dc);border-radius:9px;background:var(--input-bg,#fff);color:var(--text,#172331);font-size:15px;font-weight:700;text-align:center;padding:0 5px;font-variant-numeric:tabular-nums}
+.barcode-variant-welcome,.barcode-workspace-empty{padding:30px 18px;text-align:center;color:var(--muted,#687588);font-size:13px;line-height:1.5}
+.barcode-variant-welcome strong{color:var(--text,#1e2f42);display:block;margin-bottom:6px}
+.barcode-variant-welcome p,.barcode-workspace-empty{margin:0}
+.barcode-print-footer{position:sticky;bottom:8px;z-index:7;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 17px;border:1px solid var(--line,#dce3e8);border-radius:14px;background:var(--card-bg,#fff);box-shadow:0 6px 22px rgba(25,43,63,.11)}
+.barcode-print-summary{display:grid;gap:3px;min-width:0}
+.barcode-print-summary strong{font-size:15px}
+.barcode-print-summary span{color:var(--muted,#687588);font-size:12px}
+.barcode-print-warning{font-size:12px;color:#bb3b33;line-height:1.45}
+.barcode-print-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.barcode-print-main-action{min-height:43px;padding:0 20px}
+@media(max-width:860px){.barcode-workspace-layout{grid-template-columns:minmax(200px,.8fr) minmax(0,1.6fr)}.barcode-variant-table-head,.barcode-variant-row{grid-template-columns:minmax(0,1fr) 130px 94px;gap:9px}.barcode-variant-row{padding:12px}.barcode-variant-table-head{padding:10px 12px}}
+@media(max-width:650px){.barcode-workspace{padding:12px 0;gap:12px}.barcode-page-head h3{font-size:21px}.barcode-workspace-layout{grid-template-columns:minmax(0,1fr);gap:12px}.barcode-models{padding:12px}.barcode-model-list{max-height:190px}.barcode-variants-head{padding:14px}.barcode-variant-table-head{display:none}.barcode-variant-row{grid-template-columns:minmax(0,1fr) 98px;grid-template-areas:'name input' 'stock input';gap:8px}.barcode-variant-name{grid-area:name}.barcode-variant-stocks{grid-area:stock;display:flex;gap:9px;flex-wrap:wrap}.barcode-variant-stocks small{width:100%}.barcode-variant-input{grid-area:input}.barcode-variant-input input{width:84px}.barcode-workflow-hint{align-items:flex-start;gap:7px;padding:12px}.barcode-workflow-hint span{width:100%}.barcode-workflow-hint span:not(:last-child)::after{display:none}.barcode-print-footer{bottom:0;border-radius:12px}.barcode-print-main-action{flex:1}.barcode-print-actions{width:100%}.barcode-workspace-note{font-size:12px}}
