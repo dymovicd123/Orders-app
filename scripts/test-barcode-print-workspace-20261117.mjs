@@ -5,6 +5,7 @@ import { encodeCode128B } from '../shared/barcode-code128.ts'
 
 const page = readFileSync('src/features/inventory/views/BarcodePrintWorkspace.tsx','utf8')
 const layout = readFileSync('src/features/inventory/views/barcodePrintWorkspace.css','utf8')
+const navigationCss = readFileSync('src/styles/w9-warehouse-catalog-cleanup.css','utf8')
 const section = readFileSync('src/features/sections/InventorySection.tsx','utf8')
 const app = readFileSync('src/App.tsx','utf8')
 const types = readFileSync('src/app/types.ts','utf8')
@@ -57,6 +58,11 @@ assert(page.includes('Каждый вариант') || page.includes('Один �
 assert(page.includes('window.print()') && page.includes('58mm 35mm') &&
   page.includes('Печатать / Сохранить в PDF'),
   'Print preview must explain the correct physical label sheet')
+assert(navigationCss.includes('grid-template-columns: repeat(3,minmax(0,1fr))') &&
+  navigationCss.includes('overflow: visible'),
+  'Warehouse tabs must be fully visible on narrow screens, not hidden behind horizontal scrolling')
+assert(page.includes('Что будет напечатано') && page.includes('selectedPrint.map(item =>'),
+  'Multi-model print selection must be reviewable before sending to the printer')
 assert(layout.includes('grid-template-columns') && layout.includes('@media(max-width:650px)') &&
   layout.includes('barcode-print-footer'), 'Desktop/mobile list-and-print layout missing')
 assert(!/fetch\([^)]*,\s*\{[^}]*method:\s*['"]POST/s.test(page),
