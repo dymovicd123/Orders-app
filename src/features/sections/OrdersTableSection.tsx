@@ -548,13 +548,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       : 'Есть возврат денег'}
                               </span>
                             ) : null}
-                            {(editProjection.canEdit || (canManageOrderEdit && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
+                            {(projection.canEdit || (isAdmin && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived) || (canManageOrderEdit && editProjection.canEdit) || (canManageOrderEdit && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
                               <button
                                 className="primary compact"
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  if(editProjection.canEdit)handleEditOrder(order, 'orders')
+                                  if(projection.canEdit)handleEditOrder(order, 'orders')
+                                  else if(editProjection.canEdit)handleEditOrder(order, 'orders')
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
