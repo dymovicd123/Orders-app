@@ -1645,7 +1645,7 @@ function App() {
   })
 
   const { persistOrder } = createOrderEditPersistenceActions({
-    isAdmin,
+    isAdmin: canManageOrderEdit,
     selectedOrder,
     activeSector,
     orderPanel,
@@ -2933,7 +2933,7 @@ function removeDebtPayment(index: number) {
 
   async function getOrderOperationalProjection(order: OrderRecord) {
     const { projectOrderOperationalState } = await import('./app/orderOperationalProjection')
-    return projectOrderOperationalState(order, { isAdmin })
+    return projectOrderOperationalState(order, { isAdmin: canManageOrderEdit })
   }
 
   async function handleOpenDebt(order: OrderRecord) {
