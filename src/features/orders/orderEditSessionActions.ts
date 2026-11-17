@@ -95,7 +95,7 @@ export function createOrderEditSessionActions({
   }
 
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
+    if (!isAdmin) { setMessage('Полное редактирование доступно администратору и завскладу. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     let completeOrder: OrderRecord
     try {
       completeOrder = await fetchCompleteOrderForEditing(order)

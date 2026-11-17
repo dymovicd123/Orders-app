@@ -11,6 +11,7 @@ sql.exec('PRAGMA foreign_keys=ON')
 sql.exec(readFileSync('migrations/0120_shared_dds_ledger.sql','utf8'))
 sql.exec(readFileSync('migrations/0121_dds_directory.sql','utf8'))
 sql.exec(readFileSync('migrations/0123_dds_allow_negative_balance.sql','utf8'))
+sql.exec(readFileSync('migrations/0139_dds_entry_edits_audit.sql','utf8'))
 sql.exec(readFileSync('migrations/0123_dds_allow_negative_balance.sql','utf8'))
 const db = {
   prepare(query) {

@@ -1,0 +1,76 @@
+name: Main selective DDS editor and supervisor backport CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/finance/**'
+      - 'src/features/orders/orderEdit*'
+      - 'src/features/orders/orderTableSectionContext.ts'
+      - 'src/features/renderers/FinanceDashboardRenderer.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'worker/domains/dds*'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/index.ts'
+      - 'migrations/0139_dds_entry_edits_audit.sql'
+      - 'scripts/test-dds-edit-pagination-supervisor-20261117.mjs'
+      - 'scripts/test-branch2-supervisor-editor-gate-20261117.mjs'
+      - '.github/workflows/ci-main-dds-supervisor-20261117.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-main-fixes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Assert no other branch2 features entered Main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff --name-only origin/main...HEAD > /tmp/main-dds-files.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          allowed={
+            '.github/workflows/ci-main-dds-supervisor-20261117.yml',
+            'migrations/0139_dds_entry_edits_audit.sql',
+            'scripts/test-dds-edit-pagination-supervisor-20261117.mjs',
+            'scripts/test-branch2-supervisor-editor-gate-20261117.mjs',
+            'scripts/test-simple-dds-ledger-20261110.mjs',
+            'src/App.tsx',
+            'src/features/finance/DdsWorkspace.tsx',
+            'src/features/finance/dds.css',
+            'src/features/finance/ddsTypes.ts',
+            'src/features/orders/orderEditSessionActions.ts',
+            'src/features/orders/orderEditorActions.ts',
+            'src/features/orders/orderTableSectionContext.ts',
+            'src/features/renderers/FinanceDashboardRenderer.tsx',
+            'src/features/sections/OrdersTableSection.tsx',
+            'worker/domains/dds-directory.ts',
+            'worker/domains/dds.ts',
+            'worker/domains/orders-write.ts',
+            'worker/index.ts',
+          }
+          changed=set(Path('/tmp/main-dds-files.txt').read_text().splitlines())
+          unexpected=changed-allowed
+          if unexpected:raise SystemExit('ABORT unexpected files: '+str(sorted(unexpected)))
+          if 'migrations/0136_barcode_physical_units_foundation.sql' in changed:raise SystemExit('ABORT barcode data in Main')
+          print('MAIN_NARROW_DDS_DIFF_PASS',len(changed),'files')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: DDS audit, payment method and editor access tests
+        run: |
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-edit-pagination-supervisor-20261117.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+          node scripts/test-branch2-supervisor-editor-gate-20261117.mjs
+          node scripts/test-stage01-order-truth-projection-r1.mjs
+          node scripts/test-order-exchange-bulk-cancellation-20261018.mjs
+      - name: Full TypeScript and bundle build
+        run: npm run build

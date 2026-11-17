@@ -42,10 +42,13 @@ function amount(value: unknown) {
     throw invalid('Укажите сумму целым числом тенге от 1 до 1 000 000 000.')
   return n
 }
+export function canManageDds(actor: AuthUser | null) {
+  return Boolean(actor && (actor.role === 'admin' || actor.employeeRole === 'Завсклад'))
+}
 function checkRole(actor: AuthUser | null, adminOnly = false) {
   if (!actor || (actor.role !== 'admin' && actor.role !== 'manager'))
     throw invalid('Доступ к ДДС ограничен сотрудниками.', 403)
-  if (adminOnly && actor.role !== 'admin') throw invalid('Пополнять и отменять записи ДДС может только администратор.', 403)
+  if (adminOnly && !canManageDds(actor)) throw invalid('Исправлять ДДС может только администратор или завсклад.', 403)
 }
 const rowSelect = `SELECT id, request_id, kind, amount, business_date, category, article, comment,
   reverses_entry_id, created_by_user_id, created_at FROM dds_entries`
@@ -161,6 +164,7 @@ export async function readDdsMonth(db: D1Database, monthInput: unknown, actor: A
     CASE WHEN e.kind LIKE 'reversal_%' THEN origin.category ELSE e.category END AS category,
     CASE WHEN e.kind LIKE 'reversal_%' THEN origin.article ELSE e.article END AS article,
     e.comment,e.created_at AS createdAt,e.reverses_entry_id AS reversesEntryId,
+    e.edit_version AS editVersion,e.last_edited_at AS editedAt,
     EXISTS (SELECT 1 FROM dds_entries r WHERE r.reverses_entry_id=e.id) AS reversed
     FROM dds_entries e LEFT JOIN dds_entries origin ON origin.id=e.reverses_entry_id
     WHERE e.business_date >= ? AND e.business_date < ?
@@ -169,7 +173,8 @@ export async function readDdsMonth(db: D1Database, monthInput: unknown, actor: A
   const allNames = [...directory.map(item=>item.name), ...(grouped.results||[]).map(item=>item.category).filter(name=>!directory.some(dir=>dir.name===name))]
   const opening = Number(totals?.opening_balance||0), added = Number(totals?.month_added||0), spent=Number(totals?.month_spent||0)
   return {
-    ok: true, month, currentBalance: Number(totals?.current_balance||0),
+    ok: true, month, permissions: { canEdit: canManageDds(actor) },
+    currentBalance: Number(totals?.current_balance||0),
     openingBalance: opening, monthAdded: added, monthSpent: spent,
     closingBalance: opening+added-spent,
     categories: allNames.map(name => ({
@@ -181,4 +186,117 @@ export async function readDdsMonth(db: D1Database, monthInput: unknown, actor: A
     directory,
     entries: lines.results || [],
   }
+}
+
+export async function readDdsHistoryPage(
+  db: D1Database,
+  query: { beforeDate?: unknown; beforeId?: unknown; throughDate?: unknown },
+  actor: AuthUser | null,
+) {
+  checkRole(actor)
+  const through = text(query.throughDate)
+  if (through) validDate(through)
+  const beforeDate = text(query.beforeDate) || '9999-12-31'
+  const beforeId = query.beforeId === undefined ? 9_007_199_254_740_991 : Number(query.beforeId)
+  if (beforeDate !== '9999-12-31') validDate(beforeDate)
+  if (!Number.isSafeInteger(beforeId) || beforeId < 1) throw invalid('Неверная страница истории.')
+  const params: Array<string | number> = [beforeDate, beforeDate, beforeId]
+  let throughSql = ''
+  if (through) {
+    throughSql = ' AND e.business_date <= ?'
+    params.push(through)
+  }
+  const pageSize = 30
+  const result = await db.prepare(`SELECT e.id,e.kind,e.amount,e.business_date AS businessDate,
+    CASE WHEN e.kind LIKE 'reversal_%' THEN origin.category ELSE e.category END AS category,
+    CASE WHEN e.kind LIKE 'reversal_%' THEN origin.article ELSE e.article END AS article,
+    e.comment,e.created_at AS createdAt,e.reverses_entry_id AS reversesEntryId,
+    e.edit_version AS editVersion,e.last_edited_at AS editedAt,
+    EXISTS (SELECT 1 FROM dds_entries r WHERE r.reverses_entry_id=e.id) AS reversed
+    FROM dds_entries e LEFT JOIN dds_entries origin ON origin.id=e.reverses_entry_id
+    WHERE (e.business_date < ? OR (e.business_date = ? AND e.id < ?))${throughSql}
+    ORDER BY e.business_date DESC,e.id DESC LIMIT ?`).bind(...params,pageSize+1).all()
+  const entries = (result.results || []).slice(0,pageSize) as Array<{ id:number; businessDate:string }>
+  const last = entries[entries.length-1]
+  return {
+    ok:true, entries,
+    hasMore:(result.results || []).length > pageSize,
+    nextCursor:last ? { beforeDate:last.businessDate,beforeId:last.id } : null,
+  }
+}
+
+export async function readDdsEntryEdits(db:D1Database, entryId:number, actor:AuthUser|null) {
+  checkRole(actor,true)
+  if (!Number.isSafeInteger(entryId) || entryId<1) throw invalid('Неверная запись.')
+  const result=await db.prepare(`SELECT edit_version AS editVersion,
+    changed_at AS changedAt,changed_by_user_id AS changedByUserId,reason,
+    old_amount AS oldAmount,new_amount AS newAmount,
+    old_business_date AS oldBusinessDate,new_business_date AS newBusinessDate,
+    old_category AS oldCategory,new_category AS newCategory,
+    old_article AS oldArticle,new_article AS newArticle,
+    old_comment AS oldComment,new_comment AS newComment
+    FROM dds_entry_edits WHERE entry_id=? ORDER BY id DESC LIMIT 100`
+  ).bind(entryId).all()
+  return {ok:true,edits:result.results || []}
+}
+
+export async function editDdsEntry(
+  db:D1Database,
+  entryId:number,
+  input: DdsInput & { expectedVersion?:unknown; reason?:unknown },
+  actor:AuthUser|null,
+) {
+  checkRole(actor,true)
+  if (!Number.isSafeInteger(entryId) || entryId<1) throw invalid('Неверная запись.')
+  const id=requestId(input.requestId)
+  const old=await db.prepare(rowSelect.replace(' FROM dds_entries', ', edit_version, last_edit_request_id FROM dds_entries') + ` WHERE id=?`).bind(entryId).first<DdsRow & {
+    edit_version:number; last_edit_request_id:string|null
+  }>()
+  if (!old) throw invalid('Запись не найдена.',404)
+  if (old.last_edit_request_id===id) return {ok:true,id:entryId,alreadySaved:true}
+  const pastRequest=await db.prepare(
+    'SELECT entry_id FROM dds_entry_edits WHERE edit_request_id=? LIMIT 1'
+  ).bind(id).first<{entry_id:number}>()
+  if (pastRequest) {
+    if (pastRequest.entry_id!==entryId) throw invalid('Этот номер исправления уже использован.',409)
+    return {ok:true,id:entryId,alreadySaved:true}
+  }
+  if (old.kind!=='expense' && old.kind!=='funding') throw invalid('Записи отмены нельзя редактировать.',409)
+  const reverse=await db.prepare('SELECT id FROM dds_entries WHERE reverses_entry_id=? LIMIT 1')
+    .bind(entryId).first<{id:number}>()
+  if (reverse) throw invalid('Запись уже отменена. Редактирование недоступно.',409)
+  const version=Number(input.expectedVersion)
+  if (!Number.isSafeInteger(version) || version<0 || version!==Number(old.edit_version||0))
+    throw invalid('Запись изменилась. Обновите историю перед исправлением.',409)
+  const correctedAmount=amount(input.amount)
+  const correctedDate=validDate(input.businessDate)
+  const correctedCategory=old.kind==='expense'?text(input.category):''
+  const correctedArticle=old.kind==='expense'?text(input.article):''
+  if (old.kind==='expense' && (correctedCategory!==old.category || correctedArticle!==old.article)
+    && !(await activeDdsArticle(db,correctedCategory,correctedArticle)))
+    throw invalid('Выберите действующую категорию и статью ДДС.',409)
+  const comment=text(input.comment).slice(0,500)
+  if (old.kind==='expense' && (correctedCategory.startsWith('Зарплата') || correctedArticle==='Прочее') && !comment)
+    throw invalid('Для зарплаты и прочих расходов нужен комментарий.')
+  const reason=text(input.reason).slice(0,500)
+  if (reason.length<3) throw invalid('Укажите причину исправления не короче трёх символов.')
+  if (correctedAmount===Number(old.amount) && correctedDate===old.business_date
+    && correctedCategory===old.category && correctedArticle===old.article && comment===old.comment)
+    throw invalid('Данные не изменились.')
+  const result=await db.prepare(`UPDATE dds_entries
+    SET amount=?,business_date=?,category=?,article=?,comment=?,
+        edit_version=edit_version+1,last_edit_request_id=?,last_edited_by_user_id=?,
+        last_edited_at=?,last_edit_reason=?
+    WHERE id=? AND edit_version=? AND kind IN ('expense','funding')
+      AND NOT EXISTS (SELECT 1 FROM dds_entries r WHERE r.reverses_entry_id=dds_entries.id)`
+  ).bind(correctedAmount,correctedDate,correctedCategory,correctedArticle,comment,
+    id,actor!.id,new Date().toISOString(),reason,entryId,version).run().catch((error:unknown)=>{
+      const message=String(error)
+      if (message.includes('DDS_EDIT_') || /UNIQUE constraint/.test(message))
+        throw invalid('Запись была изменена или отменена. Обновите историю.',409)
+      throw error
+    })
+  if (Number(result.meta?.changes||0)!==1)
+    throw invalid('Запись была изменена или отменена. Обновите историю.',409)
+  return {ok:true,id:entryId,alreadySaved:false}
 }
