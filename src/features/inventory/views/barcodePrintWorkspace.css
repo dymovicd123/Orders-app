@@ -135,3 +135,29 @@
   .barcode-color-heading{flex-wrap:wrap;gap:6px}
   .barcode-color-selected{margin-left:0}
 }
+
+.barcode-arrival-success{display:inline-block;font-size:11px;font-weight:700;color:#15803d;margin-bottom:5px}
+.barcode-arrival-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.barcode-arrival-print{padding:0;gap:12px}
+.barcode-arrival-print .barcode-page-head{gap:14px}
+.barcode-arrival-print .barcode-page-head p{max-width:720px}
+.barcode-arrival-print .barcode-print-footer{position:static;box-shadow:none;background:var(--card-bg,#fff)}
+.barcode-arrival-rows{border:1px solid var(--line,#dce3e8);border-radius:12px;overflow-y:auto;max-height:380px;background:var(--card-bg,#fff)}
+.barcode-arrival-row{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(145px,.8fr) 100px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line,#e6e9ee)}
+.barcode-arrival-row:last-child{border-bottom:0}
+.barcode-arrival-identity{display:grid;gap:4px;min-width:0}
+.barcode-arrival-identity strong{font-size:13px;overflow-wrap:anywhere}
+.barcode-arrival-identity span,.barcode-arrival-actual small{font-size:11px;line-height:1.4;color:var(--muted,#677386);overflow-wrap:anywhere}
+.barcode-arrival-actual{display:grid;gap:5px;font-size:12px}
+.barcode-arrival-quantity{display:grid;gap:5px;justify-items:center;font-size:11px;font-weight:600;color:var(--muted,#677386)}
+.barcode-arrival-quantity input{height:37px;width:83px;max-width:100%;padding:0 8px;border:1px solid var(--line,#cdd5dc);border-radius:8px;background:var(--input-bg,#fff);color:var(--text,#172331);font-size:15px;font-weight:700;text-align:center}
+.barcode-arrival-quantity input::placeholder{color:var(--muted,#9ca9b9);font-weight:400}
+.barcode-arrival-quantity input:focus{border-color:#658cba;outline:2px solid rgba(42,110,179,.2);outline-offset:1px}
+@media(max-width:620px){
+ .barcode-arrival-print .barcode-page-head{align-items:flex-start;flex-wrap:wrap}
+ .barcode-arrival-row{grid-template-columns:minmax(0,1fr) 94px;grid-template-areas:'identity input' 'actual input';gap:7px;padding:10px}
+ .barcode-arrival-identity{grid-area:identity}
+ .barcode-arrival-actual{grid-area:actual}
+ .barcode-arrival-quantity{grid-area:input}
+ .barcode-arrival-quantity input{width:88px}
+}
