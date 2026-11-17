@@ -1459,6 +1459,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         const printable = stocktakeFoundSkuPrintReceipt(result.session)
         setStocktakePrintSessionId(printable ? result.session.id : null)
         setStocktakePrintFormOpen(false)
+        if (printable) window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>('[data-stocktake-print-choice]')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        }))
       } else {
         setStocktakeSession(null)
         setStocktakeFacts({})
