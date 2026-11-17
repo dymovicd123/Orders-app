@@ -333,15 +333,9 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         {refreshing ? 'Обновляю…' : 'Обновить остатки'}
       </button>
     </div>
-    <div className="barcode-workflow-hint">
-      <strong>Как распечатать</strong>
-      <span>1. Найдите товар</span><span>2. Введите количество рядом с нужными размерами</span>
-      <span>3. Нажмите «Открыть печать» внизу</span>
-    </div>
     <p className="barcode-workflow-note">
-      Показано физическое количество по системе, включая зарезервированные вещи.
-      Один вариант имеет один общий код — даже если печатаете несколько копий.
-      Печать не изменяет остатки.
+      Модель → цвет и размер → количество → печать. Остатки служат ориентиром,
+      а не ограничением печати. Все копии одного варианта имеют одинаковый код.
     </p>
     {error ? <p className="barcode-workspace-error" role="alert">{error}</p> : null}
     {refreshing ? <p className="barcode-workspace-status" role="status">Загружаю актуальный каталог и остатки обеих точек…</p> : null}
@@ -352,7 +346,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         <div className="barcode-models">
           <label className="barcode-model-search"><span>Поиск товара</span>
             <input value={search} onChange={event => setSearch(event.target.value)}
-              type="search" placeholder="Название, цвет или размер…" autoComplete="off"/>
+              type="search" placeholder="Название модели…" autoComplete="off"/>
           </label>
           <label className="barcode-only-stock">
             <input type="checkbox" checked={onlyStocked} onChange={event => setOnlyStocked(event.target.checked)}/>
@@ -362,7 +356,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
           <div className="barcode-model-list" role="list" aria-label="Модели товаров">
             {products.map(row => <button type="button" key={row.product.id} role="listitem"
               className={'barcode-model-button' + (selected?.product.id === row.product.id ? ' is-active' : '')}
-              onClick={() => setSelectedProductId(row.product.id)}>
+              onClick={() => chooseProduct(row.product.id)}>
               <strong>{row.product.name}</strong>
               <span>{row.variants.length} вариантов · всего {row.stockTotal} шт.</span>
             </button>)}
@@ -373,41 +367,90 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         </div>
         <div className="barcode-variants">
           {selected ? <>
-            <div className="barcode-variants-head">
-              <div><span className="barcode-section-kicker">Выбранная модель</span>
+            <div className="barcode-variants-head barcode-compact-head">
+              <div><span className="barcode-section-kicker">Модель</span>
                 <h4>{selected.product.name}</h4>
-                <p>Введите, сколько копий этикетки нужно напечатать для каждого варианта.</p>
+                <p>{choices.length} вариантов · физический остаток: {selected.stockTotal} шт.</p>
               </div>
             </div>
-            <div className="barcode-variant-table-head" aria-hidden="true">
-              <span>Цвет, размер и исполнение</span><span>Физический остаток</span><span>Этикеток</span>
+            <div className="barcode-variant-filters">
+              <label className="barcode-variant-filter">
+                <span>Цвет</span>
+                <select value={colorFilter} onChange={event => setColorFilter(event.target.value)}>
+                  <option value="">Все цвета</option>
+                  {availableColors.map(color => <option value={color} key={color}>{color}</option>)}
+                </select>
+              </label>
+              <label className="barcode-variant-filter">
+                <span>Размер</span>
+                <select value={sizeFilter} onChange={event => setSizeFilter(event.target.value)}>
+                  <option value="">Все размеры</option>
+                  {availableSizes.map(size => <option value={size} key={size}>{size}</option>)}
+                </select>
+              </label>
+              <label className="barcode-variant-filter barcode-variant-filter-search">
+                <span>Уточнить исполнение</span>
+                <input type="search" autoComplete="off" value={variantQuery}
+                  placeholder="Пол, материал, длина…"
+                  onChange={event => setVariantQuery(event.target.value)}/>
+              </label>
             </div>
-            <div className="barcode-variant-list">
-              {visibleVariants.map(variant => {
-                const balance = balances.values.get(variant.id) || { warehouse: 0, boutique: 0 }
-                const physical = balance.warehouse + balance.boutique
-                return <div className="barcode-variant-row" key={variant.id}>
-                  <div className="barcode-variant-name">
-                    <strong>{variant.color || 'Без цвета'} · {variant.sizeLabel || 'Без размера'}</strong>
-                    <small>{[variant.gender, visibleAttribute(variant.material), visibleAttribute(variant.length)]
-                      .filter(Boolean).join(' · ') || 'Основное исполнение'}</small>
-                  </div>
-                  <div className="barcode-variant-stocks">
-                    <span>Склад <strong>{balance.warehouse}</strong></span>
-                    <span>Бутик <strong>{balance.boutique}</strong></span>
-                    <small>Всего {physical} шт.</small>
-                  </div>
-                  <label className="barcode-variant-input">
-                    <span className="sr-only">Этикеток для {selected.product.name} · {displayLabel(variant)}</span>
-                    <input type="number" min="0" max={MAX_LABELS} step="1"
-                      inputMode="numeric" value={counts[variant.id] || 0}
-                      onChange={event => updateCount(variant.id, event.target.value)} disabled={printing}
-                      aria-label={'Количество этикеток: ' + selected.product.name + ' · ' + displayLabel(variant)}/>
-                    <small>копий</small>
-                  </label>
-                </div>
+            <div className="barcode-variant-tools">
+              <span>Показано {visibleVariants.length} из {choices.length} вариантов</span>
+              <button className="secondary compact" type="button" disabled={!visibleVariants.length || printing}
+                onClick={useVisibleStock} title="Подставить физический остаток для показанных вариантов; потом любое число можно изменить">
+                Заполнить количество по остатку
+              </button>
+            </div>
+            <div className="barcode-color-groups">
+              {colorGroups.map((group, index) => {
+                const expanded = Boolean(colorFilter || sizeFilter || variantQuery.trim()) ||
+                  (openedColors[group.key] ?? index === 0)
+                return <section key={group.key} className="barcode-color-group">
+                  <button type="button" className="barcode-color-heading"
+                    aria-expanded={expanded} onClick={() => {
+                      setOpenedColors(current => ({ ...current, [group.key]: !expanded }))
+                    }}>
+                    <span className="barcode-color-chevron" aria-hidden="true">{expanded ? '⌄' : '›'}</span>
+                    <strong>{group.color}</strong>
+                    <small>{group.variants.length} вар. · в наличии {group.physical} шт.</small>
+                    {group.marked > 0 ? <span className="barcode-color-selected">Выбрано {group.marked}</span> : null}
+                  </button>
+                  {expanded ? <div className="barcode-color-items">
+                    {group.variants.map(variant => {
+                      const balance = balances.values.get(variant.id) || { warehouse: 0, boutique: 0 }
+                      const physical = balance.warehouse + balance.boutique
+                      const other = [variant.gender, visibleAttribute(variant.material),
+                        visibleAttribute(variant.length)].filter(Boolean).join(' · ')
+                      return <div className={'barcode-variant-row' + ((counts[variant.id] || 0) ? ' has-selection' : '')}
+                        key={variant.id}>
+                        <div className="barcode-variant-name">
+                          <strong>{variant.sizeLabel ? 'Размер ' + variant.sizeLabel : 'Без размера'}</strong>
+                          {other ? <small title={other}>{other}</small> : null}
+                        </div>
+                        <div className="barcode-variant-stocks">
+                          <span><small>Склад</small> <strong>{balance.warehouse}</strong></span>
+                          <span><small>Бутик</small> <strong>{balance.boutique}</strong></span>
+                          <small>Всего {physical} шт.</small>
+                        </div>
+                        <label className="barcode-variant-input">
+                          <span className="barcode-count-label">Этикеток</span>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0"
+                            autoComplete="off" value={quantityDrafts[variant.id] ??
+                              (counts[variant.id] ? String(counts[variant.id]) : '')}
+                            onFocus={event => event.currentTarget.select()}
+                            onChange={event => updateCount(variant.id, event.target.value)}
+                            onBlur={() => finishCount(variant.id)} disabled={printing}
+                            aria-label={'Количество этикеток: ' + selected.product.name + ' · ' + displayLabel(variant)}/>
+                        </label>
+                      </div>
+                    })}
+                  </div> : null}
+                </section>
               })}
-              {!visibleVariants.length ? <p className="barcode-workspace-empty">Для модели нет вариантов с остатком.</p> : null}
+              {!visibleVariants.length ? <p className="barcode-workspace-empty">
+                Нет подходящих вариантов. Уберите фильтр цвета, размера или снимите ограничение по остатку.
+              </p> : null}
             </div>
           </> : <div className="barcode-variant-welcome">
             <strong>Выберите товар слева</strong><p>Здесь появятся его варианты и остатки по двум точкам.</p>
@@ -417,7 +460,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
       <div className="barcode-print-footer">
         <div className="barcode-print-summary">
           <strong>{totalLabels ? totalLabels + ' этикеток' : 'Пока ничего не выбрано'}</strong>
-          <span>{selectedPrint.length} вариантов · формат 58 × 35 мм</span>
+          <span>{selectedPrint.length} вариантов · до {MAX_LABELS} этикеток за раз</span>
           {selectedPrint.length ? <details className="barcode-selected-details">
             <summary>Что будет напечатано</summary>
             <ul>{selectedPrint.map(item => <li key={item.variant.id}>
@@ -425,13 +468,29 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
               <strong>{item.quantity} шт.</strong>
             </li>)}</ul>
           </details> : null}
-          {invalidStock ? <small className="barcode-print-warning">Обнаружены повторные строки остатка. Печать заблокирована до сверки.</small> : null}
-          {excess.length ? <small className="barcode-print-warning">
-            Количество этикеток превышает остаток для {excess.length} вариантов. Уменьшите количество.
+          {invalidStock ? <small className="barcode-print-warning">
+            Обнаружены повторные строки остатка. Уточните количество в складском учёте.
+          </small> : null}
+          {excess.length ? <small className="barcode-print-notice">
+            Для {excess.length} вариантов копий больше, чем числится на складе.
+            Печатать можно: это не приход и не изменение остатков.
           </small> : null}
           {totalLabels > MAX_LABELS ? <small className="barcode-print-warning">За один раз можно напечатать до {MAX_LABELS} этикеток.</small> : null}
         </div>
         <div className="barcode-print-actions">
+          <fieldset className="barcode-print-modes" disabled={printing}>
+            <legend>Как будете печатать?</legend>
+            <label className={printMode === 'a4' ? 'is-selected' : ''}>
+              <input type="radio" name="barcode-paper-mode" checked={printMode === 'a4'}
+                onChange={() => setPrintMode('a4')}/>
+              <span><strong>A4</strong><small>До 21 этикетки на листе</small></span>
+            </label>
+            <label className={printMode === 'thermal' ? 'is-selected' : ''}>
+              <input type="radio" name="barcode-paper-mode" checked={printMode === 'thermal'}
+                onChange={() => setPrintMode('thermal')}/>
+              <span><strong>Принтер этикеток</strong><small>Лента 58 × 35 мм</small></span>
+            </label>
+          </fieldset>
           {totalLabels > 0 ? <button type="button" className="secondary compact"
             onClick={() => { setCounts({}); setNotice('Выбор очищен.') }} disabled={printing}>Очистить выбор</button> : null}
           <button type="button" className="primary barcode-print-main-action" disabled={!canPrint}
