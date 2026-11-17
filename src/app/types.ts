@@ -83,6 +83,8 @@ export type ReturnHistoryItem = {
   physicalTracking?: boolean
   physicalReceivedAt?: string | null
   isWorkshop?: boolean
+  currentVariantId?: number | null
+  lifecycleVariantId?: number | null
   lifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   pendingReason?: string | null
 }
@@ -841,6 +843,8 @@ export type ExchangeHistoryEntry = {
   oldPhysicalReceivedAt?: string | null
   oldWasNotIssued?: boolean
   oldIsWorkshop?: boolean
+  oldCurrentVariantId?: number | null
+  oldLifecycleVariantId?: number | null
   oldLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   newLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   financialAction: 'none' | 'extra_payment' | 'refund' | string
