@@ -17,12 +17,13 @@ type ScanAttempt = { code: string; requestId: string; origin: 'camera' | 'usb' |
 const VALID_BARCODE = /^OC(?:S|U)1-[0-9A-Z-]+$/
 
 export function StocktakeBarcodeScanner({
-  sessionId, disabled, onScanned,
+  sessionId, disabled, onScanned, onPendingChange,
 }: {
   sessionId: string
   source: 'warehouse' | 'boutique'
   disabled: boolean
   onScanned: (result: StocktakeScanResponse) => Promise<void> | void
+  onPendingChange?: (pending: boolean) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -33,6 +34,7 @@ export function StocktakeBarcodeScanner({
   const activeRef = useRef(true)
   const disabledRef = useRef(disabled)
   const onScannedRef = useRef(onScanned)
+  const onPendingRef = useRef(onPendingChange)
   const processRef = useRef<(code: string, origin: ScanAttempt['origin']) => void>(() => {})
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
@@ -46,6 +48,7 @@ export function StocktakeBarcodeScanner({
   const [error, setError] = useState('')
   disabledRef.current = disabled
   onScannedRef.current = onScanned
+  onPendingRef.current = onPendingChange
 
   useEffect(() => {
     activeRef.current = true
@@ -68,12 +71,14 @@ export function StocktakeBarcodeScanner({
     return () => {
       activeRef.current = false
       queueRef.current = []
+      onPendingRef.current?.(false)
     }
   }, [sessionId])
 
   async function drainQueue() {
     if (busyRef.current || disabledRef.current) return
     busyRef.current = true
+    onPendingRef.current?.(true)
     if (activeRef.current) setBusy(true)
     try {
       while (queueRef.current.length && !disabledRef.current) {
@@ -118,6 +123,7 @@ export function StocktakeBarcodeScanner({
       }
     } finally {
       busyRef.current = false
+      if (queueRef.current.length === 0) onPendingRef.current?.(false)
       if (activeRef.current) setBusy(false)
       if (queueRef.current.length && !disabledRef.current && activeRef.current) void drainQueue()
     }
