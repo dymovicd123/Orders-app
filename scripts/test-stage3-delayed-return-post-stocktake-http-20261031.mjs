@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -133,11 +134,14 @@ const createAndShip=async key=>{
  assert.equal(s.status,200,'Shipment: '+JSON.stringify(s))
  return {orderId,itemId:line.id}
 }
+const retired=await http('POST','/api/returns',{requestId:'v1-blocked-test',orderId:1,amount:0,items:[]})
+assert.equal(retired.status,410)
+assert.equal(retired.data.code,'return_v1_retired')
 const makePending=async (orderId,itemId,key)=>{
- const r=await http('POST','/api/returns',{requestId:key,orderId,returnDate:'2026-10-31',amount:0,
+ const r=await createHistoricalReturn(db,{requestId:key,orderId,returnDate:'2026-10-31',amount:0,
    items:[{orderItemId:itemId,quantity:1,physicalState:'pending',restock:true}]})
- assert.equal(r.status,201,'Pending Return: '+JSON.stringify(r))
- const returnId=Number(r.data.returnId)
+ assert(r.returnId>0,'Historical pending Return fixture must be created')
+ const returnId=Number(r.returnId)
  const ri=sql.prepare('SELECT id,physical_tracking,physical_received_at,inventory_source,created_at FROM return_items WHERE return_id=?').get(returnId)
  assert(ri?.id)
  assert.equal(ri.physical_tracking,1)
