@@ -10,12 +10,14 @@ const stockCss = readFileSync('src/styles/193-unified-inventory-operations.css',
 const printCss = readFileSync('src/features/inventory/views/barcodePrintWorkspace.css','utf8')
 assert(section.includes('receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}'),
   'Printer must use actual canonical arrival receipt and current catalogue')
-assert(section.includes('onDismiss={() => setArrivalBarcodeReceipt(null)}') &&
+assert(section.includes('onFinishArrivalResult: () => setArrivalBarcodeReceipt(null)') &&
   section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt)'),
-  'Skipping print must not re-execute arrival movement')
-assert(section.includes('setArrivalBarcodeReceipt(null)') &&
-  section.includes('arrivalPrintRef.current?.scrollIntoView'),
-  'Existing arrival receipt must be cleared when saving another operation, and new print offer must be brought into view')
+  'Finishing the success step must never repeat or reverse the saved arrival')
+const operations = readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
+assert(operations.includes("setStage('complete')") &&
+  operations.includes('resultHeadingRef.current?.scrollIntoView') &&
+  !section.includes('inventory-post-arrival-labels'),
+  'Success step must replace the original review instead of appending an easily missed form')
 assert(!section.includes('<UnitBarcodePreparation'), 'Individual unit label process must be removed from the arrival flow')
 assert(printer.includes('for (const item of receipt?.items || [])') &&
   printer.includes('initial[id] = (initial[id] || 0) + quantity'),
