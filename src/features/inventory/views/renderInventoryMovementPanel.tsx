@@ -82,10 +82,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
         } else if(mode==='manual_set')ctx.setInventoryCorrectionValue(row,value)
         else ctx.setInventoryVariantOperationQuantity(row,Number(value||0))
       }}
-      onSave={codes=>{
-        ctx.clearArrivalBarcodeReady()
-        return ctx.saveInventoryMovement(codes, ctx.onArrivalBarcodeReady)
-      }}
+      onSave={codes=>ctx.saveInventoryMovement(codes)}
       onClear={()=>{
         ctx.clearInventoryMovementError()
         ctx.setInventoryDraft((current:any)=>({...current,items:[ctx.createEmptyInventoryItem()],comment:''}))
