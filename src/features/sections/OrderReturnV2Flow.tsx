@@ -4,6 +4,7 @@ import {returnV2PreviewMode,type ReturnV2UiMode} from './returnV2UiMode'
 
 type Line={
  orderItemId:number;productName:string;sourceType:string;
+ gender:string;color:string;material:string;length:string;size:string;
  proposedAction:'physical_return_pending'|'cancel_unshipped_reservation'|'cancel_unresolved_reservation'|'cancel_workshop_obligation'|'cancel_unreserved_obligation'|'needs_review';
  status:string;message:string;requiresReview:boolean;availableQuantity:number;
  selectedQuantity:number;soldUnitPrice:number;selectedSaleValue:number
@@ -20,7 +21,6 @@ type Props={
  order:{id:number;external_id:string}|null;
  formatMoney:(n:number)=>string;
  SmartPickerInput:any;paymentMethods:any[];
- onMode:(orderId:number,mode:ReturnV2UiMode)=>void;
  onSaved:(saved:{returnId:number;cashRefund:number;remainingSale:number;receipt?:{receiptPending?:boolean}})=>void;
  onCancelled:()=>void;
  onBack:()=>void
@@ -33,6 +33,15 @@ const labels:Record<Intent,string>={
  boutique:'Уже получили — добавить в бутик',
  no_stock:'Уже получили — без добавления в остатки'
 }
+function returnV2Characteristics(line:Line):string {
+  const fields:[string,string][]=[
+    ['Пол',line.gender],['Цвет',line.color],['Материал',line.material],
+    ['Длина',line.length],['Размер/возраст',line.size],
+  ]
+  return fields.filter(([,value])=>String(value||'').trim())
+    .map(([label,value])=>`${label}: ${String(value).trim()}`).join(' · ')
+    ||'Характеристики не указаны'
+}
 const money=(n:unknown)=>Number.isFinite(Number(n))?Math.max(0,Math.trunc(Number(n))):0
 async function loadJson(res:Response){
  const payload=await res.json().catch(()=>({ok:false,message:'Сервер вернул некорректный ответ.'}))
@@ -41,7 +50,7 @@ async function loadJson(res:Response){
  return payload
 }
 export function OrderReturnV2Flow({
- order,formatMoney,SmartPickerInput,paymentMethods,onMode,onSaved,onCancelled,onBack
+ order,formatMoney,SmartPickerInput,paymentMethods,onSaved,onCancelled,onBack
 }:Props){
  const orderId=Number(order?.id||0)
  const [preview,setPreview]=useState<Preview|null>(null)
@@ -84,7 +93,6 @@ export function OrderReturnV2Flow({
    setFetching(true);setError('')
    if(!preview){
      setViewMode('checking')
-     onMode(id,'checking')
    }
    try{
      const response=await fetch(`/api/orders/${id}/returns/v2/preview`,{
@@ -93,14 +101,9 @@ export function OrderReturnV2Flow({
      const body=await response.json()
      if(signal?.aborted||loadedOrderRef.current!==id)return
      const nextMode=returnV2PreviewMode(body,response.ok)
-     if(nextMode==='error')throw new Error(String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
-     if(nextMode==='legacy'){
-       // Legacy mode is permitted ONLY when the server explicitly reports
-       // that Return V2 is disabled, never for an ineligible/malformed order.
-       setPreview(null);setViewMode('legacy');setEligible(false)
-       onMode(id,'legacy')
-       return
-     }
+     if(nextMode==='error')throw new Error(body?.enabled===false
+       ?'На сервере отключён Return V2. Оформление остановлено: старая форма не используется. Сообщите администратору.'
+       :String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
      const data=body as Preview
      setPreview(data)
      setUnknownResult(false)
@@ -108,7 +111,6 @@ export function OrderReturnV2Flow({
      setEligible(Boolean(data.eligible))
      // Every enabled order gets a visible version-aware result, including
      // review-only items. An unsafe fallback to V1 must never occur.
-     onMode(id,'v2')
      const selected:Record<number,number>={}
      const receipt:Record<number,Intent>={}
      for(const item of data.evidence.lines){
@@ -126,7 +128,6 @@ export function OrderReturnV2Flow({
      setError(e instanceof Error?e.message:'Проверка заказа недоступна.')
      setPreview(null);setViewMode('error');setEligible(false)
      // Failed previews must not silently expose a V1 write path.
-     onMode(id,'error')
    }finally{
      if(loadedOrderRef.current===id&&!signal?.aborted)setFetching(false)
    }
@@ -135,7 +136,7 @@ export function OrderReturnV2Flow({
    loadedOrderRef.current=orderId
    setCommitted(null);setUnknownResult(false);setPreview(null);setViewMode('checking')
    setEligible(false);setError('');setRefundMethod('');requestRef.current=''
-   if(!orderId){onMode(0,'checking');return}
+   if(!orderId)return
    const ac=new AbortController()
    void refresh(orderId,ac.signal)
    return ()=>ac.abort()
@@ -200,7 +201,7 @@ export function OrderReturnV2Flow({
      setUnknownResult(true)
    }finally{setBusy(false)}
  }
- if(!orderId||viewMode==='legacy')return null
+ if(!orderId)return null
  if(viewMode==='checking')return <section className="mini-panel debt-form-panel" aria-label="Проверка Return V2" aria-busy="true">
    <div className="mini-panel-head">
      <div><h3 data-return-form-title tabIndex={-1}>Проверка товаров и остатков</h3>
@@ -264,6 +265,7 @@ export function OrderReturnV2Flow({
            <span className="return-smart-check">{quantity>0?'✓':''}</span>
            <span className="return-smart-main">
              <strong>{line.productName}</strong>
+             <small className="return-smart-characteristics">{returnV2Characteristics(line)}</small>
              <span className={`return-v2-item-status ${shipped?'is-shipped':workshop?'is-workshop':'is-unissued'}`}>{line.status} · {line.sourceType==='boutique'?'Бутик':line.sourceType==='workshop'?'Цех':'Склад'}</span>
              <small>{line.availableQuantity} шт. · цена продажи {formatMoney(line.soldUnitPrice)} ₸/шт.</small>
            </span>
