@@ -1,5 +1,6 @@
 import type { InventoryRenderContext } from './types'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
+import { StocktakeBarcodeScanner } from './StocktakeBarcodeScanner'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'addStocktakeNewCombination'
@@ -28,6 +29,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openStocktakeFoundForPosition'
   | 'openStocktakeInlineColor'
   | 'openStocktakeInlineSize'
+  | 'onStocktakeBarcodeScan'
   | 'openStocktakeOrders'
   | 'openStocktakeReview'
   | 'persistStocktakeFact'
@@ -125,6 +127,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     openStocktakeFoundForPosition,
     openStocktakeInlineColor,
     openStocktakeInlineSize,
+    onStocktakeBarcodeScan,
     openStocktakeOrders,
     openStocktakeReview,
     persistStocktakeFact,
@@ -364,6 +367,12 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                         {stocktakeNotice ? <div className="stocktake-inline-notice">{stocktakeNotice}</div> : null}
     
+                        {!stocktakeReviewMode ? <StocktakeBarcodeScanner
+                          sessionId={stocktakeSession.id}
+                          disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0}
+                          onScanned={onStocktakeBarcodeScan}
+                        /> : null}
+
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>
                           <div className="stocktake-sticky-progress-main"><strong>Введено вручную {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled} — при завершении они сохранят системный остаток` : 'Все позиции заполнены. Следующий шаг — проверить результат.'}</span></div>
                           <div className="stocktake-sticky-progress-bar"><i style={{ width: `${stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0}%` }} /></div>

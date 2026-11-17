@@ -1166,6 +1166,25 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     }
   }
 
+  async function onStocktakeBarcodeScan(variantId: number) {
+    const sessionId = stocktakeSession?.id
+    if (!sessionId || !variantId) return
+    const latest = await loadInventoryStocktakeSession(sessionId)
+    if (!latest?.session || stocktakeSessionIdRef.current !== sessionId) return
+    adoptStocktakeSession(latest.session)
+    const target = (latest.session.items || []).find((item: any) => Number(item.variantId) === variantId)
+    if (target) {
+      const productKey = Number(target.productId || 0) > 0
+        ? `product:${target.productId}` : `name:${normalizeSuggestion(target.productName)}`
+      const keys = Array.from(new Set((latest.session.items || []).map((item: any) =>
+        Number(item.productId || 0) > 0
+          ? `product:${item.productId}` : `name:${normalizeSuggestion(item.productName)}`
+      )))
+      const index = keys.indexOf(productKey)
+      if (index >= 0) setStocktakeProductIndex(index)
+    }
+  }
+
   async function startStocktake() {
     if (stocktakeBusy) return
     const existing = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource)
@@ -2458,6 +2477,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openStocktakeInlineSize,
         openStocktakeOrders,
         openStocktakeReview,
+        onStocktakeBarcodeScan,
         persistStocktakeFact,
         printInventoryStocktakePdf,
         refreshCycleCountSuggestions,
