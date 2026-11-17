@@ -231,20 +231,25 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
 
   const print = async () => {
     if (!canPrint) return
-    const target = window.open('', '_blank', 'width=780,height=650')
+    const target = window.open('', '_blank', printMode === 'a4' ? 'width=1080,height=850' : 'width=680,height=650')
     if (!target) {
       setError('Браузер заблокировал печать. Разрешите всплывающие окна для Orders-app.')
       return
     }
-    target.document.body.innerHTML = '<p style="font:14px Arial,sans-serif;padding:18px">Проверяю варианты перед печатью…</p>'
+    target.document.body.innerHTML = '<p style="font:14px Arial,sans-serif;padding:18px">Проверяю ' +
+      selectedPrint.length + ' вариантов перед печатью…</p>'
     setPrinting(true)
     setError('')
     setNotice('')
     try {
       const current = await onReload()
       if (!current) throw new Error('Не удалось обновить остатки перед печатью. Попробуйте ещё раз.')
-      const verified: VerifiedPrintItem[] = []
-      for (const item of selectedPrint) {
+      const verified: VerifiedPrintItem[] = new Array(selectedPrint.length)
+      let nextIndex = 0
+      const verifyOne = async () => {
+        while (nextIndex < selectedPrint.length) {
+          const itemIndex = nextIndex++
+          const item = selectedPrint[itemIndex]
         const latestVariant = current.catalog.variants.find(variant => variant.id === item.variant.id)
         const latestProduct = current.catalog.products.find(product => product.id === item.variant.productId)
         if (!latestVariant?.isActive || !latestProduct?.isActive ||
@@ -267,8 +272,10 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
           textOf(record.size) !== textOf(item.variant.sizeLabel)) {
           throw new Error('Один из вариантов изменён или удалён. Обновите список перед печатью.')
         }
-        verified.push({ ...item, barcode: record.barcode, productName: record.productName || item.variant.productName })
+          verified[itemIndex] = { ...item, barcode: record.barcode, productName: record.productName || item.variant.productName }
+        }
       }
+      await Promise.all(Array.from({ length: Math.min(6, selectedPrint.length) }, () => verifyOne()))
       if (!target.closed) {
         renderPrintSheet(target, verified, printMode)
         setNotice('Макет открыт в новой вкладке. Нажмите «Печатать / Сохранить в PDF».')
