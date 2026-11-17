@@ -161,6 +161,9 @@ export function createInventoryMovementActions({
       source: 'warehouse' | 'boutique'
       items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
     }) => void,
+    onArrivalCompleted?: (result: {
+      operationId: string; source: 'warehouse' | 'boutique'; variants: number; units: number
+    }) => void,
   ) {
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
@@ -332,6 +335,14 @@ export function createInventoryMovementActions({
           if (labelItems.length === arrivalReceipt.items.length && labelItems.length) {
             onArrivalBarcodeReady({ operationId: result.operationId || '', source: arrivalReceipt.source, items: labelItems })
           }
+        }
+        if (inventoryDraft.movementType === 'arrival' && onArrivalCompleted) {
+          onArrivalCompleted({
+            operationId: result.operationId || '',
+            source: inventoryDraft.source === 'boutique' ? 'boutique' : 'warehouse',
+            variants: Math.max(0, Number(result.applied || cleanItems.length)),
+            units: cleanItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0),
+          })
         }
         const arrivalVerificationWarning = inventoryDraft.movementType === 'arrival'
           && !verifiedInStockList
