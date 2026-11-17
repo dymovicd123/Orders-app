@@ -17,6 +17,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Real SQLite physical barcode operations test
         run: node scripts/test-barcode-operation-unit-20261117.mjs
+      - name: Stock correction barcode lookup never mutates on scan
+        run: node scripts/test-barcode-correction-lookup-20261117.mjs
       - name: Existing warehouse operations, barcode and stocktake tests
         run: |
           node scripts/test-w6-unified-operations.mjs
