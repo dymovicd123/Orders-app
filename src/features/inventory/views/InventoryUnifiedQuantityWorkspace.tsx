@@ -27,7 +27,9 @@ type Props = {
   onReason: (value: string) => void
   onQuantity: (row: Row, value: string) => void
   onSave: (unitBarcodes?: string[]) => Promise<unknown>; onClear: () => void; onRefresh: () => void
-  arrivalPrintAvailable?: boolean; arrivalLabelPrinter?: ReactNode; onFinishArrivalResult?: () => void
+  arrivalPrintAvailable?: boolean
+  arrivalCompletion?: { operationId: string; source: 'warehouse'|'boutique'; variants: number; units: number } | null
+  arrivalLabelPrinter?: ReactNode; onFinishArrivalResult?: () => void
 }
 const names = {
   arrival: { title: 'Приход', action: 'Оформить приход', input: 'Пришло', detail: 'Введите количество поступивших вещей: оно прибавится к остатку.' },
@@ -97,6 +99,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const [showArrivalPrint, setShowArrivalPrint] = useState(false)
   const [lastArrival, setLastArrival] = useState<{ source: 'warehouse' | 'boutique'; variants: number; units: number } | null>(null)
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const observedArrivalCompletion = useRef<string | null>(null)
   const [scanCode, setScanCode] = useState('')
   type ScannedUnit = { code: string; unitId: string; variantId: number; name: string }
   const [scannedUnits, setScannedUnits] = useState<ScannedUnit[]>([])
@@ -123,6 +126,19 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
   const filledGroup = (g: Group) => g.rows.filter(r => movementInput(mode,draftMap.get(String(r.variantId))) !== '').length
   const ready = changed > 0
+  useEffect(() => {
+    const completed = p.arrivalCompletion
+    if (mode !== 'arrival' || !completed?.operationId ||
+      observedArrivalCompletion.current === completed.operationId) return
+    observedArrivalCompletion.current = completed.operationId
+    setLastArrival({
+      source: completed.source,
+      variants: completed.variants,
+      units: completed.units,
+    })
+    setShowArrivalPrint(false)
+    setStage('complete')
+  }, [mode, p.arrivalCompletion?.operationId])
   useEffect(() => {
     if (mode !== 'arrival' || stage !== 'complete') return
     const frame = window.requestAnimationFrame(() => {
@@ -264,7 +280,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         <span className="stocktake-step-kicker">Операция завершена</span>
         <h3 tabIndex={-1} ref={resultHeadingRef}>Приход сохранён</h3>
         <p>{sourceName(lastArrival?.source || source)} · {lastArrival?.variants || 0} вариантов ·
-          {' '}{lastArrival?.units || 0} шт. Остатки уже обновлены. Повторно оформлять приход не нужно.</p>
+          {' '}{lastArrival?.units || 0} шт. Операция записана; повторно оформлять приход не нужно.</p>
       </div>
     </div>
     {!showArrivalPrint ? <>
