@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { UnitBarcodePreparation } from './UnitBarcodePreparation'
 import type { ExchangeHistoryEntry, ReturnHistoryEntry } from '../../../app/types'
-import { pendingReturnPhysicalItems, pendingExchangePhysicalItems, type PendingPhysicalItem, type ReceivingInbox, type ReceivingKind, type ReceivingDestination, type ReceivePhysicalItem } from './warehouseReceivingModel'
+import { pendingReturnPhysicalItems, pendingExchangePhysicalItems, matchingReceivingItems, type ReceivingBarcodeIdentity, type PendingPhysicalItem, type ReceivingInbox, type ReceivingKind, type ReceivingDestination, type ReceivePhysicalItem } from './warehouseReceivingModel'
+import { lookupReceivingBarcode } from './warehouseReceivingBarcodeClient'
 import './warehouseReceiving.css'
 
 type Props = {
@@ -20,22 +21,52 @@ export function WarehouseReceivingWorkspace({
   const [destinations, setDestinations] = useState<Record<string, ReceivingDestination>>({})
   const [receivingKey, setReceivingKey] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('')
+  const [barcodeInput, setBarcodeInput] = useState('')
+  const [barcodeMatch, setBarcodeMatch] = useState<ReceivingBarcodeIdentity | null>(null)
+  const [barcodeError, setBarcodeError] = useState('')
+  const [barcodeBusy, setBarcodeBusy] = useState(false)
+  const barcodeBusyRef = useRef(false)
   const [receivedForLabels, setReceivedForLabels] = useState<{
     key: string; variantId: number; productName: string; variantLabel: string;
     source: 'warehouse' | 'boutique'; quantity: number
   } | null>(null)
 
   const inbox = mode === 'return' ? returnInbox : exchangeInbox
-  const items = mode === 'return'
-    ? pendingReturnPhysicalItems(returnInbox.rows)
-    : pendingExchangePhysicalItems(exchangeInbox.rows)
-  const loadedQuantity = items.reduce((sum, item) => sum + Math.max(0, item.quantity), 0)
+  const returnItems = pendingReturnPhysicalItems(returnInbox.rows)
+  const exchangeItems = pendingExchangePhysicalItems(exchangeInbox.rows)
+  const allItems = mode === 'return' ? returnItems : exchangeItems
+  const returnMatches = barcodeMatch ? matchingReceivingItems(returnItems,barcodeMatch) : returnItems
+  const exchangeMatches = barcodeMatch ? matchingReceivingItems(exchangeItems,barcodeMatch) : exchangeItems
+  const visibleItems = mode === 'return' ? returnMatches : exchangeMatches
+  const loadedQuantity = allItems.reduce((sum, item) => sum + Math.max(0, item.quantity), 0)
   const total = Math.max(0, Number(returnInbox.pendingQuantity || 0))
     + Math.max(0, Number(exchangeInbox.pendingQuantity || 0))
   const isRefreshing = returnInbox.busy || exchangeInbox.busy
 
   const refreshAll = async () => {
     await Promise.allSettled([loadReturns(false), loadExchanges(false)])
+  }
+  const scan = async () => {
+    if (barcodeBusyRef.current || receivingKey || !barcodeInput.trim()) return
+    barcodeBusyRef.current=true
+    setBarcodeBusy(true)
+    setBarcodeError('')
+    setBarcodeMatch(null)
+    try {
+      const match=await lookupReceivingBarcode(barcodeInput)
+      setBarcodeMatch(match)
+      setBarcodeInput('')
+    } catch (error) {
+      setBarcodeError(error instanceof Error ? error.message : 'Код не распознан.')
+    } finally {
+      barcodeBusyRef.current=false
+      setBarcodeBusy(false)
+    }
+  }
+  const clearBarcodeSearch = () => {
+    setBarcodeMatch(null)
+    setBarcodeError('')
+    setBarcodeInput('')
   }
   const receive = async (item: PendingPhysicalItem) => {
     if (receivingKey || !item.operationItemId || item.quantity <= 0) return
@@ -58,6 +89,7 @@ export function WarehouseReceivingWorkspace({
       if (accepted) {
         setFeedback(`Приёмка «${item.productName}» зарегистрирована. Очередь обновлена.`)
         await refreshAll()
+        clearBarcodeSearch()
       } else {
         setFeedback('Приёмка не подтверждена. Проверьте сообщение об ошибке и повторите после уточнения.')
       }
@@ -100,6 +132,34 @@ export function WarehouseReceivingWorkspace({
           <p>Подтверждайте получение только после фактического поступления. До подтверждения остаток не увеличивается.
             Для каждой вещи укажите, куда она поступила.</p>
         </div>
+        <section className="warehouse-receiving-barcode" aria-label="Поиск ожидающей приёмки по штрихкоду">
+          <div className="warehouse-receiving-barcode-intro">
+            <strong>Найти ожидающий товар по штрихкоду</strong>
+            <p>Можно сканировать общий SKU или индивидуальную метку выбывшей вещи. Без штрихкода выбирайте приёмку в списке ниже.</p>
+          </div>
+          <form className="warehouse-receiving-barcode-form" onSubmit={event=>{event.preventDefault();void scan()}}>
+            <input aria-label="Штрихкод ожидаемого товара" autoComplete="off" spellCheck={false}
+              placeholder="Сканируйте или введите код и нажмите Enter"
+              value={barcodeInput} onChange={event=>setBarcodeInput(event.target.value)}
+              disabled={barcodeBusy || receivingKey !== null}/>
+            <button type="submit" className="secondary compact" disabled={barcodeBusy || receivingKey !== null || !barcodeInput.trim()}>
+              {barcodeBusy ? 'Ищу…' : 'Найти'}
+            </button>
+            {barcodeMatch || barcodeError ? <button type="button" className="secondary compact" onClick={clearBarcodeSearch}
+              disabled={barcodeBusy || receivingKey !== null}>Показать все</button> : null}
+          </form>
+          {barcodeError ? <p className="warehouse-receiving-error" role="alert">{barcodeError}</p> : null}
+          {barcodeMatch ? <div className="warehouse-receiving-barcode-result" role="status">
+            <strong>{barcodeMatch.productName} · {barcodeMatch.kind==='sku'?'общий SKU':'индивидуальная метка'} · вариант №{barcodeMatch.variantId}</strong>
+            <span>Совпадений среди загруженных: возвратов {returnMatches.length}, обменов {exchangeMatches.length}.</span>
+            <div className="warehouse-receiving-barcode-switches">
+              <button type="button" className={mode==='return'?'is-active':''} onClick={()=>onModeChange('return')}>Возвраты · {returnMatches.length}</button>
+              <button type="button" className={mode==='exchange'?'is-active':''} onClick={()=>onModeChange('exchange')}>Обмены · {exchangeMatches.length}</button>
+            </div>
+            <small>Это только поиск возможных позиций. Штрихкод не подтверждает принадлежность вещи к заказу и не регистрирует физическую метку в новом остатке. Сверьте номер заказа, клиента, характеристики и количество перед приёмкой.</small>
+            {(returnInbox.hasMore || exchangeInbox.hasMore) ? <small>Очередь загружена не полностью: при отсутствии результата загрузите следующие позиции или найдите заказ вручную.</small> : null}
+          </div> : null}
+        </section>
         {feedback ? <p className="warehouse-receiving-feedback" role="status">{feedback}</p> : null}
         {receivedForLabels ? <div className="warehouse-receiving-label-next" role="region" aria-label="Маркировка после приёмки">
           <div><strong>Товар принят в остаток</strong>
@@ -120,8 +180,8 @@ export function WarehouseReceivingWorkspace({
           </button>
         </div> : null}
         {inbox.busy && !inbox.rows.length ? <div className="warehouse-receiving-loading" role="status">Загружаю ожидающие товары…</div> : null}
-        {items.length ? <div className="warehouse-receiving-list">
-          {items.map(item => {
+        {visibleItems.length ? <div className="warehouse-receiving-list">
+          {visibleItems.map(item => {
             const destination = destinations[item.key] || item.defaultDestination
             const busy = receivingKey !== null || returnInbox.busy || exchangeInbox.busy
             return <article key={item.key} className="warehouse-receiving-card">
@@ -159,10 +219,12 @@ export function WarehouseReceivingWorkspace({
               </div>
             </article>
           })}
-        </div> : !inbox.busy && !inbox.error && inbox.pendingQuantity === 0
+        </div> : barcodeMatch
+          ? <div className="warehouse-receiving-empty">Среди загруженных позиций {mode==='return'?'возвратов':'обменов'} нет подтверждённого совпадения SKU и характеристик. Проверьте другую вкладку, загрузите следующую страницу или выберите товар вручную.</div>
+          : !inbox.busy && !inbox.error && inbox.pendingQuantity === 0
           ? <div className="warehouse-receiving-empty">Сейчас нет вещей, ожидающих приёмки по {mode === 'return' ? 'возвратам' : 'обменам'}.</div>
           : null}
-        {!items.length && !inbox.busy && !inbox.error && inbox.pendingQuantity > 0
+        {!allItems.length && !barcodeMatch && !inbox.busy && !inbox.error && inbox.pendingQuantity > 0
           ? <div className="warehouse-receiving-empty">Позиции есть в очереди. Загрузите следующую страницу.</div> : null}
         {inbox.hasMore && loadedQuantity < Number(inbox.pendingQuantity || 0)
           ? <button type="button" className="secondary warehouse-receiving-more"
