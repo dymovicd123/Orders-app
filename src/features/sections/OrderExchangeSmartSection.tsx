@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExchangeReplacementSelector } from '../orders/ExchangeReplacementSelector'
 import {pickerKey} from '../orders/MainOrderSourcePicker'
 import '../../styles/193-exchange-set-v2.css'
+import '../inventory/views/warehouseReceiving.css'
 
 type SectionContext = Record<string, any>
 
@@ -42,6 +43,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     setExchangeDraft,
     setExchangeHistoryFilters,
     setOrderPanel,
+    canManageWarehouse,
+    openWarehouseReceiving,
     SmartPickerInput,
     sourceLabel,
     suggestionValues,
@@ -57,8 +60,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     return () => cancelAnimationFrame(frame)
   }, [exchangeSelectedOrder?.id, exchangeFormRef])
 
-  const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
-  const [receivingExchangeId, setReceivingExchangeId] = useState<number | null>(null)
   const [activeReplacementKey,setActiveReplacementKey]=useState<string|null>(null)
   const replacementPickerRef=useRef<HTMLDivElement>(null)
   const replacementIndex=(exchangeDraft.newItems||[]).findIndex((entry:any)=>entry.draftKey===activeReplacementKey)
@@ -186,61 +187,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                     ? 'Укажите другой второй способ возврата и сумму меньше всего возврата.'
                     : ''
 
-  const pendingGroups = useMemo(() => exchangePendingInbox.rows.map((entry: any) => {
-    const items = entry.isSetExchange
-      ? (entry.oldItems || []).filter((item: any) => entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt && item.id)
-      : entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
-        ? [{
-            id: entry.oldOperationItemId,
-            productName: entry.oldProductName,
-            quantity: entry.oldQuantity,
-            gender: entry.oldGender,
-            color: entry.oldColor,
-            material: entry.oldMaterial,
-            length: entry.oldLength,
-            size: entry.oldSize,
-            isWorkshop: entry.oldIsWorkshop,
-            sourceType: entry.oldSourceType,
-          }]
-        : []
-    return { entry, items }
-  }).filter((group: any) => group.items.length), [exchangePendingInbox.rows])
-
-  const loadedPendingQuantity = pendingGroups.reduce((sum: number, group: any) =>
-    sum + group.items.reduce((itemSum: number, item: any) => itemSum + Math.max(0, Number(item.quantity || 0)), 0), 0)
-
-  const defaultReturnedDestination = (item: any): 'warehouse' | 'boutique' | 'no_stock' =>
-    item.sourceType === 'workshop' || item.isWorkshop
-      ? 'no_stock'
-      : item.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
-  const receiptKey = (exchangeId: number, itemId: number) => `exchange:${exchangeId}:${itemId}`
-  const destinationFor = (exchangeId: number, item: any) =>
-    receiptDestinations[receiptKey(exchangeId, Number(item.id || 0))] || defaultReturnedDestination(item)
-
-  const receiveWholeExchange = async (group: any) => {
-    if (!group.items.length) return
-    setReceivingExchangeId(Number(group.entry.id || 0))
-    try {
-      for (const item of group.items) {
-        const received = await receiveReturnedItemAction({
-          operationType: 'exchange',
-          operationId: Number(group.entry.id || 0),
-          operationItemId: Number(item.id || 0),
-          destination: destinationFor(Number(group.entry.id || 0), item),
-          productName: item.productName,
-          externalId: group.entry.externalId,
-          deferRefresh: true,
-        })
-        if (!received) break
-      }
-      await loadExchangeHistory()
-    } finally {
-      setReceivingExchangeId(null)
-    }
-  }
-
   const newItemStockIdentityKey = (item: any) => [
     item?.sourceType || 'warehouse',
     item?.productName,
@@ -284,69 +230,13 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
         <button className="secondary compact" type="button" onClick={() => setOrderPanel('list')}>К заказам</button>
       </div>
 
-      {exchangePendingInbox.error ? <p role="alert">{exchangePendingInbox.error} <button type="button" onClick={() => void loadExchangePendingInbox()}>Повторить загрузку очереди</button></p> : null}
-      {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p>Загружаю ожидающие вещи…</p> : null}
-      {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
-        <section className="exchange-return-queue" aria-label="Ожидающие получения товары по обменам">
-          <div className="exchange-set-section-head">
-            <div>
-              <span className="exchange-set-kicker">Ожидают возврата</span>
-              <h3>Получение не подтверждено · {exchangePendingInbox.pendingQuantity} шт.</h3>
-              <p>Очередь не зависит от фильтров истории ниже. Когда вещи фактически получены, укажите, куда принять каждую, и подтвердите получение.</p>
-            </div>
-          </div>
-          <div className="exchange-return-groups">
-            {pendingGroups.map((group: any) => (
-              <div className="exchange-return-group" key={`pending-set-${group.entry.id}`}>
-                <div className="exchange-return-group-head">
-                  <div>
-                    <strong>{group.entry.externalId}</strong>
-                    <span>{group.entry.customer || 'Клиент не указан'} · обмен от {group.entry.exchangeDate || '—'}</span>
-                  </div>
-                  <b>{group.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.</b>
-                </div>
-                <div className="exchange-return-lines">
-                  {group.items.map((item: any) => (
-                    <div className="exchange-return-line" key={receiptKey(group.entry.id, item.id)}>
-                      <div>
-                        <strong>{item.productName} × {item.quantity}</strong>
-                        <span>{historyItemDetails(item)}</span>
-                      </div>
-                      <label>
-                        <span>Что сделать</span>
-                        <select
-                          value={destinationFor(group.entry.id, item)}
-                          disabled={exchangeBusy || receivingExchangeId === Number(group.entry.id)}
-                          onChange={(event) => setReceiptDestinations((current) => ({
-                            ...current,
-                            [receiptKey(group.entry.id, item.id)]: event.target.value as 'warehouse' | 'boutique' | 'no_stock',
-                          }))}
-                        >
-                          <option value="warehouse">Вернуть на Склад</option>
-                          <option value="boutique">Вернуть в Бутик</option>
-                          <option value="no_stock">Не добавлять в остаток</option>
-                        </select>
-                      </label>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  className="primary exchange-return-confirm"
-                  type="button"
-                  disabled={exchangeBusy || receivingExchangeId !== null}
-                  onClick={() => void receiveWholeExchange(group)}
-                >
-                  {receivingExchangeId === Number(group.entry.id) ? 'Принимаю товары…' : 'Подтвердить прибытие всех товаров'}
-                </button>
-              </div>
-            ))}
-          </div>
-          {!pendingGroups.length ? <div className="history-load-state"><span>Ожидающие позиции ещё не загружены.</span><button type="button" onClick={() => void loadExchangePendingInbox()}>Обновить очередь</button></div> : null}
-          {exchangePendingInbox.hasMore && loadedPendingQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
-            <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё ожидающие</button>
-          ) : null}
-        </section>
-      ) : null}
+      <div className="warehouse-receiving-hint">
+        <p>Приёмку старых вещей по обменам проводит завсклад в разделе «Склад → Приёмка товаров → Обмены».
+          {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? ` Ожидают получения: ${exchangePendingInbox.pendingQuantity} шт.` : ''}
+        </p>
+        {canManageWarehouse ? <button type="button" className="secondary compact"
+          onClick={() => openWarehouseReceiving('exchange')}>К приёмке обменов</button> : null}
+      </div>
 
       {!exchangeSelectedOrder ? (
         <section className="exchange-set-empty-start">
@@ -684,7 +574,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                     <details className={`exchange-history-card-v2${entry.status === 'cancelled' ? ' is-cancelled' : ''}`} key={`exchange-history-v2-${entry.id}`}>
                       <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>Убрали: {removedHistoryQuantity} шт. · Добавили: {addedHistoryQuantity} шт.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
                       <div className="exchange-history-body-v2">
-                        <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить приёмку</button> : null}</div>)}</div>
+                        <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt && canManageWarehouse ? <button className="secondary compact" type="button" onClick={() => openWarehouseReceiving('exchange')}>К приёмке на складе</button> : null}{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить учёт</button> : null}</div>)}</div>
                         <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Из цеха' : `Выдали: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
                       </div>
                       <div className="exchange-history-footer-v2">
