@@ -7,7 +7,8 @@
 export class StocktakeCameraScanGate {
   private lastCode = ''
   private missingSince: number | null = null
-  constructor(private readonly releaseMs = 650) {}
+  private readonly releaseMs: number
+  constructor(releaseMs = 650) { this.releaseMs = releaseMs }
 
   detected(code: string, now: number): boolean {
     if (!code || !Number.isFinite(now)) return false
