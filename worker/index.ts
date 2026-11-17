@@ -69,7 +69,7 @@ import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-und
 import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
-import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
@@ -2419,15 +2419,9 @@ export default {
         }
       }
       if (url.pathname === '/api/returns' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }> }>(request);
-        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
-        try {
-          return json(await createReturn(env.DB, input), { status: 201 });
-        } catch (error) {
-          const criticalResponse = criticalOperationErrorResponse(error);
-          if (criticalResponse) return criticalResponse;
-          throw error;
-        }
+        return json({ ok: false, code: 'return_v1_retired',
+          message: 'Старая форма возвратов отключена. Обновите страницу и оформите возврат через новую форму.' },
+          { status: 410, headers: { 'Cache-Control': 'no-store' } });
       }
 
       if (url.pathname === '/api/exchanges' && request.method === 'GET') {
