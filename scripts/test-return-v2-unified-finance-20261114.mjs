@@ -284,8 +284,8 @@ const priorReturns=sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=98
 const blockedReturn=await api('POST','/api/returns',{
  requestId:'v2u-legacy-return-zero-0001',
  orderId:9853,returnDate:'2026-11-14',amount:0,items:[]
-},409)
-assert.equal(blockedReturn.code,'return_v2_legacy_mutation_blocked')
+},410)
+assert.equal(blockedReturn.code,'return_v1_retired')
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE order_id=9853').get().n,priorReturns)
 const blockedCancel=await api('PATCH','/api/returns/'+financePost.returnId+'/cancel',{
  requestId:'v2u-legacy-return-cancel-01',comment:'No legacy reversal'

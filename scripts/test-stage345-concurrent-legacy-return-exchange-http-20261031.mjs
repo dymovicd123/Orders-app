@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as seedHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -179,7 +180,14 @@ async function runOverlap(winner,n){
  const returnGate=new Promise(resolve=>{releaseReturn=resolve})
  const exchangeGate=new Promise(resolve=>{releaseExchange=resolve})
  crossRace={arrived:new Set(),signalBoth,gates:{return:returnGate,exchange:exchangeGate}}
- const returnCall=http('POST','/api/returns',refund)
+ const oldRoute=await http('POST','/api/returns',refund)
+ assert.equal(oldRoute.status,410,'Retired V1 HTTP must not accept new return writes')
+ assert.equal(oldRoute.data.code,'return_v1_retired')
+ // Preserve the historical Return/Exchange transactional overlap fixture directly
+ // against its domain; V1 is no longer an exposed HTTP creation endpoint.
+ const returnCall=seedHistoricalReturn(db,refund)
+  .then(data=>({status:data?.ok===false?409:201,data}))
+  .catch(error=>({status:409,data:{ok:false,message:String(error)}}))
  const exchangeCall=http('POST','/api/exchanges',exchange)
  const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Did not observe two independent validated Return/Exchange SQL batches')),10000))
  let returns,exchanges

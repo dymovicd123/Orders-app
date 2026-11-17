@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -141,12 +142,14 @@ assert.equal(reserve(line.id).status,'fulfilled')
 const shipAgain=await http('PATCH',`/api/orders/${orderId}/shipping`,{requestId:'stage3-ship-two',shippingStatus:'sent',shippingDate:'2026-10-31'})
 assert.equal(shipAgain.status,200)
 assert.equal(oldStock().quantity,0,'Shipment replay does not decrement twice')
+const v1Route=await http('POST','/api/returns',{requestId:'stage3-v1-disabled',orderId,amount:0,items:[]})
+assert.equal(v1Route.status,410,'Old HTTP route must be retired')
+assert.equal(v1Route.data.code,'return_v1_retired')
 const makeReturn=async(id,source)=>{
  const body={requestId:id,orderId,returnDate:'2026-10-31',amount:0,
   items:[{orderItemId:line.id,quantity:1,restock:true,physicalState:source}]}
- const r=await http('POST','/api/returns',body)
- assert.equal(r.status,201,'Real partial physical Return '+source+': '+JSON.stringify(r))
- const returnId=Number(r.data.returnId)
+ const data=await createHistoricalReturn(db,body)
+ const returnId=Number(data.returnId)
  assert(returnId>0)
  return {body,returnId}
 }
@@ -156,20 +159,23 @@ assert.equal(otherStock().quantity,2)
 assert.equal(oldStock().reserved_quantity,0)
 assert.equal(count('return_items','return_id=?',[first.returnId]),1)
 assert.equal(sql.prepare('SELECT quantity FROM return_items WHERE return_id=?').get(first.returnId).quantity,1)
-const replay=await http('POST','/api/returns',first.body)
-assert.equal(replay.status,201)
-assert.equal(Number(replay.data.returnId),first.returnId)
+const replay=await createHistoricalReturn(db,first.body)
+assert.equal(Number(replay.returnId),first.returnId)
 assert.equal(oldStock().quantity,1,'Return replay cannot duplicate stock')
 assert.equal(count('returns','order_id=? AND status=\'completed\'',[orderId]),1)
 const second=await makeReturn('stage3-return-two','boutique')
 assert.equal(oldStock().quantity,1)
 assert.equal(otherStock().quantity,3,'Second unit returned to a different exact source')
 assert.equal(count('return_items','order_item_id=?',[line.id]),2)
-const overflow=await http('POST','/api/returns',{
- requestId:'stage3-return-overflow',orderId,returnDate:'2026-10-31',amount:0,
- items:[{orderItemId:line.id,quantity:1,physicalState:'warehouse'}]
-})
-assert(overflow.status>=400,'Third unit must be rejected: '+JSON.stringify(overflow))
+let overflowRejected=false
+try {
+ const overflow=await createHistoricalReturn(db,{
+  requestId:'stage3-return-overflow',orderId,returnDate:'2026-10-31',amount:0,
+  items:[{orderItemId:line.id,quantity:1,physicalState:'warehouse'}]
+ })
+ overflowRejected=overflow?.ok===false
+} catch { overflowRejected=true }
+assert(overflowRejected,'Third returned unit must be rejected')
 assert.equal(oldStock().quantity,1)
 assert.equal(otherStock().quantity,3)
 assert.equal(count('returns','order_id=? AND status=\'completed\'',[orderId]),2)
