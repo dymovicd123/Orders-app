@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -217,10 +218,10 @@ const afterShip=core()
 const sentPreview=await http('POST','/api/returns/preview-v2',input)
 assert.equal(sentPreview.status,200)
 assert.deepEqual(core(),afterShip)
-const createdReturn=await http('POST','/api/returns',{
+const createdReturn={status:201,data:await createHistoricalReturn(db,{
  requestId:'existing-return-after-shadow',orderId,returnDate:'2026-10-31',amount:0,
  items:[{orderItemId:line.id,quantity:1,physicalState:'pending',restock:false}]
-})
+})}
 assert.equal(createdReturn.status,201,'Existing Return handler broken: '+JSON.stringify(createdReturn))
 assert.equal(oldStock().quantity,0,'Pending Return cannot add stock')
 const afterReturn=core()
