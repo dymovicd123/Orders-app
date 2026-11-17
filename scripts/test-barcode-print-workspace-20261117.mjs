@@ -30,8 +30,8 @@ assert(!cards.includes('<SkuBarcodeButton') && !cards.includes('<UnitBarcodePrep
   'Catalog still contains barcode-related actions in item cards')
 assert(page.includes('Только товары с остатком') && page.includes('Поиск товара'),
   'Search and stock filters should be visible on the new page')
-assert(page.includes('Склад <strong>{balance.warehouse}') &&
-  page.includes('Бутик <strong>{balance.boutique}') &&
+assert(page.includes('<small>Склад</small> <strong>{balance.warehouse}</strong>') &&
+  page.includes('<small>Бутик</small> <strong>{balance.boutique}</strong>') &&
   page.includes('Всего {physical} шт.'),
   'Warehouse and boutique quantities are not distinguishable')
 assert(page.includes('const ready = Boolean(!refreshing && !loadError && catalog?.ok') &&
