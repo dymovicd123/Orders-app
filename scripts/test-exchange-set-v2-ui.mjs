@@ -4,6 +4,8 @@ import { build } from 'esbuild'
 
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const smart = fs.readFileSync('src/features/sections/OrderExchangeSmartSection.tsx', 'utf8')
+const warehouse = fs.readFileSync('src/features/inventory/views/WarehouseReceivingWorkspace.tsx', 'utf8')
+const warehouseModel = fs.readFileSync('src/features/inventory/views/warehouseReceivingModel.ts', 'utf8')
 const legacyHost = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const creationActions = fs.readFileSync('src/features/orders/returnExchangeCreationActions.ts', 'utf8')
@@ -37,13 +39,13 @@ check(!smart.includes('Без доплаты/возврата') && !smart.includ
 check(smart.includes('Нет, ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
 check(smart.includes('Товар клиенту не выдавали') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
 check(smart.includes("issuedStockStatuses.has(status)") && smart.includes("sentWorkshop") && smart.includes("!status && exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not combine exact stock handover truth with the Workshop-only sent fallback')
-check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
-check(smart.includes('Подтвердить прибытие всех товаров'), 'Pending-return queue does not confirm the whole arrival')
-check(smart.includes('deferRefresh: true') && smart.includes('if (!received) break'), 'Grouped return intake still performs heavy per-line refreshes or continues after a failed line')
+check(warehouse.includes('<option value="warehouse">Склад</option>') && warehouse.includes('<option value="boutique">Бутик</option>') && warehouse.includes('<option value="no_stock">Не добавлять в остаток</option>'), 'Per-item returned-stock disposition choices are incomplete in Warehouse')
+check(warehouse.includes('Принять товар') && warehouse.includes('pendingExchangePhysicalItems(exchangeInbox.rows)'), 'Warehouse must provide controlled per-item physical arrival for Exchange Set V2')
+check(warehouse.includes('if (accepted)') && warehouse.includes('await refreshAll()') && warehouse.includes('setReceivingKey(item.key)'), 'Warehouse receive must refresh both queues on success and block parallel receipts')
 check(app.includes('createReturnExchangeAftercareActions({') && aftercareActions.includes('if (!input.deferRefresh)') && aftercareActions.includes('invalidateInventoryStockCaches(true)'), 'Grouped intake cannot defer expensive history/inventory refresh while still invalidating stale stock caches')
 check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was introduced against the agreed scope')
-check(smart.includes('destinationFor(group.entry.id, item)') && smart.includes('group.items.map'), 'Arrival destination is not independent per returned line')
-check(smart.includes("operationType: 'exchange'") && smart.includes('operationItemId: Number(item.id || 0)'), 'Arrival queue is not connected to the existing per-item receive operation')
+check(warehouse.includes('destinations[item.key] || item.defaultDestination') && warehouseModel.includes('return pending.map(item =>'), 'Arrival destination must be independent for every returned Exchange Set V2 line')
+check(warehouse.includes('operationType: item.kind') && warehouse.includes('operationItemId: item.operationItemId') && warehouseModel.includes("kind: 'exchange' as const"), 'Arrival queue must invoke the existing canonical item receive operation')
 check(smart.includes('newItemStockIdentityKey') && smart.includes('batchRequired') && smart.includes('matchingIndexes'), 'Repeated replacement rows do not aggregate physical demand before save')
 check(smart.includes('setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)') && smart.includes('Подтверждение выдачи одинаковых позиций — у первой строки.'), 'Repeated replacement rows can submit conflicting physical observations')
 check(smart.includes('exchange-new-primary-fields') && smart.includes('Нажмите «Выбрать товар» и укажите вещь, которую получит клиент.'), 'New-item form still exposes the full technical SKU editor before a product is selected')
@@ -56,7 +58,7 @@ check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && sma
 check(smart.includes('removedHistoryQuantity') && smart.includes('addedHistoryQuantity') && smart.includes('Убрали: {removedHistoryQuantity} шт. · Добавили: {addedHistoryQuantity} шт.'), 'Exchange history summary still counts rows or falsely claims never-issued goods were returned by the client')
 check(smart.includes('Убираем <strong>{removedQuantity} шт.</strong>') && !smart.includes('Возвращает <strong>{removedQuantity} шт.</strong>'), 'Final summary falsely describes never-issued old goods as customer returns')
 check(smart.includes('Отменить обмен') && app.includes('createReturnExchangeCreationActions({') && creationActions.includes('prepareExchangeSetCreation(exchangeSelectedOrder, exchangeDraft)') && creationActions.includes('submitExchangeSetCreation(') && setCreation.includes("client.apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
-check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-old-order-info') && css.includes('.exchange-new-primary-fields') && css.includes('.exchange-money-result') && css.includes('.exchange-return-group') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks quantity-first, progressive, settlement, intake, or mobile styling')
+check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-old-order-info') && css.includes('.exchange-new-primary-fields') && css.includes('.exchange-money-result') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks quantity-first, progressive and settlement mobile styling')
 
 
 // Compile and execute the exact Set V2 UI preparation/POST module used by App.
@@ -168,4 +170,4 @@ assert.deepEqual(sent[1].body,{...valid.payload,requestId:sent[1].header})
 assert.deepEqual(completed,[{key:'exchange-set-create:38',requestId:sent[1].header}])
 console.log('EXCHANGE_SET_V2_PREPARATION_AND_CRITICAL_REPLAY_PASS')
 
-console.log('EXCHANGE SET V2 UI PASSED — itemized exchanges use order-quantity-first old cards, progressive replacement fields, plain-language money settlement, full-arrival intake, and responsive manager-first controls.')
+console.log('EXCHANGE SET V2 UI PASSED — itemized exchanges use order-quantity-first old cards, progressive replacement fields, plain-language money settlement, Warehouse-operated physical intake, and responsive manager-first controls.')
