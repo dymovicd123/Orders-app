@@ -46,25 +46,23 @@ assert(css.includes('.stocktake-postcheck-choice')&&css.includes('@media(max-wid
 assert(scanner.includes("import('@zxing/browser')")&&scanner.includes('BrowserMultiFormatOneDReader'))
 assert(scanner.includes('decodeFromConstraints(')&&scanner.includes("facingMode: { ideal: 'environment' }"))
 assert(scanner.includes('videoRef')&&scanner.includes('playsInline autoPlay muted'))
-assert(scanner.includes('setCode(scanned)')&&scanner.includes('setCameraOpen(false)'),
-  'Camera capture only fills a typed code and closes the preview')
+assert(scanner.includes("processRef.current(found, 'camera')")&&
+  scanner.includes('gateRef.current.detected(found, now)'),
+  'Camera counts automatically while remaining open and rejects stationary repeated frames')
 const cameraCapture=scanner.slice(scanner.indexOf('const controls = await reader.decodeFromConstraints('),
   scanner.indexOf('if (cancelled) controls.stop()'))
 assert(!cameraCapture.includes("fetch(")&&!cameraCapture.includes('onScanned(')&&
   !cameraCapture.includes('onSkuFound(')&&!cameraCapture.includes("method: 'POST'"),
   'Decoding camera frames must never automatically count an item or change server state')
-assert(scanner.includes('capturedRef.current = true')&&scanner.includes('cameraStopRef.current?.()') &&
+assert(scanner.includes('gateRef.current.missing(now)')&&scanner.includes('cameraStopRef.current?.()') &&
   scanner.includes('stream.getTracks().forEach(track => track.stop())'),
-  'Continuous camera frames must be deduped and physical camera must be stopped on exit')
-assert(scanner.includes("reason === 'NotAllowedError'")&&scanner.includes('Камера доступна только')&&
-  scanner.includes('Введите код вручную')&&scanner.includes('Сканировать камерой'),
+  'Stationary frames must not be double counted and hardware camera must stop on close')
+assert(scanner.includes("reason === 'NotAllowedError'")&&scanner.includes('откройте систему по HTTPS')&&
+  scanner.includes('Непрерывная камера'),
   'Permissions, secure context, optional camera and manual fallback must remain explicit')
-assert(scanner.includes("typed.toUpperCase().startsWith('OCS1')") &&
-  scanner.includes("method: 'GET'") &&
-  scanner.includes("method: 'POST'") &&
-  scanner.includes('result.duplicate') &&
-  scanner.includes('onSkuFound(match.variantId)'),
-  'Existing SKU navigation and server-authoritative unique-unit count are unchanged')
+assert(scanner.includes("method: 'POST'") && scanner.includes('result.duplicate') &&
+  scanner.includes('requestId: attempt.requestId'),
+  'Server-authoritative counting must be retry-safe and never require an extra submit')
 assert(cameraCss.includes('.stocktake-camera-panel video')&&cameraCss.includes('@media(max-width:720px)'))
 assert(stocktakeFoundSkuPrintReceipt(null)===null)
 console.log('STOCKTAKE_CAMERA_PRINT_STEP_PASS: prominent optional print result, iOS/Android local Code128 preview, manual fallback, no automatic writes')

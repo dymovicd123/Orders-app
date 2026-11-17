@@ -29,6 +29,7 @@ for(const path of [
   'migrations/0137_barcode_unit_catalog_integrity.sql',
   'migrations/0138_barcode_unit_preparation_capacity.sql',
   'migrations/0140_barcode_stocktake_unit_scans.sql',
+  'migrations/0142_barcode_stocktake_sku_scans.sql',
 ]) sqlite.exec(readFileSync(path,'utf8'))
 sqlite.exec(`
   INSERT INTO inventory_stocktake_sessions
@@ -79,7 +80,7 @@ assert.equal(count(),1)
 const retry=await scanStocktakeUnit(db,'REV-SCAN-1',first.labels[0].token,'admin')
 assert.equal(retry.duplicate,true)
 assert.equal(count(),1,'reloading or retrying the same scan never increments')
-await assert.rejects(scanStocktakeUnit(db,'REV-SCAN-1','OCSKU-INVALID','admin'),/индивидуальная метка/i)
+await assert.rejects(scanStocktakeUnit(db,'REV-SCAN-1','OCSKU-INVALID','admin'),/метка OCU1/i)
 await assert.rejects(scanStocktakeUnit(db,'REV-SCAN-1',boutique.labels[0].token,'admin'),/другой точке/i)
 await assert.rejects(scanStocktakeUnit(db,'REV-SCAN-1',other.labels[0].token,'admin'),/нет в текущей проверке/)
 assert.equal(count(),1)
@@ -111,10 +112,10 @@ const route=readFileSync('worker/index.ts','utf8')
 const ui=readFileSync('src/features/inventory/views/renderInventoryStocktakePanel.tsx','utf8')
 const controller=readFileSync('src/features/sections/InventorySection.tsx','utf8')
 const scanner=readFileSync('src/features/inventory/views/StocktakeBarcodeScanner.tsx','utf8')
-assert(route.includes('scanStocktakeUnit(env.DB, sessionId, input.code, actor)'))
+assert(route.includes('scanStocktakeBarcode(env.DB, sessionId, input.code, input.requestId, actor)'))
 assert(ui.includes('<StocktakeBarcodeScanner') && ui.includes('stocktakeUnsavedCount > 0'))
 assert(controller.includes('onStocktakeBarcodeScan,'))
-assert(scanner.includes("method: 'POST'") && scanner.includes("onScanned(Number(result.variantId || 0))"))
+assert(scanner.includes("method: 'POST'") && scanner.includes("onScannedRef.current(result)"))
 assert(!scanner.includes('localStorage') && !scanner.includes('sessionStorage'),
   'server—not browser—must own de-duplication')
 sqlite.close()

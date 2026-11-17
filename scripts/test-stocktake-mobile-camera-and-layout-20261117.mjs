@@ -32,14 +32,14 @@ assert(scanner.includes("width: { ideal: 1920 }")&&scanner.includes("height: { i
   'Camera should request HD input to decode dense 1D bars from printed paper and displays')
 assert(scanner.includes("decodeFromImageUrl(url)")&&scanner.includes("URL.revokeObjectURL(url)")&&
   scanner.includes('accept="image/*"'), 'Image-based scan fallback must decode locally and free object URL')
-assert(scanner.includes('setCode(scanned)')&&scanner.includes('Проверьте его и нажмите'),
-  'Decoded photos or camera frames must not count items without explicit confirmation')
-const capture=scanner.slice(scanner.indexOf('  function acceptDecodedCode'),scanner.indexOf('  async function scan()'))
-assert(!capture.includes("method: 'POST'")&&!capture.includes('onScanned(')&&!capture.includes('onSkuFound('),
-  'Camera/photo capture must not write to warehouse or change physical counts')
+assert(scanner.includes("processRef.current(found, 'camera')") &&
+  scanner.includes("processRef.current(result.getText(), 'photo')"),
+  'Decoded photo or camera frames must enter the same queued server-authoritative count')
+assert(scanner.includes('gateRef.current.detected(found, now)'),
+  'Continuous stationary camera frames cannot count one label twice')
 assert(scanner.includes('cameraStopRef.current?.()')&&scanner.includes('track.stop()'))
-assert(scanner.includes('Камера работает')&&scanner.includes('Ищу штрихкод'),
-  'Previously silent reader must now explain camera status')
+assert(scanner.includes('Камера работает в режиме непрерывного подсчёта')&&scanner.includes('setCameraFeedback'),
+  'Scanner must clearly show continuous camera status')
 assert(cameraCss.includes('position:fixed;inset:0')&&cameraCss.includes('object-fit:contain'),
   'On phones scanning must get a full-screen uncropped and closable preview')
 assert(mobileCss.includes('.warehouse-w2-primary')&&mobileCss.includes('overflow-x:auto!important')&&

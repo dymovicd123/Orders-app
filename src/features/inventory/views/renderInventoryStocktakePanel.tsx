@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import type { InventoryRenderContext } from './types'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
 import { StocktakeBarcodeScanner } from './StocktakeBarcodeScanner'
-import { findStocktakeSku } from '../stocktakeSkuFinder'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'addStocktakeNewCombination'
@@ -32,6 +31,8 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openStocktakeInlineColor'
   | 'openStocktakeInlineSize'
   | 'onStocktakeBarcodeScan'
+  | 'stocktakeScannerBusy'
+  | 'setStocktakeScannerBusy'
   | 'openStocktakeOrders'
   | 'openStocktakeReview'
   | 'persistStocktakeFact'
@@ -138,6 +139,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     openStocktakeInlineColor,
     openStocktakeInlineSize,
     onStocktakeBarcodeScan,
+    stocktakeScannerBusy,
+    setStocktakeScannerBusy,
     openStocktakeOrders,
     openStocktakeReview,
     persistStocktakeFact,
@@ -423,32 +426,18 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           source={stocktakeSession.source}
                           disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0}
                           onScanned={onStocktakeBarcodeScan}
-                          onSkuFound={(variantId: number) => {
-                            const found = findStocktakeSku(stocktakeGroups, variantId)
-                            if (!found) return null
-                            setStocktakeProductSearch('')
-                            setStocktakeProductIndex(found.groupIndex)
-                            window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-                              const field = document.querySelector<HTMLInputElement>(
-                                'input[data-stocktake-count-input="1"][data-stocktake-item-id="' + found.itemId + '"]')
-                              if (field) {
-                                field.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                                field.focus({ preventScroll: true })
-                              }
-                            }))
-                            return found.label
-                          }}
+                          onPendingChange={setStocktakeScannerBusy}
                         /> : null}
 
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>
-                          <div className="stocktake-sticky-progress-main"><strong>Введено вручную {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled} — при завершении они сохранят системный остаток` : 'Все позиции заполнены. Следующий шаг — проверить результат.'}</span></div>
+                          <div className="stocktake-sticky-progress-main"><strong>Посчитано {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled} — при завершении они сохранят системный остаток` : 'Все позиции заполнены. Следующий шаг — проверить результат.'}</span></div>
                           <div className="stocktake-sticky-progress-bar"><i style={{ width: `${stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0}%` }} /></div>
-                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? (stocktakeProgress.recount ? 'Сначала повторно пересчитайте конфликтные строки.' : 'Введите факт хотя бы для одной позиции.') : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
+                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeScannerBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? (stocktakeProgress.recount ? 'Сначала повторно пересчитайте конфликтные строки.' : 'Введите факт хотя бы для одной позиции.') : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
                         </div> : null}
     
                         {!stocktakeReviewMode ? (
                           <>
-                            <div className="stocktake-counting-rule">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Под каждым размером показан текущий остаток по системе. Если поле оставить пустым, при завершении этот системный остаток сохранится без изменений; если товара фактически нет — введите 0.</div>
+                            <div className="stocktake-counting-rule">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Под каждым размером показан текущий остаток по системе. Каждый отдельный скан прибавляет +1 к фактическому количеству. После сканирования можно свободно изменить итоговое число вручную, включая вещи без этикеток. Пустое поле сохраняет системный остаток, а 0 означает отсутствие товара.</div>
     
                             <div className="stocktake-counting-shell">
                               <aside className="stocktake-counting-sidebar">

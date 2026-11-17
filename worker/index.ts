@@ -31,7 +31,7 @@ import { warehouseOperationFeedback } from './domains/warehouse-operation-feedba
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
-import { listStocktakeUnitScans, scanStocktakeUnit, StocktakeBarcodeScanError } from './domains/stocktake-barcode-scan.ts'
+import { listStocktakeUnitScans, scanStocktakeBarcode, StocktakeBarcodeScanError } from './domains/stocktake-barcode-scan.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
@@ -1170,10 +1170,10 @@ export default {
         const sessionId = decodeURIComponent(barcodeStocktakeMatch[1]);
         try {
           if (request.method === 'GET') return json(await listStocktakeUnitScans(env.DB, sessionId));
-          const input = await readJson<{ code?: unknown }>(request);
+          const input = await readJson<{ code?: unknown; requestId?: unknown }>(request);
           const actor = cleanText(request.headers.get('X-Access-User'))
             || normalizeAccessRole(request.headers.get('X-Access-Role'));
-          const result = await scanStocktakeUnit(env.DB, sessionId, input.code, actor);
+          const result = await scanStocktakeBarcode(env.DB, sessionId, input.code, input.requestId, actor);
           return json(result);
         } catch (error) {
           if (error instanceof StocktakeBarcodeScanError) {

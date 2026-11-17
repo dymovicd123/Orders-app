@@ -52,23 +52,14 @@ assert(arrival.includes("setShowArrivalPrint(true)")&&arrival.includes('arrivalL
 assert(arrival.includes("mode === 'arrival' ? extraArrival.rows : 0"),
   'Manual addition of missing variants remains supported')
 
-assert(scanner.includes("typed.toUpperCase().startsWith('OCS1')"))
-assert(scanner.includes("method: 'GET'")&&scanner.includes('/api/barcodes/lookup?code='))
-assert(scanner.includes("const match = resolveOperationBarcode(typed, result, source)"))
-assert(scanner.includes('const selected = onSkuFound(match.variantId)'))
-assert(scanner.includes("if (match.kind !== 'sku')"))
-const skuBranch=scanner.slice(scanner.indexOf("if (typed.toUpperCase().startsWith('OCS1'))"),
-  scanner.indexOf("if (total === null) throw new Error"))
-assert(!skuBranch.includes("method: 'POST'")&&!skuBranch.includes('onScanned(')&&!skuBranch.includes('setTotal('),
-  'Shared SKU lookup cannot increment count or create stocktake scan ledger records')
-assert(scanner.includes("method: 'POST'")&&scanner.includes('onScanned(Number(result.variantId || 0))'),
-  'Unit-label count remains a server-authoritative unique POST with existing refresh callback')
-assert(scanner.includes('if (focusScanner) inputRef.current?.focus()'),
-  'SKU should leave focus on the selected count input')
-assert(view.includes("source={stocktakeSession.source}"))
-assert(view.includes('findStocktakeSku(stocktakeGroups, variantId)'))
-assert(view.includes('setStocktakeProductIndex(found.groupIndex)'))
-assert(view.includes('data-stocktake-item-id="')&&view.includes('field.focus({ preventScroll: true })'))
+assert(scanner.includes("method: 'POST'") && scanner.includes('requestId: attempt.requestId'))
+assert(scanner.includes('onScannedRef.current(result)') && scanner.includes('StocktakeCameraScanGate'),
+  'Shared SKU and individual units both count in a continuous single-click-free process')
+assert(scanner.includes("event.key === 'Enter'") && scanner.includes("event.key === 'Tab'"))
+assert(server.includes('scanStocktakeSku') && server.includes('scanStocktakeUnit'))
+assert(view.includes('onScanned={onStocktakeBarcodeScan}'))
+assert(!view.includes('onSkuFound={'), 'SKU scanning must not navigate away from the next scan')
+assert(view.includes('data-stocktake-count-input="1"') || view.includes('<StocktakeSizeCountCell'))
 assert(cells.includes('data-stocktake-item-id={stocktakeField ? cellId : undefined}'))
 assert(view.includes('setStocktakeFact(Number(row.id), value)')&&view.includes('persistStocktakeFact(Number(row.id), raw)'),
   'Counting remains in the existing server session and autosave machinery')

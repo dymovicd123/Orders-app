@@ -1,4 +1,6 @@
 import { isUnitBarcode } from '../../shared/barcode-unit.ts'
+import { variantIdFromSkuBarcode } from '../../shared/barcode-sku.ts'
+import { readCatalogSkuBarcode } from './barcode-sku.ts'
 import { lookupIndividualUnitBarcode } from './barcode-unit-preparation.ts'
 
 export class StocktakeBarcodeScanError extends Error {
@@ -12,13 +14,18 @@ export class StocktakeBarcodeScanError extends Error {
   }
 }
 
-async function requireScanLedger(db: D1Database) {
-  const ready = await db.prepare(
-    "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name='trg_stocktake_unit_scan_apply'"
-  ).first<{ n: number }>()
-  if (Number(ready?.n || 0) !== 1) {
-    throw new StocktakeBarcodeScanError('scan_schema_missing',
-      'Сканирование для ревизии ещё не включено на этой базе. Ручной подсчёт доступен.', 503)
+async function requireScanLedger(db: D1Database, type: 'sku' | 'unit' | 'both' = 'both') {
+  const triggers = type === 'both'
+    ? ['trg_stocktake_unit_scan_apply','trg_stocktake_sku_scan_apply']
+    : [type === 'sku' ? 'trg_stocktake_sku_scan_apply' : 'trg_stocktake_unit_scan_apply']
+  for (const name of triggers) {
+    const ready = await db.prepare(
+      "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name=?"
+    ).bind(name).first<{ n: number }>()
+    if (Number(ready?.n || 0) !== 1) {
+      throw new StocktakeBarcodeScanError('scan_schema_missing',
+        'Быстрый подсчёт ещё не включён на этой базе. Ручной подсчёт доступен.', 503)
+    }
   }
 }
 
@@ -39,10 +46,15 @@ async function requireActiveSession(db: D1Database, sessionId: string) {
 export async function listStocktakeUnitScans(db: D1Database, sessionId: string) {
   await requireScanLedger(db)
   const session = await requireActiveSession(db, sessionId)
-  const rows = await db.prepare(
+  const unit = await db.prepare(
     "SELECT COUNT(*) AS total FROM inventory_stocktake_unit_scans WHERE session_id=?"
   ).bind(sessionId).first<{ total: number }>()
-  return { ok: true, sessionId, source: session.inventory_source, total: Number(rows?.total || 0) }
+  const sku = await db.prepare(
+    "SELECT COUNT(*) AS total FROM inventory_stocktake_sku_scans WHERE session_id=?"
+  ).bind(sessionId).first<{ total: number }>()
+  return { ok: true, sessionId, source: session.inventory_source,
+    total: Number(unit?.total || 0) + Number(sku?.total || 0),
+    skuTotal: Number(sku?.total || 0), unitTotal: Number(unit?.total || 0) }
 }
 
 export async function scanStocktakeUnit(
@@ -51,9 +63,9 @@ export async function scanStocktakeUnit(
   const code = String(value || '').trim().toUpperCase()
   if (!isUnitBarcode(code)) {
     throw new StocktakeBarcodeScanError('individual_only',
-      'Для подсчёта нужна индивидуальная метка вещи. Общий код SKU только определяет вариант.', 400)
+      'Для индивидуального подсчёта нужна метка OCU1. Для общего SKU используйте быстрый режим OCS1.', 400)
   }
-  await requireScanLedger(db)
+  await requireScanLedger(db, 'unit')
   const session = await requireActiveSession(db, sessionId)
   const found = await lookupIndividualUnitBarcode(db, code)
   if (!found.ok || !found.active || !found.unitId || !found.variantId) {
@@ -119,4 +131,93 @@ export async function scanStocktakeUnit(
     countedQuantity: Number(updated?.counted_quantity || 0),
     message: 'Вещь учтена в ревизии. Физический остаток пока не изменён.',
   }
+}
+
+const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export async function scanStocktakeSku(
+  db: D1Database, sessionId: string, value: unknown, requestId: unknown, actor = '',
+) {
+  const code = String(value || '').trim().toUpperCase()
+  const variantId = variantIdFromSkuBarcode(code)
+  if (!variantId) throw new StocktakeBarcodeScanError('invalid_sku',
+    'Общий штрихкод SKU повреждён или не распознан.', 400)
+  const id = String(requestId || '').trim()
+  if (!REQUEST_ID_PATTERN.test(id)) throw new StocktakeBarcodeScanError('invalid_scan_id',
+    'Не удалось распознать отдельное событие сканирования. Попробуйте ещё раз.', 400)
+  await requireScanLedger(db,'sku')
+  const session = await requireActiveSession(db,sessionId)
+  const original = await db.prepare(
+    'SELECT item_id,variant_id FROM inventory_stocktake_sku_scans WHERE session_id=? AND request_id=? LIMIT 1'
+  ).bind(sessionId,id).first<{ item_id: number; variant_id: number }>()
+  const found = await readCatalogSkuBarcode(db,variantId)
+  if (!found.ok || !found.active) throw new StocktakeBarcodeScanError('inactive_sku',
+    'Товар удалён или неактивен. Уточните вариант перед подсчётом.')
+  if (original) {
+    if (Number(original.variant_id) !== variantId) throw new StocktakeBarcodeScanError('scan_id_reused',
+      'Идентификатор скана уже использован для другого товара.')
+    const current = await db.prepare(
+      'SELECT counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND id=?'
+    ).bind(sessionId,original.item_id).first<{counted_quantity:number}>()
+    return {
+      ok:true,duplicate:true,scanType:'sku' as const,sessionId,variantId,
+      itemId:Number(original.item_id),productName:found.productName,
+      countedQuantity:Number(current?.counted_quantity || 0),
+      message:'Повтор сетевого запроса. Количество не увеличено.',
+    }
+  }
+  const item = await db.prepare(
+    'SELECT id,status FROM inventory_stocktake_items WHERE session_id=? AND variant_id=? LIMIT 1'
+  ).bind(sessionId,variantId).first<{id:number;status:string}>()
+  if (!item) throw new StocktakeBarcodeScanError('sku_not_in_session',
+    'Этот вариант не входит в текущую проверку. Добавьте его через «Найденная позиция» и повторите скан.')
+  if (item.status === 'recount_required') throw new StocktakeBarcodeScanError('recount_required',
+    'Складской остаток изменился во время проверки. Сначала пересчитайте позицию вручную.')
+  const now = new Date().toISOString()
+  try {
+    await db.prepare(
+      `INSERT INTO inventory_stocktake_sku_scans
+      (session_id,request_id,item_id,variant_id,inventory_source,scanned_at,scanned_by)
+      VALUES (?,?,?,?,?,?,?)`
+    ).bind(sessionId,id,item.id,variantId,session.inventory_source,now,String(actor||'').slice(0,120)).run()
+  } catch(error) {
+    const replay = await db.prepare(
+      'SELECT item_id,variant_id FROM inventory_stocktake_sku_scans WHERE session_id=? AND request_id=? LIMIT 1'
+    ).bind(sessionId,id).first<{item_id:number;variant_id:number}>()
+    if (replay) {
+      if (Number(replay.variant_id) !== variantId) throw new StocktakeBarcodeScanError('scan_id_reused',
+        'Идентификатор скана уже использован для другого товара.')
+      const current = await db.prepare(
+        'SELECT counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND id=?'
+      ).bind(sessionId,replay.item_id).first<{counted_quantity:number}>()
+      return { ok:true,duplicate:true,scanType:'sku' as const,sessionId,
+        variantId,itemId:Number(replay.item_id),productName:found.productName,
+        countedQuantity:Number(current?.counted_quantity || 0),
+        message:'Скан уже сохранён. Повторное начисление отменено.' }
+    }
+    if (String(error).includes('STOCKTAKE_SKU_SCAN_CONFLICT')) {
+      throw new StocktakeBarcodeScanError('stocktake_changed',
+        'Складской остаток или состояние позиции изменились. Скан не сохранён; перепроверьте эту позицию.')
+    }
+    throw error
+  }
+  const updated = await db.prepare(
+    'SELECT counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND id=? LIMIT 1'
+  ).bind(sessionId,item.id).first<{counted_quantity:number}>()
+  return {ok:true,duplicate:false,scanType:'sku' as const,sessionId,
+    itemId:item.id,variantId,productName:found.productName,
+    countedQuantity:Number(updated?.counted_quantity || 0),
+    message:'Добавлена 1 штука в фактический подсчёт. Остаток склада пока не изменён.'}
+}
+
+export async function scanStocktakeBarcode(
+  db:D1Database,sessionId:string,value:unknown,requestId:unknown,actor='',
+) {
+  const code=String(value||'').trim().toUpperCase()
+  if (code.startsWith('OCS1-')) return scanStocktakeSku(db,sessionId,code,requestId,actor)
+  if (isUnitBarcode(code)) {
+    const result=await scanStocktakeUnit(db,sessionId,code,actor)
+    return {...result,scanType:'unit' as const}
+  }
+  throw new StocktakeBarcodeScanError('invalid_barcode','Штрихкод не распознан. Нужен OCS1 или OCU1.',400)
 }
