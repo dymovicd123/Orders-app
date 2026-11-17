@@ -27,6 +27,7 @@ type Props = {
   onReason: (value: string) => void
   onQuantity: (row: Row, value: string) => void
   onSave: (unitBarcodes?: string[]) => Promise<unknown>; onClear: () => void; onRefresh: () => void
+  arrivalPrintAvailable?: boolean; arrivalLabelPrinter?: ReactNode; onFinishArrivalResult?: () => void
 }
 const names = {
   arrival: { title: 'Приход', action: 'Оформить приход', input: 'Пришло', detail: 'Введите количество поступивших вещей: оно прибавится к остатку.' },
@@ -71,7 +72,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const [startSearch, setStartSearch] = useState('')
   // Keep selections and the stage for each location, matching the non-destructive
   // source switching behavior of the stocktake screen.
-  type Stage = 'select' | 'quantities' | 'review'
+  type Stage = 'select' | 'quantities' | 'review' | 'complete'
   const [selectedBySource,setSelectedBySource] = useState<Record<string,string[]>>({})
   const [currentBySource,setCurrentBySource] = useState<Record<string,string>>({})
   const [stageBySource,setStageBySource] = useState<Record<string,Stage>>({})
@@ -93,6 +94,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }, [current, source, mode])
   const [inline, setInline] = useState<{ positionKey:string; color:string; kind:'size'|'color'; size:string; quantity:string } | null>(null)
   const [notice, setNotice] = useState('')
+  const [showArrivalPrint, setShowArrivalPrint] = useState(false)
+  const [lastArrival, setLastArrival] = useState<{ source: 'warehouse' | 'boutique'; variants: number; units: number } | null>(null)
+  const resultHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const [scanCode, setScanCode] = useState('')
   type ScannedUnit = { code: string; unitId: string; variantId: number; name: string }
   const [scannedUnits, setScannedUnits] = useState<ScannedUnit[]>([])
@@ -119,6 +123,14 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
   const filledGroup = (g: Group) => g.rows.filter(r => movementInput(mode,draftMap.get(String(r.variantId))) !== '').length
   const ready = changed > 0
+  useEffect(() => {
+    if (mode !== 'arrival' || stage !== 'complete') return
+    const frame = window.requestAnimationFrame(() => {
+      resultHeadingRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+      resultHeadingRef.current?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [mode, stage])
   useEffect(() => {
     if(stage === 'review' && !busy && !changed) {
       setStage('select');setSelected([]);setCurrent('');setNotice('')
@@ -244,6 +256,53 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     if(changed>limit){setNotice('В одну '+(mode==='transfer'?'перемещение':'операцию')+' допускается не более '+limit+' вариантов. Разделите список.');return}
     setNotice('');setStage('review')
   }
+  if (mode === 'arrival' && stage === 'complete') return <section
+    className="inventory-arrival-finished" aria-label="Результат сохранённого прихода">
+    <div className="inventory-arrival-result-head">
+      <span className="inventory-arrival-result-mark" aria-hidden="true">✓</span>
+      <div>
+        <span className="stocktake-step-kicker">Операция завершена</span>
+        <h3 tabIndex={-1} ref={resultHeadingRef}>Приход сохранён</h3>
+        <p>{sourceName(lastArrival?.source || source)} · {lastArrival?.variants || 0} вариантов ·
+          {' '}{lastArrival?.units || 0} шт. Остатки уже обновлены. Повторно оформлять приход не нужно.</p>
+      </div>
+    </div>
+    {!showArrivalPrint ? <>
+      <h4>Распечатать этикетки для поступивших товаров?</h4>
+      <p className="inventory-arrival-result-help">Печать не обязательна и не влияет на приход.
+        Выбранные товары и количества уже подставлены, исправлять их вручную не потребуется.</p>
+      <div className="inventory-arrival-result-actions">
+        <button type="button" className="primary" disabled={!p.arrivalPrintAvailable}
+          onClick={() => setShowArrivalPrint(true)}>Распечатать этикетки</button>
+        <button type="button" className="secondary" onClick={() => {
+          setShowArrivalPrint(false)
+          p.onFinishArrivalResult?.()
+          setStage('select')
+          setSelected([])
+          setCurrent('')
+        }}>Завершить без печати</button>
+      </div>
+      {!p.arrivalPrintAvailable ? <p className="inventory-arrival-result-note" role="note">
+        Печатный список для этого прихода сейчас недоступен. Приход уже сохранён;
+        позже можно распечатать этикетки через «Штрихкоды» или историю прихода.
+      </p> : null}
+    </> : <>
+      <div className="inventory-arrival-print-actions">
+        <button type="button" className="secondary compact" onClick={() => setShowArrivalPrint(false)}>
+          ← К результату прихода
+        </button>
+        <button type="button" className="secondary compact" onClick={() => {
+          setShowArrivalPrint(false)
+          p.onFinishArrivalResult?.()
+          setStage('select')
+          setSelected([])
+          setCurrent('')
+        }}>Готово, вернуться к операциям</button>
+      </div>
+      {p.arrivalLabelPrinter}
+    </>}
+  </section>
+
   return <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations"
     data-unified-operation={mode}>
     <div className="stocktake-e-head"><div><h3>{names[mode].title}</h3><p>{names[mode].detail}</p></div></div>
@@ -619,7 +678,17 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         disabled={busy||!ready||(mode==='transfer'&&Boolean(blockedTransferSource))}
          onClick={()=>void (async()=>{
            const saved=await p.onSave(scannedUnits.map(unit=>unit.code))
-           if(saved===true){clearScans();setStage('select');setSelected([]);setCurrent('')}
+           if(saved===true){
+             clearScans()
+             if(mode==='arrival'){
+               const units = entries.reduce((sum,item)=>sum+item.quantity,0)+extraArrival.totalQuantity
+               setLastArrival({source,variants:entries.length+extraArrival.rows,units})
+               setShowArrivalPrint(false)
+               setStage('complete')
+             } else {
+               setStage('select');setSelected([]);setCurrent('')
+             }
+           }
          })()}>{busy?'Сохраняю…':names[mode].action}</button>
         <button className="secondary" type="button" disabled={busy} onClick={()=>setStage(chosen.length?'quantities':'select')}>Вернуться к вводу</button></div>
     </>)}
