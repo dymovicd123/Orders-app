@@ -94,7 +94,7 @@ assert(!code.includes("fetch(") && !code.includes("/api/returned-items/receive")
  'The inventory view must not bypass canonical receipt action')
 const receiptServer=readFileSync('worker/domains/order-returned-item-receipt.ts','utf8')
 const labelsUi=readFileSync('src/features/inventory/views/UnitBarcodePreparation.tsx','utf8')
-assert(receiptServer.includes("!isWorkshop && receivedVariantId > 0 && (stockApplied || stockAlreadyApplied)"),
+assert(receiptServer.includes("!isWorkshop && receivedVariantId > 0 && stockApplied"),
   'Only a completed non-workshop physical stock application can suggest barcode preparation')
 assert(receiptServer.includes('barcodePreparation:') && receiptServer.includes('pendingInventoryCount:'),
   'Barcode suggestion supplements, never replaces, canonical receipt lifecycle')
@@ -104,8 +104,10 @@ assert(domain.includes('onBarcodePreparationReady') && code.includes('onBarcodeP
   'Only successful canonical receive result can offer post-intake labels')
 assert(code.includes('<UnitBarcodePreparation') && code.includes('setReceivedForLabels(null)'),
   'Warehouse intake offers optional labels only after a successful receipt, reset between attempts')
-assert(labelsUi.includes("initialSource = 'warehouse'") && labelsUi.includes('initialQuantity = 1'),
+assert(labelsUi.includes("initialSource || 'warehouse'") && labelsUi.includes('initialQuantity = 1'),
   'Label preparation safely preselects the recorded stock destination and number of pieces')
+assert(labelsUi.includes('if (!initialSource && !data.locations.some('),
+  'A post-receipt source must not silently change to a different location with available label capacity')
 assert(code.includes('Это не новый приход: количество в остатке повторно не увеличится.'),
   'No ambiguity about whether label creation changes stock')
 
