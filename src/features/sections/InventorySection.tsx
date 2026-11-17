@@ -2667,7 +2667,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
-        onArrivalBarcodeReady: setArrivalBarcodeReceipt,
         clearArrivalBarcodeReady: () => setArrivalBarcodeReceipt(null),
         askActionConfirmation,
         onInlineArrivalVariant,
