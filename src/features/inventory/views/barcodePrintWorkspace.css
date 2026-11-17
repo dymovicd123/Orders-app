@@ -47,6 +47,12 @@
 .barcode-print-summary strong{font-size:15px}
 .barcode-print-summary span{color:var(--muted,#687588);font-size:12px}
 .barcode-print-warning{font-size:12px;color:#bb3b33;line-height:1.45}
+.barcode-selected-details{max-width:min(550px,75vw);font-size:12px}
+.barcode-selected-details summary{cursor:pointer;color:var(--text,#24384d);font-weight:600;line-height:1.5}
+.barcode-selected-details ul{margin:7px 0 0;padding:0;list-style:none;display:grid;gap:6px;max-height:200px;overflow:auto}
+.barcode-selected-details li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:5px 8px;border-radius:7px;background:rgba(105,125,150,.07)}
+.barcode-selected-details li span{overflow-wrap:anywhere}
+.barcode-selected-details li strong{flex-shrink:0;white-space:nowrap;font-variant-numeric:tabular-nums}
 .barcode-print-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .barcode-print-main-action{min-height:43px;padding:0 20px}
 @media(max-width:860px){.barcode-workspace-layout{grid-template-columns:minmax(200px,.8fr) minmax(0,1.6fr)}.barcode-variant-table-head,.barcode-variant-row{grid-template-columns:minmax(0,1fr) 130px 94px;gap:9px}.barcode-variant-row{padding:12px}.barcode-variant-table-head{padding:10px 12px}}
