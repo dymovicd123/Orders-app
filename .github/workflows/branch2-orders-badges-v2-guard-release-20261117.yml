@@ -32,7 +32,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'c7ae064ead828b2cb27d132116dac197a8e5eca6'
+          test "$(git rev-parse HEAD^)" = '7a6720e5c3523ab9f4dccda2064c1ae0b0357c57'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           python3 - <<'PY'
@@ -79,7 +79,7 @@ jobs:
       - name: Deploy Branch2 Worker + V2 flag, NO D1 migration
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'c7ae064ead828b2cb27d132116dac197a8e5eca6'
+          test "$(git rev-parse HEAD^)" = '7a6720e5c3523ab9f4dccda2064c1ae0b0357c57'
           npx --no-install wrangler deploy --config .branch2-return-v2-persistent-release.jsonc --name orders-app-branch2 --keep-vars --strict
       - name: Prove active Worker is 100 percent Return V2 with preserved bindings
         run: python3 scripts/branch2-return-v2-active-guard-20261117.py after
