@@ -241,6 +241,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   async function scanOperationUnit() {
     const code = scanCode.trim().toUpperCase()
     if (!code || scanRunningRef.current || busy || loading || error || stage==='review') return
+    if (matchedSkuId !== null) {setScanError('Сначала примените количество найденного варианта или отмените выбор.');return}
     const context = scanContextRef.current
     scanRunningRef.current=true;setScanBusy(true);setScanError('');setScanNotice('')
     try {
@@ -375,14 +376,41 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     </div>
 
     {(mode==='transfer'||mode==='writeoff') && stage!=='review' && <section className="operation-barcode-area" aria-label="Сканирование индивидуальных вещей">
-      <div className="operation-barcode-head"><strong>Сканировать вещи</strong><span>Индивидуальные этикетки · {scannedUnits.length} шт.</span></div>
+      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)} · индивидуальных вещей: {scannedUnits.length}</span></div>
+      <p className="operation-barcode-explain">Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.</p>
       <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
-        <input aria-label="Индивидуальный штрихкод" value={scanCode} onChange={event=>setScanCode(event.target.value)}
-          autoComplete="off" spellCheck={false} placeholder="Сканируйте этикетку" disabled={scanBusy||busy||loading}/>
-        <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||!scanCode.trim()}>
-          {scanBusy?'Ищу…':'Добавить вещь'}
+        <input ref={scanInputRef} aria-label="Штрихкод товара — общий SKU или индивидуальный" value={scanCode} onChange={event=>setScanCode(event.target.value)}
+          autoComplete="off" spellCheck={false} placeholder="Отсканируйте или введите код и нажмите Enter" disabled={scanBusy||busy||loading||matchedSkuId!==null}/>
+        <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||matchedSkuId!==null||!scanCode.trim()}>
+          {scanBusy?'Ищу…':'Найти по коду'}
         </button>
       </form>
+      {matchedSkuId !== null && <div className="operation-sku-match" role="group" aria-label="Количество найденного варианта">
+        {matchedSkuRow ? <>
+          <div className="operation-sku-match-info">
+            <span className="operation-sku-match-kicker">Найден вариант по общему коду SKU</span>
+            <strong>{matchedSkuRow.productName}</strong>
+            <span>{[matchedSkuRow.color,matchedSkuRow.size,positionLabel(matchedSkuRow)].filter(Boolean).join(' · ')}</span>
+            <small>По системе в {sourceName(source).toLocaleLowerCase('ru')}: {int(matchedSkuRow.quantity)} шт. · уже введено: {int(draftMap.get(String(matchedSkuId))?.quantity)} шт.</small>
+            {scannedSkuMin>0&&<small>Индивидуальных меток этого варианта: {scannedSkuMin} шт. (входят в количество)</small>}
+          </div>
+          <form className="operation-sku-match-form" onSubmit={event=>{event.preventDefault();applySkuQuantity()}}>
+            <label>{mode==='transfer'?'Всего переместить':'Всего списать'}
+              <input ref={skuQuantityRef} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+                placeholder="0" value={skuQuantityDraft} onFocus={event=>event.currentTarget.select()}
+                onChange={event=>{if(/^[0-9]{0,6}$/.test(event.target.value)){setSkuQuantityDraft(event.target.value);setScanError('')}}}
+                disabled={busy||loading} aria-label="Итоговое количество для найденного варианта"/>
+            </label>
+            <div className="operation-sku-match-buttons">
+              <button type="submit" className="primary compact" disabled={busy||loading}>Применить количество</button>
+              <button type="button" className="secondary compact" disabled={busy||loading} onClick={()=>{
+                setMatchedSkuId(null);setSkuQuantityDraft('');setScanError('')
+                window.requestAnimationFrame(()=>scanInputRef.current?.focus())
+              }}>Отмена</button>
+            </div>
+          </form>
+        </> : <p>Вариант больше не доступен в списке. Обновите остатки и повторите поиск.</p>}
+      </div>}
       {scannedUnits.length>0 && <div className="operation-barcode-selected">{scannedUnits.map(unit=>
         <div key={unit.unitId} className="operation-barcode-item">
           <span><strong>{unit.name}</strong><small>{unit.code}</small></span>
