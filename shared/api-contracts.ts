@@ -294,6 +294,7 @@ export type InventoryStocktakeItem = {
   openingQuantity: number
   openingReservedQuantity: number
   baselineQuantity: number
+  createdAt: string
   countedQuantity: number | null
   countedAt: string | null
   status: string

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { InventoryRenderContext } from './types'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
 import { StocktakeBarcodeScanner } from './StocktakeBarcodeScanner'
@@ -101,7 +102,13 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'submitStocktakeInlineAdd'
   | 'suggestionValues'
   | 'toggleStocktakeInlineSize'
->
+> & {
+  stocktakeLabelCount: number
+  stocktakePrintOpen: boolean
+  stocktakeLabelPrinter: ReactNode
+  onStocktakePrintOpen: () => void
+  onStocktakePrintClose: () => void
+}
 
 
 export function renderInventoryStocktakePanel(ctx: PanelContext) {
@@ -197,7 +204,12 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     stocktakeUnsavedCount,
     submitStocktakeInlineAdd,
     suggestionValues,
-    toggleStocktakeInlineSize
+    toggleStocktakeInlineSize,
+    stocktakeLabelCount,
+    stocktakePrintOpen,
+    stocktakeLabelPrinter,
+    onStocktakePrintOpen,
+    onStocktakePrintClose,
   } = ctx
 
   const selectedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) =>
@@ -257,10 +269,25 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           {!completedShortageRows.length && !completedUnknownRows.length ? <div className="stocktake-outcome-note is-done"><strong>Дополнительных действий не требуется</strong><span>Проверка закончена, результат уже действует.</span></div> : null}
                         </div>
                         {completedChangedRows.length ? <details className="stocktake-outcome-details"><summary>Что изменилось · {completedChangedRows.length}</summary><div className="stocktake-outcome-change-list">{completedChangedRows.slice(0, 24).map((row: any) => <div key={`stocktake-outcome-${row.id}`}><span><strong>{row.productName}</strong><small>{[stocktakePositionLabel(row), row.color, row.size].filter(Boolean).join(' · ')}</small></span><b>{Number(row.baselineQuantity || 0)} → {Number(row.appliedQuantity || 0)}</b></div>)}{completedChangedRows.length > 24 ? <p>Показаны первые 24 изменения из {completedChangedRows.length}. Полная история сохранена в разделе «История».</p> : null}</div></details> : null}
-                        <div className="stocktake-outcome-actions">
+                        {stocktakeLabelCount > 0 && !stocktakePrintOpen ? <div className="stocktake-outcome-label-offer" role="region" aria-label="Печать этикеток после ревизии">
+                          <h4>Распечатать этикетки для найденных товаров?</h4>
+                          <p>В ревизии добавлены новые позиции: {stocktakeLabelCount} шт. с определёнными вариантами SKU.
+                            Этикетки уже подготовлены по найденным количествам. Печать необязательна и не меняет остатки.</p>
+                          {completedUnknownRows.length ? <small>Позиции без определённого SKU не включены в печать. Их сначала нужно уточнить.</small> : null}
+                        </div> : null}
+                        {stocktakePrintOpen && stocktakeLabelCount > 0 ? <div className="stocktake-outcome-label-print" role="region" aria-label="Печать после ревизии">
+                          <div className="stocktake-outcome-actions">
+                            <button type="button" className="secondary compact" onClick={onStocktakePrintClose}>← К результату ревизии</button>
+                            <button type="button" className="secondary compact" onClick={dismissStocktakeOutcome}>Готово</button>
+                          </div>
+                          {stocktakeLabelPrinter}
+                        </div> : <div className="stocktake-outcome-actions">
                           {completedUnknownRows.length ? <button className="secondary" type="button" onClick={openStocktakeOutcomeIssues}>Уточнить найденные · {completedUnknownRows.length}</button> : null}
-                          <button className="primary" type="button" onClick={dismissStocktakeOutcome}>Готово</button>
-                        </div>
+                          {stocktakeLabelCount > 0 ? <>
+                            <button className="primary" type="button" onClick={onStocktakePrintOpen}>Распечатать этикетки</button>
+                            <button className="secondary" type="button" onClick={dismissStocktakeOutcome}>Завершить без печати</button>
+                          </> : <button className="primary" type="button" onClick={dismissStocktakeOutcome}>Готово</button>}
+                        </div>}
                       </section>
                     ) : !stocktakeSession ? (
                       <>
