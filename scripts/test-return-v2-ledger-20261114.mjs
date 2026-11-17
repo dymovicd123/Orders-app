@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -147,10 +148,10 @@ assert.equal(legacy.totalAmount,30000)
 assert.equal(legacy.debtAmount,0)
 assert.equal(legacy.customerOverpay,null)
 await assert.rejects(syncVersionedReturnMoneyPrototype(db,oldId),/Исторические заказы/)
-const oldRefund=await http('POST','/api/returns',{
+const oldRefund={status:201,data:await createHistoricalReturn(db,{
  requestId:'ledger-legacy-money-only',orderId:oldId,returnDate:'2026-11-14',
  amount:2000,paymentMethod:'KASPI',items:[]
-})
+})}
 assert.equal(oldRefund.status,201,'Legacy money-only Return should still work: '+JSON.stringify(oldRefund))
 legacy=await readVersionedReturnMoney(db,oldId)
 assert.equal(legacy.kind,'legacy')
