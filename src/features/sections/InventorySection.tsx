@@ -22,6 +22,7 @@ import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandSta
 import { WarehouseReportsWorkspace } from '../inventory/views/WarehouseReportsWorkspace'
 import { WarehouseReceivingWorkspace } from '../inventory/views/WarehouseReceivingWorkspace'
 import { UnitBarcodePreparation } from '../inventory/views/UnitBarcodePreparation'
+import { BarcodePrintWorkspace } from '../inventory/views/BarcodePrintWorkspace'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
 import '../../styles/182-inventory-stocktake-human.css'
@@ -181,6 +182,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     inventoryQuickFilters,
     inventorySortMode,
     inventorySourceRows,
+    inventoryData,
     inventorySnapshotLoadErrors,
     inventoryStats,
     inventoryStocktakeAllGroups,
@@ -2233,7 +2235,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 <div className="warehouse-w2-primary" aria-label="Разделы склада">
                   {[
                     { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
-                    ...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары', hint: 'Каталог, цвета, размеры и характеристики' }] : []),
+                    ...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары', hint: 'Каталог, цвета, размеры и характеристики' },
+                      { value: 'barcodes' as const, label: 'Штрихкоды', hint: 'Найти товар, увидеть остатки, распечатать этикетки' }] : []),
                     { value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },
                     ...(isAdmin ? [{ value: 'receiving' as const, label: 'Приёмка товаров', hint: 'Физические возвраты и обмены от клиентов' }] : []),
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
@@ -2271,6 +2274,18 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 />
               </div> : null}
 
+              <div style={inventoryPanelStyle('barcodes')}>
+                {isAdmin && inventoryPanel === 'barcodes' ? <BarcodePrintWorkspace
+                  catalog={catalogData} stock={inventoryData}
+                  onReload={async () => {
+                    const [freshCatalog, warehouse, boutique] = await Promise.all([
+                      loadCatalogData(true),
+                      loadInventoryData('warehouse', true, '', false),
+                      loadInventoryData('boutique', true, '', false),
+                    ])
+                    return Boolean(freshCatalog?.ok && warehouse?.ok && boutique?.ok)
+                  }} /> : null}
+              </div>
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
               <div style={inventoryPanelStyle('reports')}><WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} /></div>
 
