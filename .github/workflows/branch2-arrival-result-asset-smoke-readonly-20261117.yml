@@ -1,0 +1,43 @@
+name: Branch2 deployed asset smoke diagnostic READ ONLY
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-arrival-result-asset-smoke-readonly-20261117.yml
+permissions:
+  contents: read
+jobs:
+  read-only-assets:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose public HTML and deployed JS safely
+        run: |
+          python3 - <<'PY'
+          import urllib.request,re,json
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def get(path):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'OrdersBranch2PublicAssetsReadOnly/1.0','Accept':'text/html,application/json,*/*'})
+              with urllib.request.urlopen(req,timeout=25) as response:
+                  data=response.read()
+                  print('GET',path,'status',response.status,'bytes',len(data),'type',response.headers.get('Content-Type',''), 'final_url_path',response.url.replace(base,''))
+                  return data
+          health=json.loads(get('/api/health'))
+          assert health.get('ok') is True,'Branch2 API not healthy'
+          page=get('/').decode('utf-8','replace')
+          print('HTML_START',repr(page[:850]))
+          print('SCRIPT_TAGS',re.findall(r'<script[^>]*>',page,re.I)[:10])
+          files=re.findall(r'(?:src|href)=[\"\']([./]*assets/[^\s\"\']+)',page,re.I)
+          if not files: files=re.findall(r'(?:src|href)=[\"\']([^\s\"\']+\.(?:js|css))',page,re.I)
+          print('ASSET_REFS',files[:12])
+          assert files,'No asset references in public HTML'
+          scripts=[p for p in files if p.lower().split('?')[0].endswith('.js')]
+          assert scripts,'No JS script referenced in public HTML'
+          for asset in scripts[:2]:
+              p=('/'+asset.lstrip('./')) if not asset.startswith('/') else asset
+              data=get(p)
+              assert len(data)>1000,'Broken/empty JS asset '+p
+              assert b'<html' not in data[:250].lower(),'Asset served HTML not JavaScript'
+          print('BRANCH2_PUBLIC_ASSETS_HEALTHY_READ_ONLY')
+          PY
