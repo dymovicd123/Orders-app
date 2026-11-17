@@ -16,6 +16,8 @@ export function returnV2PreviewMode(
 export function allowLegacyReturnEditor(
   selectedOrderId:number,checkedOrderId:number,mode:ReturnV2UiMode
 ):boolean {
-  return selectedOrderId<=0
-    ||(selectedOrderId===checkedOrderId&&mode==='legacy')
+  // Without a selected order, show only the instruction to choose an order.
+  // The old editor must never appear merely because the Returns tab is open.
+  return selectedOrderId>0
+    &&selectedOrderId===checkedOrderId&&mode==='legacy'
 }
