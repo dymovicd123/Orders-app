@@ -1,0 +1,121 @@
+name: Branch2 Return V2 permanently enabled - one-shot verified deploy (NO Main)
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - .github/workflows/branch2-return-v2-persistent-release-20261117.yml
+permissions:
+  contents: read
+concurrency:
+  group: branch2-controlled-worker-deployment
+  cancel-in-progress: false
+jobs:
+  branch2-return-v2-only:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: One-shot source and exact Branch2 Worker/D1 scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'b59dd59fe61cb2002a8808b5836962843d0e0b23'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('wrangler.jsonc').read_text())
+          assert cfg['name']=='orders-app-branch2'
+          assert cfg['main']=='worker/index.ts'
+          assert cfg.get('env') is None
+          assert cfg['d1_databases']==[{
+            'binding':'DB','database_name':'orders_db_branch2_mirror_20261027',
+            'database_id':'0904a573-21ff-44d8-93b0-c9200f771702'
+          }]
+          assert cfg.get('vars')=={'RETURN_V2_ENABLED':'true'}
+          assert cfg.get('keep_vars') is True
+          # Build exactly once, then upload its already verified assets.
+          cfg.pop('build',None)
+          cfg['send_metrics']=False
+          Path('.branch2-return-v2-persistent-release.jsonc').write_text(json.dumps(cfg,indent=2)+'\n')
+          print('BRANCH2_ONLY_SOURCE_AND_V2_CONFIG_VERIFIED')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Return V2-only UI and complete safety regressions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/branch2-return-v2-active-guard-20261117.py
+          node scripts/test-branch2-return-v2-permanent-ux-20261117.mjs
+          node scripts/return-v2-branch2-readiness.mjs
+          node scripts/test-return-v2-unified-finance-20261114.mjs
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-return-attributes-20261029.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+          npm run build
+      - name: Verify entire Return V2 schema on test D1, read only
+        run: |
+          node scripts/return-v2-branch2-readiness.mjs --remote
+      - name: Inspect active test Worker, all bindings and Return V2 flag, read only
+        run: python3 scripts/branch2-return-v2-active-guard-20261117.py before
+      - name: Dry-run approved Branch2 Worker and exact D1 only
+        run: |
+          npx --no-install wrangler deploy --config .branch2-return-v2-persistent-release.jsonc --name orders-app-branch2 --keep-vars --strict --dry-run --outdir .branch2-return-v2-persistent-preview
+      - name: Deploy Branch2 Worker + V2 flag, NO D1 migration
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'b59dd59fe61cb2002a8808b5836962843d0e0b23'
+          npx --no-install wrangler deploy --config .branch2-return-v2-persistent-release.jsonc --name orders-app-branch2 --keep-vars --strict
+      - name: Prove active Worker is 100 percent Return V2 with preserved bindings
+        run: python3 scripts/branch2-return-v2-active-guard-20261117.py after
+      - name: Recheck Return V2 test D1 schema after deployment (READ ONLY)
+        run: node scripts/return-v2-branch2-readiness.mjs --remote
+      - name: Public Branch2 Worker and new JavaScript bundle read-only smoke
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request,urllib.error
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def query(path):
+              req=urllib.request.Request(base+path,headers={
+                  'User-Agent':'OrdersBranch2ReturnV2ProtectedAcceptance/1.0',
+                  'Accept':'application/json,text/html,*/*'})
+              try:
+                  with urllib.request.urlopen(req,timeout=25) as response:
+                      return response.status,response.read()
+              except urllib.error.HTTPError as error:
+                  return error.code,error.read()
+          verified=False
+          for attempt in range(7):
+              try:
+                  status,body=query('/api/health')
+                  html_status,raw_html=query('/')
+                  denied,_=query('/api/orders/1/returns/v2/preview')
+                  if status==200 and json.loads(body).get('ok') is True and html_status==200 and denied in (401,403):
+                      html=raw_html.decode('utf8','replace')
+                      match=re.search(r'<script[^>]*src="(/assets/[^"]+)"',html)
+                      if match:
+                          asset_status,asset=query(match.group(1))
+                          if asset_status==200 and len(asset)>1000:
+                              verified=True
+                              break
+                  print('BRANCH2_V2_SMOKE_RETRY',attempt+1,status,html_status,denied)
+              except Exception as error:
+                  print('BRANCH2_V2_SMOKE_RETRY',attempt+1,type(error).__name__)
+              time.sleep(3)
+          if not verified:raise SystemExit('BRANCH2_RETURN_V2_SMOKE_FAILED')
+          print('BRANCH2_RETURN_V2_PERSISTENT_RELEASE_SUCCESS no_main_worker_no_prod_d1_writes')
+          PY
