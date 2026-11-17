@@ -88,7 +88,6 @@ assert.equal(afterManual.countedQuantity,8,'Next scan adds one to the manually c
 assert.equal(qty(),8)
 assert.deepEqual(stock(),initialStock,'Neither scan nor manual draft edit applies stock before completing stocktake')
 
-await assert.rejects(scanStocktakeSku(db,'REV-FAST',code,id(3).replace('11111111','22222222'),'admin').then(()=>{}),()=>false).catch(()=>{})
 await assert.rejects(scanStocktakeSku(db,'REV-FAST','OCS1-DAMAGED-ZZ',id(4),'admin'),/повреждён/)
 await assert.rejects(scanStocktakeSku(db,'REV-FAST',code,'bad-request','admin'),/событие/)
 await assert.rejects(scanStocktakeSku(db,'REV-FAST',skuBarcodeForVariantId(102),id(5),'admin'),/не входит/)
