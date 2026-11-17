@@ -20,7 +20,6 @@ type Props={
  order:{id:number;external_id:string}|null;
  formatMoney:(n:number)=>string;
  SmartPickerInput:any;paymentMethods:any[];
- onMode:(orderId:number,mode:ReturnV2UiMode)=>void;
  onSaved:(saved:{returnId:number;cashRefund:number;remainingSale:number;receipt?:{receiptPending?:boolean}})=>void;
  onCancelled:()=>void;
  onBack:()=>void
@@ -41,7 +40,7 @@ async function loadJson(res:Response){
  return payload
 }
 export function OrderReturnV2Flow({
- order,formatMoney,SmartPickerInput,paymentMethods,onMode,onSaved,onCancelled,onBack
+ order,formatMoney,SmartPickerInput,paymentMethods,onSaved,onCancelled,onBack
 }:Props){
  const orderId=Number(order?.id||0)
  const [preview,setPreview]=useState<Preview|null>(null)
@@ -84,7 +83,6 @@ export function OrderReturnV2Flow({
    setFetching(true);setError('')
    if(!preview){
      setViewMode('checking')
-     onMode(id,'checking')
    }
    try{
      const response=await fetch(`/api/orders/${id}/returns/v2/preview`,{
@@ -93,14 +91,9 @@ export function OrderReturnV2Flow({
      const body=await response.json()
      if(signal?.aborted||loadedOrderRef.current!==id)return
      const nextMode=returnV2PreviewMode(body,response.ok)
-     if(nextMode==='error')throw new Error(String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
-     if(nextMode==='legacy'){
-       // Legacy mode is permitted ONLY when the server explicitly reports
-       // that Return V2 is disabled, never for an ineligible/malformed order.
-       setPreview(null);setViewMode('legacy');setEligible(false)
-       onMode(id,'legacy')
-       return
-     }
+     if(nextMode==='error')throw new Error(body?.enabled===false
+       ?'На сервере отключён Return V2. Оформление остановлено: старая форма не используется. Сообщите администратору.'
+       :String(body?.message||'Сервер не подтвердил режим Return V2. Операция остановлена.'))
      const data=body as Preview
      setPreview(data)
      setUnknownResult(false)
@@ -108,7 +101,6 @@ export function OrderReturnV2Flow({
      setEligible(Boolean(data.eligible))
      // Every enabled order gets a visible version-aware result, including
      // review-only items. An unsafe fallback to V1 must never occur.
-     onMode(id,'v2')
      const selected:Record<number,number>={}
      const receipt:Record<number,Intent>={}
      for(const item of data.evidence.lines){
@@ -126,7 +118,6 @@ export function OrderReturnV2Flow({
      setError(e instanceof Error?e.message:'Проверка заказа недоступна.')
      setPreview(null);setViewMode('error');setEligible(false)
      // Failed previews must not silently expose a V1 write path.
-     onMode(id,'error')
    }finally{
      if(loadedOrderRef.current===id&&!signal?.aborted)setFetching(false)
    }
@@ -135,7 +126,7 @@ export function OrderReturnV2Flow({
    loadedOrderRef.current=orderId
    setCommitted(null);setUnknownResult(false);setPreview(null);setViewMode('checking')
    setEligible(false);setError('');setRefundMethod('');requestRef.current=''
-   if(!orderId){onMode(0,'checking');return}
+   if(!orderId)return
    const ac=new AbortController()
    void refresh(orderId,ac.signal)
    return ()=>ac.abort()
@@ -200,7 +191,7 @@ export function OrderReturnV2Flow({
      setUnknownResult(true)
    }finally{setBusy(false)}
  }
- if(!orderId||viewMode==='legacy')return null
+ if(!orderId)return null
  if(viewMode==='checking')return <section className="mini-panel debt-form-panel" aria-label="Проверка Return V2" aria-busy="true">
    <div className="mini-panel-head">
      <div><h3 data-return-form-title tabIndex={-1}>Проверка товаров и остатков</h3>
