@@ -20,6 +20,7 @@ import { renderInventoryMovementPanel } from '../inventory/views/renderInventory
 import { renderInventoryHistoryPanel } from '../inventory/views/renderInventoryHistoryPanel'
 import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandStatistics'
 import { WarehouseReportsWorkspace } from '../inventory/views/WarehouseReportsWorkspace'
+import { WarehouseReceivingWorkspace } from '../inventory/views/WarehouseReceivingWorkspace'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
 import '../../styles/182-inventory-stocktake-human.css'
@@ -103,6 +104,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     inventoryLifecycle,
     inventoryLifecycleBusy,
     warehouseAttention,
+    returnPendingInbox,
+    exchangePendingInbox,
+    inventoryReceivingMode,
+    setInventoryReceivingMode,
+    loadReturnPendingInbox,
+    loadExchangePendingInbox,
+    receiveReturnedItemAction,
     catalogIssueStats,
     catalogProductDraft,
     catalogVariantDraft,
@@ -1738,6 +1746,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     openOrderStockHandoverById,
   })
 
+  const warehousePhysicalReceivingCount = Math.max(0, Number(returnPendingInbox?.pendingQuantity || 0))
+    + Math.max(0, Number(exchangePendingInbox?.pendingQuantity || 0))
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
     + Number(warehouseAttention?.counts?.lifecycle || 0)
@@ -2200,6 +2210,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
                     ...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары', hint: 'Каталог, цвета, размеры и характеристики' }] : []),
                     { value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },
+                    ...(isAdmin ? [{ value: 'receiving' as const, label: 'Приёмка товаров', hint: 'Физические возвраты и обмены от клиентов' }] : []),
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
                     { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
                     { value: 'statistics' as const, label: 'Статистика', hint: 'Популярность товаров, цветов и размеров' },
@@ -2207,13 +2218,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   ].map((entry) => (
                     <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
                       <strong>{entry.label}</strong>
+                      {entry.value === 'receiving' && warehousePhysicalReceivingCount > 0 ? <b className="warehouse-receiving-nav-count" aria-label={`${warehousePhysicalReceivingCount} товаров ждут приёмки`}>{warehousePhysicalReceivingCount}</b> : null}
                     </button>
                   ))}
                 </div>
                 {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
                   <div className="warehouse-w2-secondary">
-                    {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
-                      <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
+                    {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Физически полученные вещи, по которым осталось завершить складской учёт">
+                      <span>Завершить учёт</span><b>{warehousePendingIntakeCount}</b>
                     </button> : null}
                     {warehouseClarificationCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Позиции, где нужно уточнить товар или фактическое движение">
                       <span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>
@@ -2221,6 +2233,18 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 ) : null}
               </div>
+
+              {isAdmin && inventoryPanel === 'receiving' ? <div style={inventoryPanelStyle('receiving')}>
+                <WarehouseReceivingWorkspace
+                  mode={inventoryReceivingMode}
+                  onModeChange={setInventoryReceivingMode}
+                  returnInbox={returnPendingInbox}
+                  exchangeInbox={exchangePendingInbox}
+                  loadReturns={loadReturnPendingInbox}
+                  loadExchanges={loadExchangePendingInbox}
+                  receiveItem={receiveReturnedItemAction}
+                />
+              </div> : null}
 
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
               <div style={inventoryPanelStyle('reports')}><WarehouseReportsWorkspace active={inventoryModuleVisible && inventoryPanel === 'reports'} isAdmin={isFinanceAdmin} /></div>
