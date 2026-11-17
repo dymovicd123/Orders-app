@@ -257,11 +257,26 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       if (!group||!row) throw new Error('Вариант не найден в списке выбранной точки. Обновите остатки или выберите товар вручную.')
       if (match.kind==='sku') {
         setMatchedSkuId(match.variantId)
-        const existing=int(draftMap.get(String(match.variantId))?.quantity)
-        setSkuQuantityDraft(existing>0?String(existing):'')
+        const existingDraft=draftMap.get(String(match.variantId))
+        const existing=int(existingDraft?.quantity)
+        setSkuQuantityDraft(mode==='manual_set' && existingDraft?.touched ? String(existing) : existing>0?String(existing):'')
         setSelected(current=>current.includes(group.key)?current:[...current,group.key])
         setCurrent(group.key);setStage('quantities')
-        setScanNotice('Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
+        setScanNotice(mode==='manual_set'
+          ? 'Вариант найден. Укажите фактический остаток: скан общего SKU не меняет количество.'
+          : 'Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
+        window.requestAnimationFrame(()=>skuQuantityRef.current?.focus())
+        return
+      }
+      if (mode==='manual_set') {
+        // Individual labels identify a variant here, but only the operator's confirmed
+        // final count changes stock. This operation has no physical-unit movement ledger.
+        setMatchedSkuId(match.variantId)
+        const existingDraft=draftMap.get(String(match.variantId))
+        setSkuQuantityDraft(existingDraft?.touched ? String(int(existingDraft.quantity)) : '')
+        setSelected(current=>current.includes(group.key)?current:[...current,group.key])
+        setCurrent(group.key);setStage('quantities')
+        setScanNotice('Индивидуальная метка нашла вариант. Укажите весь фактический остаток, включая вещи без этикеток. Скан не прибавляет количество.')
         window.requestAnimationFrame(()=>skuQuantityRef.current?.focus())
         return
       }
@@ -286,7 +301,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   function applySkuQuantity() {
     if (!matchedSkuRow || !matchedSkuId || busy || loading) return
     if (!/^(0|[1-9][0-9]{0,5})$/.test(skuQuantityDraft.trim())) {
-      setScanError('Укажите целое количество от 0 до 999999. Ноль убирает вариант из операции.')
+      setScanError(mode==='manual_set'
+        ? 'Укажите целый фактический остаток от 0 до 999999. Ноль установит остаток в ноль.'
+        : 'Укажите целое количество от 0 до 999999. Ноль убирает вариант из операции.')
       return
     }
     const quantity=Number(skuQuantityDraft.trim())
@@ -295,7 +312,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       return
     }
     p.onQuantity(matchedSkuRow,String(quantity))
-    setScanNotice(quantity===0 ? 'Количество очищено. Вещи не перемещены и не списаны.'
+    setScanNotice(mode==='manual_set'
+      ? 'Фактический остаток '+quantity+' шт. внесён в черновик. Остатки изменятся только после подтверждения.'
+      : quantity===0 ? 'Количество очищено. Вещи не перемещены и не списаны.'
       : 'Для варианта установлено '+quantity+' шт. Можно искать следующий товар или проверить результат.')
     setScanError('')
     setMatchedSkuId(null);setSkuQuantityDraft('')
@@ -376,9 +395,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       </div>
     </div>
 
-    {(mode==='transfer'||mode==='writeoff') && stage!=='review' && <section className="operation-barcode-area" aria-label="Сканирование индивидуальных вещей">
-      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)} · индивидуальных вещей: {scannedUnits.length}</span></div>
-      <p className="operation-barcode-explain">Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.</p>
+    {(mode==='transfer'||mode==='writeoff'||mode==='manual_set') && stage!=='review' && <section className="operation-barcode-area" aria-label="Поиск товара по штрихкоду">
+      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)}{mode==='manual_set'?'':` · индивидуальных вещей: ${scannedUnits.length}`}</span></div>
+      <p className="operation-barcode-explain">{mode==='manual_set'
+        ? 'Общий SKU и индивидуальная метка только находят вариант. Укажите полный фактический остаток вручную, включая вещи без этикеток. Скан не меняет количество.'
+        : 'Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.'}</p>
       <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
         <input ref={scanInputRef} aria-label="Штрихкод товара — общий SKU или индивидуальный" value={scanCode} onChange={event=>setScanCode(event.target.value)}
           autoComplete="off" spellCheck={false} placeholder="Отсканируйте или введите код и нажмите Enter" disabled={scanBusy||busy||loading||matchedSkuId!==null}/>
@@ -389,14 +410,14 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {matchedSkuId !== null && <div className="operation-sku-match" role="group" aria-label="Количество найденного варианта">
         {matchedSkuRow ? <>
           <div className="operation-sku-match-info">
-            <span className="operation-sku-match-kicker">Найден вариант по общему коду SKU</span>
+            <span className="operation-sku-match-kicker">Найден вариант по штрихкоду</span>
             <strong>{matchedSkuRow.productName}</strong>
             <span>{[matchedSkuRow.color,matchedSkuRow.size,positionLabel(matchedSkuRow)].filter(Boolean).join(' · ')}</span>
             <small>По системе в {sourceName(source).toLocaleLowerCase('ru')}: {int(matchedSkuRow.quantity)} шт. · уже введено: {int(draftMap.get(String(matchedSkuId))?.quantity)} шт.</small>
             {scannedSkuMin>0&&<small>Индивидуальных меток этого варианта: {scannedSkuMin} шт. (входят в количество)</small>}
           </div>
           <form className="operation-sku-match-form" onSubmit={event=>{event.preventDefault();applySkuQuantity()}}>
-            <label>{mode==='transfer'?'Всего переместить':'Всего списать'}
+            <label>{mode==='manual_set'?'Фактический остаток':mode==='transfer'?'Всего переместить':'Всего списать'}
               <input ref={skuQuantityRef} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
                 placeholder="0" value={skuQuantityDraft} onFocus={event=>event.currentTarget.select()}
                 onChange={event=>{if(/^[0-9]{0,6}$/.test(event.target.value)){setSkuQuantityDraft(event.target.value);setScanError('')}}}
@@ -423,7 +444,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
             setScanNotice('Код убран из операции.')
           }}>Убрать</button>
         </div>)}</div>}
-      <small>Сканированные вещи входят в указанное количество. Остальные можно указать вручную. Никаких изменений остатков до подтверждения.</small>
+      <small>{mode==='manual_set'
+        ? 'Код используется только для поиска. Не забудьте посчитать вещи без этикеток. Корректировка не создаёт физический учёт меток.'
+        : 'Сканированные вещи входят в указанное количество. Остальные можно указать вручную. Никаких изменений остатков до подтверждения.'}</small>
       {scanError&&<div className="stocktake-barcode-error" role="alert">{scanError}</div>}
       {scanNotice&&<div className="stocktake-barcode-notice" role="status">{scanNotice}</div>}
     </section>}
