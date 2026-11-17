@@ -3,7 +3,6 @@ import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from
 import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
 import { CatalogRetirementHistory } from './CatalogRetirementHistory'
-import { SkuBarcodeLookup, type SkuLookupRecord } from './SkuBarcodeLookup'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'catalogActiveProducts'
@@ -389,11 +388,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         <button type="button" className="catalog-clean-settings" onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики</button>
       </div>
 
-      <div className="catalog-barcode-overview" role="note">
-        <strong>Штрихкоды: поиск и печать</strong>
-        <span>Сканирование открывает нужный цвет и размер. «Код варианта» рядом с размером печатает общий код для полки.
-          Индивидуальные коды каждой вещи пока не подключены; печать не выполняет приход или выдачу.</span>
-      </div>
       <div className="w6-catalog-toolbar">
         <label className="w6-catalog-search">
           <span>Поиск</span>
@@ -403,19 +397,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
             placeholder="Название, цвет, материал, размер…"
           />
         </label>
-        <SkuBarcodeLookup onLocate={(item: SkuLookupRecord) => {
-          ctx.setCatalogCategoryFilter('all')
-          setCatalogOnlyWithoutVariants(false)
-          setInventoryQuery(item.productName)
-          setExpandedCatalogProducts({ [String(item.productId)]: true })
-          window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-            const tile = document.querySelector(
-              '.catalog-size-tile[data-variant-id="' + item.variantId + '"]'
-            ) as HTMLButtonElement | null
-            tile?.click()
-            tile?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }))
-        }}/>
         <div className="catalog-category-switcher w6-catalog-category-switcher">
           {([
             { value: 'all' as const, label: 'Все' },

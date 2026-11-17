@@ -9,9 +9,10 @@ const server = readFileSync('worker/domains/barcode-sku.ts', 'utf8')
 const identity = readFileSync('shared/barcode-sku.ts', 'utf8')
 
 assert(groups.includes('className="catalog-size-entry"'), 'SKU action is not visible beside each exact size')
-assert(groups.includes('<SkuBarcodeButton variantId={Number(variant.id)} compact />'), 'wrong SKU used by tile shortcut')
-assert(groups.includes('className="catalog-sku-head-actions"'), 'barcode action must be at top of detail card')
-assert(styles.includes('.catalog-size-entry .sku-barcode-trigger'), 'size shortcut lacks compact styles')
+assert(!groups.includes('<SkuBarcodeButton'), 'product tiles must not expose barcode buttons')
+assert(groups.includes('className="catalog-sku-head-actions"'), 'catalog detail card must remain navigable')
+const page = readFileSync('src/features/inventory/views/BarcodePrintWorkspace.tsx', 'utf8')
+assert(page.includes('renderPrintSheet') && page.includes('Открыть печать'), 'barcode label printing must be in a dedicated panel')
 assert(styles.includes('@media(max-width:460px)'), 'mobile layout missing')
 
 assert(button.includes('compact ? \'Код варианта\' : \'Этикетка варианта\''), 'label must clearly describe a common variant code')
@@ -33,4 +34,4 @@ assert(server.includes("status: active ? 'active' : 'retired'"), 'retired identi
 assert(!server.includes('UPDATE inventory_stock') && !server.includes('INSERT INTO inventory_stock'), 'scan must never mutate stock')
 assert(identity.includes("const PREFIX = 'OCS1'"), 'SKU identity namespace changed unexpectedly')
 
-console.log('BARCODE WORKFLOW UX PASS: quick access, exact scan, stale-print protection, no D1 mutations')
+console.log('BARCODE WORKFLOW UX PASS: no barcode buttons in catalog, dedicated print screen, stale-print protection, no D1 mutations')

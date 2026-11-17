@@ -1,0 +1,40 @@
+name: Branch2 barcode workspace navigation and print CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/features/inventory/views/BarcodePrintWorkspace.tsx
+      - src/features/inventory/views/barcodePrintWorkspace.css
+      - src/features/inventory/views/renderInventoryCatalogPanel.tsx
+      - src/features/inventory/views/catalogPolishExecutionGroups.tsx
+      - src/features/sections/InventorySection.tsx
+      - src/app/types.ts
+      - src/app/controllers/useOperationalViewModel.ts
+      - src/App.tsx
+      - scripts/test-barcode-*.mjs
+      - .github/workflows/ci-branch2-barcode-print-workspace-20261117.yml
+permissions:
+  contents: read
+jobs:
+  barcode-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: New workspace and old barcode domains
+        run: |
+          node scripts/test-barcode-print-workspace-20261117.mjs
+          node scripts/test-barcode-sku-workflow-ux-20261116.mjs
+          node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+          node scripts/test-barcode-unit-label-preparation-20261116.mjs
+          node scripts/test-barcode-no-hardware-20261117.mjs
+          node scripts/test-barcode-sku-foundation.mjs
+          node scripts/test-post-arrival-unit-labels-20261117.mjs
+          node scripts/test-w13-stock-catalog-browse.mjs
+      - name: Compile and build
+        run: npm run build
