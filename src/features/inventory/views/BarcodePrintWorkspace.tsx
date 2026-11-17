@@ -380,7 +380,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
               {!variant ? <small className="barcode-print-warning">Вариант отсутствует в действующем каталоге</small> : null}
             </div>
             <div className="barcode-arrival-actual">
-              <span>{receiptKind === 'stocktake' ? 'Найдено' : 'Поступило'} <strong>{received} шт.</strong></span>
+              {receiptKind === 'stocktake' ? <span>Найдено <strong>{received} шт.</strong></span> : <span>Поступило <strong>{received} шт.</strong></span>}
               <small>Сейчас в {receipt.source === 'warehouse' ? 'складе' : 'бутике'}: {
                 receipt.source === 'warehouse' ? balance.warehouse : balance.boutique
               } шт.</small>
