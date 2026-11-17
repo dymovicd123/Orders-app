@@ -32,7 +32,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = '53e93f5fde12b1208f30775ae0a0ec3d1ce127d6'
+          test "$(git rev-parse HEAD^)" = '02961ea39f6cd999594bb135f68ea1edf8e043e6'
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
           python3 - <<'PY'
@@ -45,6 +45,21 @@ jobs:
           }
           if changed!=expected:raise SystemExit('ABORT unexpected Main release scope: '+str(sorted(changed)))
           print('MAIN_DDS_RELEASE_EXACT_PARENT_AND_SCOPE_PASS')
+          PY
+      - name: Prove JSONC parsing preserves quoted route patterns
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          source=Path('scripts/main-dds-0139-prod-guard-20261117.py').read_text()
+          snippet=source.split("raw=Path('wrangler.jsonc').read_text()",1)[1].split('cfg=json.loads(raw)',1)[0]
+          scope={'raw':Path('wrangler.jsonc').read_text(),'re':re}
+          exec(snippet,scope)
+          cfg=json.loads(scope['raw'])
+          assert cfg['name']=='orders-app'
+          assert cfg['assets']['run_worker_first']==['/api/*']
+          assert cfg['d1_databases'][0]['database_id']=='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          print('PRODUCTION_JSONC_PARSER_PRESERVES_ASSETS_AND_BINDING_PASS')
           PY
       - run: npm ci --no-audit --no-fund
       - name: Rerun targeted finance/editor invariants and full release regression
@@ -102,7 +117,7 @@ jobs:
       - name: Deploy ONLY orders-app production Worker, preserving secrets (NO D1 writes)
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '53e93f5fde12b1208f30775ae0a0ec3d1ce127d6'
+          test "$(git rev-parse HEAD^)" = '02961ea39f6cd999594bb135f68ea1edf8e043e6'
           test -s /tmp/main-dds-0139-restore-bookmark
           test -s /tmp/main-dds-0139-before-deployment
           npx --no-install wrangler deploy --config .main-dds-0139-release.jsonc --name orders-app --keep-vars --strict
