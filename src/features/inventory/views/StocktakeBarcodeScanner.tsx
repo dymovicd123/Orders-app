@@ -156,6 +156,14 @@ export function StocktakeBarcodeScanner({
   }, [disabled])
 
   useEffect(() => {
+    // A USB HID scanner types into the focused input. Focus once on desktop;
+    // do not summon the phone's virtual keyboard or steal focus from count edits.
+    if (window.matchMedia('(pointer:fine)').matches) {
+      inputRef.current?.focus({ preventScroll: true })
+    }
+  }, [sessionId])
+
+  useEffect(() => {
     if (!cameraOpen || disabled) return
     let cancelled = false
     gateRef.current.reset()
