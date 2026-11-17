@@ -106,6 +106,12 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
   const [search, setSearch] = useState('')
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
   const [onlyStocked, setOnlyStocked] = useState(true)
+  const [variantQuery, setVariantQuery] = useState('')
+  const [colorFilter, setColorFilter] = useState('')
+  const [sizeFilter, setSizeFilter] = useState('')
+  const [openedColors, setOpenedColors] = useState<Record<string, boolean>>({})
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({})
+  const [printMode, setPrintMode] = useState<BarcodePrintMode>('a4')
   const [counts, setCounts] = useState<Record<number, number>>({})
   const [refreshing, setRefreshing] = useState(true)
   const [printing, setPrinting] = useState(false)
@@ -184,21 +190,32 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
   const products = productRows.filter(row => {
     if (onlyStocked && row.stockTotal <= 0) return false
     const words = normalized(search).split(/\s+/).filter(Boolean)
-    if (!words.length) return true
-    return row.variants.some(variant => {
-      const searchable = normalized(row.product.name + ' ' + displayLabel(variant))
-      return words.every(word => searchable.includes(word))
-    })
+    return words.every(word => normalized(row.product.name).includes(word))
   })
 
   const selected = products.find(row => row.product.id === selectedProductId) || products[0] || null
-  const visibleVariants = (selected?.variants || []).filter(variant => {
-    const words = normalized(search).split(/\s+/).filter(Boolean)
-    if (words.length && !words.every(word => normalized(selected?.product.name || '').includes(word)) &&
-      !words.every(word => normalized((selected?.product.name || '') + ' ' + displayLabel(variant)).includes(word))) return false
+  const choices = selected?.variants || []
+  const availableColors = [...new Set(choices.map(variant => variant.color || 'Без цвета'))]
+    .sort((a, b) => a.localeCompare(b, 'ru'))
+  const availableSizes = [...new Set(choices.map(variant => variant.sizeLabel || 'Без размера'))]
+    .sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }))
+  const visibleVariants = choices.filter(variant => {
+    if (colorFilter && colorFilter !== (variant.color || 'Без цвета')) return false
+    if (sizeFilter && sizeFilter !== (variant.sizeLabel || 'Без размера')) return false
+    const words = normalized(variantQuery).split(/\s+/).filter(Boolean)
+    if (!words.every(word => normalized(displayLabel(variant)).includes(word))) return false
     if (!onlyStocked) return true
     const amount = balances.values.get(variant.id)
     return (amount?.warehouse || 0) + (amount?.boutique || 0) > 0 || (counts[variant.id] || 0) > 0
+  })
+  const colorGroups = [...new Set(visibleVariants.map(variant => variant.color || 'Без цвета'))].map(color => {
+    const variants = visibleVariants.filter(variant => (variant.color || 'Без цвета') === color)
+    const physical = variants.reduce((sum, variant) => {
+      const value = balances.values.get(variant.id)
+      return sum + (value?.warehouse || 0) + (value?.boutique || 0)
+    }, 0)
+    const marked = variants.filter(variant => (counts[variant.id] || 0) > 0).length
+    return { color, variants, physical, marked, key: String(selected?.product.id || '') + ':' + color }
   })
 
   const selectedPrint: PrintItem[] = activeVariants
@@ -210,8 +227,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     return item.quantity > (balance?.warehouse || 0) + (balance?.boutique || 0)
   })
   const invalidStock = selectedPrint.some(item => balances.repeated.has(item.variant.id))
-  const canPrint = ready && !printing && totalLabels > 0 && totalLabels <= MAX_LABELS &&
-    !invalidStock && excess.length === 0
+  const canPrint = ready && !printing && totalLabels > 0 && totalLabels <= MAX_LABELS
 
   const print = async () => {
     if (!canPrint) return
@@ -239,9 +255,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
           if (matches.length > 1) throw new Error('Для варианта обнаружены повторные строки остатка. Печать остановлена.')
           return sum + stockNumber(matches[0]?.quantity)
         }, 0)
-        if (item.quantity > physical) {
-          throw new Error('Остаток изменился. Для одного из вариантов нужно уменьшить количество этикеток.')
-        }
+        if (physical < 0) throw new Error('Не удалось прочитать физический остаток.')
         const result = await fetch('/api/barcodes/sku/' + encodeURIComponent(String(item.variant.id)), {
           method: 'GET', credentials: 'same-origin', cache: 'no-store',
         })
@@ -261,7 +275,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         verified.push({ ...item, barcode: record.barcode, productName: record.productName || item.variant.productName })
       }
       if (!target.closed) {
-        renderPrintSheet(target, verified)
+        renderPrintSheet(target, verified, printMode)
         setNotice('Макет открыт в новой вкладке. Нажмите «Печатать / Сохранить в PDF».')
       }
     } catch (cause) {
@@ -272,12 +286,44 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     }
   }
 
-  const updateCount = (id: number, value: string) => {
-    const number = Number(value)
-    if (value && (!Number.isInteger(number) || number < 0 || number > MAX_LABELS)) return
-    setCounts(old => ({ ...old, [id]: value === '' ? 0 : number }))
+  const updateCount = (id: number, raw: string) => {
+    if (!/^\d*$/.test(raw)) return
+    const text = raw.replace(/^0+(?=\d)/, '')
+    const amount = text ? Number(text) : 0
+    if (!Number.isSafeInteger(amount) || amount > MAX_LABELS) return
+    setQuantityDrafts(current => ({ ...current, [id]: text }))
+    setCounts(current => ({ ...current, [id]: amount }))
     setError('')
     setNotice('')
+  }
+  const finishCount = (id: number) => {
+    setQuantityDrafts(current => {
+      if (!Object.prototype.hasOwnProperty.call(current, id)) return current
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+  }
+  const chooseProduct = (id: number) => {
+    setSelectedProductId(id)
+    setVariantQuery('')
+    setColorFilter('')
+    setSizeFilter('')
+  }
+  const useVisibleStock = () => {
+    setCounts(current => {
+      const next = { ...current }
+      for (const variant of visibleVariants) {
+        const value = balances.values.get(variant.id)
+        next[variant.id] = (value?.warehouse || 0) + (value?.boutique || 0)
+      }
+      return next
+    })
+    setQuantityDrafts(current => {
+      const next = { ...current }
+      for (const variant of visibleVariants) delete next[variant.id]
+      return next
+    })
   }
 
   return <section className="barcode-workspace" aria-label="Штрихкоды товаров">
