@@ -685,6 +685,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [stocktakeProductSearch, setStocktakeProductSearch] = useState('')
   const [stocktakeReviewMode, setStocktakeReviewMode] = useState(false)
   const [stocktakeFacts, setStocktakeFacts] = useState<Record<string, string>>({})
+  const [stocktakeScannerBusy, setStocktakeScannerBusy] = useState(false)
   const [stocktakeSavingIds, setStocktakeSavingIds] = useState<number[]>([])
   const [stocktakeFoundProductId, setStocktakeFoundProductId] = useState(0)
   const [stocktakeFoundExecutionKey, setStocktakeFoundExecutionKey] = useState('')
@@ -1430,6 +1431,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function openStocktakeReview() {
     if (!stocktakeSession?.id) return
+    if (stocktakeScannerBusy) { setStocktakeNotice('Дождитесь сохранения уже считанных штрихкодов.'); return }
     if (!await flushStocktakeFacts()) return
     try {
       const latestData = await loadInventoryStocktakeSession(stocktakeSession.id)
@@ -2586,6 +2588,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openStocktakeOrders,
         openStocktakeReview,
         onStocktakeBarcodeScan,
+        stocktakeScannerBusy,
+        setStocktakeScannerBusy,
         persistStocktakeFact,
         printInventoryStocktakePdf,
         refreshCycleCountSuggestions,
