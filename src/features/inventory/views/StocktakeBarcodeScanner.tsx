@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { resolveOperationBarcode, type OperationBarcodeLookup } from '../operationBarcodeSelection'
+import { StocktakeCameraScanGate } from '../stocktakeCameraScanGate'
 import './stocktakeBarcodeScanner.css'
 
-type ScanResponse = {
+export type StocktakeScanResponse = {
   ok: boolean
   duplicate?: boolean
+  scanType?: 'sku' | 'unit'
   variantId?: number
   itemId?: number
   productName?: string
@@ -12,20 +13,27 @@ type ScanResponse = {
   message?: string
 }
 
+type ScanAttempt = { code: string; requestId: string; origin: 'camera' | 'usb' | 'manual' | 'photo' }
+const VALID_BARCODE = /^OC(?:S|U)1-[0-9A-Z-]+$/
+
 export function StocktakeBarcodeScanner({
-  sessionId, source, disabled, onScanned, onSkuFound,
+  sessionId, source, disabled, onScanned,
 }: {
   sessionId: string
   source: 'warehouse' | 'boutique'
   disabled: boolean
-  onScanned: (variantId: number) => Promise<void>
-  onSkuFound: (variantId: number) => string | null
+  onScanned: (result: StocktakeScanResponse) => Promise<void> | void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const capturedRef = useRef(false)
   const cameraStopRef = useRef<(() => void) | null>(null)
+  const gateRef = useRef(new StocktakeCameraScanGate())
+  const queueRef = useRef<ScanAttempt[]>([])
   const busyRef = useRef(false)
+  const activeRef = useRef(true)
+  const disabledRef = useRef(disabled)
+  const onScannedRef = useRef(onScanned)
+  const processRef = useRef<(code: string, origin: ScanAttempt['origin']) => void>(() => {})
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [cameraStarting, setCameraStarting] = useState(false)
@@ -36,87 +44,141 @@ export function StocktakeBarcodeScanner({
   const [total, setTotal] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  disabledRef.current = disabled
+  onScannedRef.current = onScanned
 
   useEffect(() => {
+    activeRef.current = true
+    gateRef.current.reset()
+    queueRef.current = []
     setCameraOpen(false)
-    let alive = true
     setCode('')
+    setTotal(null)
     setNotice('')
     setError('')
-    setTotal(null)
     fetch('/api/inventory/stocktakes/' + encodeURIComponent(sessionId) + '/scans', {
       method: 'GET', credentials: 'same-origin', cache: 'no-store',
     }).then(async response => {
       const result = await response.json() as { ok: boolean; total?: number; message?: string }
-      if (!response.ok || !result.ok) throw new Error(result.message || 'Сканирование недоступно.')
-      if (alive) setTotal(Number(result.total || 0))
+      if (!response.ok || !result.ok) throw new Error(result.message || 'Быстрый подсчёт недоступен.')
+      if (activeRef.current) setTotal(Number(result.total || 0))
     }).catch(cause => {
-      if (alive) setError(cause instanceof Error ? cause.message : 'Не удалось проверить сканы.')
+      if (activeRef.current) setError(cause instanceof Error ? cause.message : 'Не удалось проверить историю сканов.')
     })
-    return () => { alive = false }
+    return () => {
+      activeRef.current = false
+      queueRef.current = []
+    }
   }, [sessionId])
 
-  function acceptDecodedCode(value: string) {
-    const scanned = value.trim().toUpperCase()
-    if (!/^OC(?:S|U)1-[0-9A-Z-]+$/.test(scanned)) {
-      setCameraFeedback('Код прочитан, но это не этикетка Orders-app. Нужен код OCS1 или OCU1.')
-      return
+  async function drainQueue() {
+    if (busyRef.current || disabledRef.current) return
+    busyRef.current = true
+    if (activeRef.current) setBusy(true)
+    try {
+      while (queueRef.current.length && !disabledRef.current) {
+        const attempt = queueRef.current.shift()!
+        try {
+          const send = async () => {
+            const response = await fetch('/api/inventory/stocktakes/' + encodeURIComponent(sessionId) + '/scans', {
+              method: 'POST', credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code: attempt.code, requestId: attempt.requestId }),
+            })
+            const result = await response.json() as StocktakeScanResponse & { message?: string }
+            if (!response.ok || !result.ok) throw new Error(result.message || 'Штрихкод не удалось учесть.')
+            return result
+          }
+          let result: StocktakeScanResponse
+          try {
+            result = await send()
+          } catch (firstError) {
+            // A lost HTTP response is safe to retry because the SAME event ID is
+            // reused: the database unique key cannot count it a second time.
+            if (firstError instanceof TypeError) result = await send()
+            else throw firstError
+          }
+          if (!activeRef.current) break
+          if (result.duplicate) {
+            setNotice('Повторный запрос или уже учтённая индивидуальная вещь. +0.')
+          } else {
+            await onScannedRef.current(result)
+            setTotal(count => (count ?? 0) + 1)
+            setNotice((result.productName || 'Товар') +
+              ' · +1 · фактически ' + (result.countedQuantity ?? '—') + ' шт. Сканер готов к следующей вещи.')
+            if (attempt.origin === 'camera' && typeof navigator.vibrate === 'function') navigator.vibrate(40)
+          }
+          setError('')
+        } catch (cause) {
+          if (activeRef.current) {
+            setError(cause instanceof Error ? cause.message : 'Ошибка сканирования. Не добавлено.')
+            setNotice('')
+          }
+        }
+      }
+    } finally {
+      busyRef.current = false
+      if (activeRef.current) setBusy(false)
+      if (queueRef.current.length && !disabledRef.current && activeRef.current) void drainQueue()
     }
-    if (capturedRef.current) return
-    capturedRef.current = true
-    setCode(scanned)
-    setCameraFeedback('')
-    setNotice('Код считан: ' + scanned + '. Проверьте его и нажмите «Найти / учесть».')
-    setCameraOpen(false)
   }
 
-  async function scanPhoto(file: File | undefined) {
-    if (!file || photoBusy || busy || disabled) return
-    setCameraOpen(false)
-    setPhotoBusy(true)
-    setCameraError('')
-    setError('')
-    setNotice('')
-    capturedRef.current = false
-    const url = URL.createObjectURL(file)
-    try {
-      const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
-      const result = await new BrowserMultiFormatOneDReader().decodeFromImageUrl(url)
-      acceptDecodedCode(result.getText())
-      if (!capturedRef.current) setError('Изображение прочитано, но на нём нет этикетки Orders-app.')
-    } catch {
-      setError('Не удалось распознать штрихкод на фотографии. Нужен чёткий кадр с целым кодом и белыми полями по краям; можно ввести код вручную.')
-    } finally {
-      URL.revokeObjectURL(url)
-      setPhotoBusy(false)
+  function enqueue(raw: string, origin: ScanAttempt['origin']) {
+    const value = raw.trim().toUpperCase()
+    if (disabledRef.current) {
+      setError('Дождитесь сохранения введённого количества, затем повторите скан.')
+      return
     }
+    if (!VALID_BARCODE.test(value)) {
+      setError('Это не штрихкод Orders-app. Нужен OCS1 или OCU1.')
+      return
+    }
+    if (queueRef.current.length >= 24) {
+      setError('Очередь сканов заполнена. Дождитесь обработки уже считанных товаров.')
+      return
+    }
+    queueRef.current.push({ code: value, requestId: crypto.randomUUID(), origin })
+    setCode('')
+    setError('')
+    void drainQueue()
   }
+  processRef.current = enqueue
+
+  useEffect(() => {
+    if (!disabled) void drainQueue()
+  }, [disabled])
 
   useEffect(() => {
     if (!cameraOpen || disabled) return
     let cancelled = false
-    capturedRef.current = false
+    gateRef.current.reset()
     setCameraStarting(true)
     setCameraError('')
-    setCameraFeedback('Ищу штрихкод Code 128… Убедитесь, что весь код и белые поля по краям видны.')
+    setCameraFeedback('Камера работает в режиме непрерывного подсчёта. Наведите на этикетку.')
     const run = async () => {
       try {
-        if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
-          throw new Error('Камера доступна только в современном браузере по HTTPS.')
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Камера недоступна: откройте систему по HTTPS и разрешите доступ.')
         }
         const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
         if (cancelled || !videoRef.current) return
         const reader = new BrowserMultiFormatOneDReader()
         const controls = await reader.decodeFromConstraints(
-          { video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          }, audio: false },
+          { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
           videoRef.current,
           (result) => {
-            if (cancelled || capturedRef.current || !result) return
-            acceptDecodedCode(result.getText())
+            if (cancelled) return
+            const now = performance.now()
+            if (!result) {
+              gateRef.current.missing(now)
+              return
+            }
+            const found = result.getText().trim().toUpperCase()
+            if (!VALID_BARCODE.test(found)) return
+            if (!gateRef.current.detected(found, now)) return
+            processRef.current(found, 'camera')
+            setCameraFeedback('Код считан: ' + found +
+              '. Уберите этикетку из кадра и наведите следующую. Камера остаётся активной.')
           },
         )
         if (cancelled) controls.stop()
@@ -125,138 +187,114 @@ export function StocktakeBarcodeScanner({
         if (!cancelled) {
           const reason = cause instanceof Error ? cause.name : ''
           setCameraError(reason === 'NotAllowedError'
-            ? 'Нет разрешения на камеру. Разрешите доступ в браузере или введите код вручную.'
+            ? 'Доступ к камере запрещён. Разрешите его в браузере или используйте USB/ручной ввод.'
             : reason === 'NotFoundError'
-              ? 'На устройстве не найдена камера. Используйте поле ручного ввода.'
-              : cause instanceof Error ? cause.message : 'Не удалось открыть камеру. Введите код вручную.')
+              ? 'На устройстве не найдена камера.'
+              : cause instanceof Error ? cause.message : 'Не удалось открыть камеру.')
         }
       } finally {
         if (!cancelled) setCameraStarting(false)
       }
     }
     void run()
+    const video = videoRef.current
     return () => {
       cancelled = true
       cameraStopRef.current?.()
       cameraStopRef.current = null
-      const stream = videoRef.current?.srcObject
+      const stream = video?.srcObject
       if (stream instanceof MediaStream) stream.getTracks().forEach(track => track.stop())
     }
-  }, [cameraOpen, disabled])
+  }, [cameraOpen, disabled, sessionId])
 
-  async function scan() {
-    const typed = code.trim()
-    if (busyRef.current || disabled || !typed) return
-    busyRef.current = true
+  async function scanPhoto(file: File | undefined) {
+    if (!file || photoBusy || disabled) return
     setCameraOpen(false)
-    setBusy(true)
+    setPhotoBusy(true)
     setError('')
-    setNotice('')
-    let focusScanner = true
+    const url = URL.createObjectURL(file)
     try {
-      if (typed.toUpperCase().startsWith('OCS1')) {
-        // Shared SKU is only a navigator. Unlike a physical unit label it must
-        // never call the stocktake POST endpoint or add one to counted_quantity.
-        const response = await fetch('/api/barcodes/lookup?code=' + encodeURIComponent(typed.trim().toUpperCase()), {
-          method: 'GET', credentials: 'same-origin', cache: 'no-store',
-        })
-        const result = await response.json() as OperationBarcodeLookup
-        if (!response.ok) throw new Error(result.message || 'Не удалось найти SKU.')
-        const match = resolveOperationBarcode(typed, result, source)
-        if (match.kind !== 'sku') throw new Error('Для поиска варианта требуется общий SKU.')
-        const selected = onSkuFound(match.variantId)
-        if (!selected) throw new Error('Этот вариант не входит в текущую проверку. Выберите товар вручную или добавьте его через «Найденная позиция».')
-        setNotice('Найден ' + selected + '. Перейдите к полю и введите весь фактический остаток, включая вещи без этикеток. Поиск ничего не прибавляет.')
-        focusScanner = false
-        return
-      }
-      if (total === null) throw new Error('Подсчёт индивидуальных меток пока недоступен. Дождитесь загрузки.')
-      const response = await fetch('/api/inventory/stocktakes/' + encodeURIComponent(sessionId) + '/scans', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: typed }),
-      })
-      const result = await response.json() as ScanResponse
-      if (!response.ok || !result.ok) throw new Error(result.message || 'Вещь не удалось учесть.')
-      if (result.duplicate) {
-        setNotice('Повторный скан: эта вещь уже учтена в данной ревизии. +0.')
-      } else {
-        setTotal(current => (current ?? 0) + 1)
-        setNotice(`${result.productName || 'Вещь'} · +1 · учтено ${result.countedQuantity ?? '—'} шт. Остаток изменится только после завершения ревизии.`)
-        try {
-          await onScanned(Number(result.variantId || 0))
-        } catch {
-          setError('Скан уже сохранён, но форма не обновилась. Переоткройте эту ревизию; не сканируйте вещь повторно.')
-        }
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Ошибка чтения штрихкода.')
+      const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
+      const result = await new BrowserMultiFormatOneDReader().decodeFromImageUrl(url)
+      processRef.current(result.getText(), 'photo')
+    } catch {
+      setError('Не удалось распознать штрихкод на фотографии. Можно отсканировать заново или ввести код вручную.')
     } finally {
-      setCode('')
-      setBusy(false)
-      busyRef.current = false
-      if (focusScanner) inputRef.current?.focus()
+      URL.revokeObjectURL(url)
+      setPhotoBusy(false)
     }
   }
 
-  return <section className="stocktake-barcode-scanner" aria-label="Поиск SKU и подсчёт по индивидуальным штрихкодам">
+  function submitInput(raw: string) {
+    enqueue(raw,'usb')
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  return <section className="stocktake-barcode-scanner" aria-label="Непрерывный подсчёт по общим и индивидуальным штрихкодам">
     <div className="stocktake-barcode-title">
       <div>
-        <strong>Штрихкоды при проверке</strong>
-        <span>Общий SKU — открыть вариант без изменения количества. Индивидуальный код вещи — учесть +1.</span>
+        <strong>Быстрый подсчёт штрихкодами</strong>
+        <span>Каждый отдельный скан общего SKU добавляет +1. Индивидуальная метка одной вещи повторно не засчитывается.</span>
       </div>
-      <span className="stocktake-barcode-total">{total === null ? 'Проверяю…' : `Сканов: ${total}`}</span>
+      <span className="stocktake-barcode-total">{total === null ? 'Подключаю…' : 'Сканов: ' + total}</span>
     </div>
-    <form onSubmit={event => { event.preventDefault(); void scan() }} className="stocktake-barcode-form">
+    <form onSubmit={event => { event.preventDefault(); submitInput(inputRef.current?.value || code) }}
+      className="stocktake-barcode-form">
       <input ref={inputRef} type="text" autoComplete="off" spellCheck={false}
-        aria-label="Штрихкод SKU или индивидуальная метка"
-        placeholder="Общий SKU или индивидуальная метка"
+        aria-label="Код SKU или индивидуальной метки — USB-сканер или ручной ввод"
+        placeholder="Поднесите USB-сканер или введите код"
         value={code} onChange={event => setCode(event.target.value)}
-        disabled={busy || disabled}/>
-      <button type="submit" className="secondary compact"
-        disabled={busy || disabled || !code.trim()}>
-        {busy ? 'Проверяю…' : 'Найти / учесть'}
+        onKeyDown={event => {
+          if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing &&
+              VALID_BARCODE.test(event.currentTarget.value.trim().toUpperCase())) {
+            event.preventDefault()
+            submitInput(event.currentTarget.value)
+          }
+        }}
+        disabled={disabled}/>
+      <button type="submit" className="secondary compact" disabled={disabled || !code.trim()}>
+        Учесть код
       </button>
       <button type="button" className="secondary compact stocktake-camera-toggle"
-        disabled={busy || disabled} aria-expanded={cameraOpen}
-        onClick={() => { setCameraError(''); setNotice(''); setCameraOpen(current => !current) }}>
-        {cameraOpen ? 'Закрыть камеру' : 'Сканировать камерой'}
+        disabled={disabled} aria-expanded={cameraOpen}
+        onClick={() => { setCameraError(''); setCameraOpen(open => !open) }}>
+        {cameraOpen ? 'Закрыть камеру' : 'Непрерывная камера'}
       </button>
     </form>
-    {cameraOpen ? <div className="stocktake-camera-panel" role="region" aria-label="Камера для сканирования штрихкода">
-      <div className="stocktake-camera-head">
-        <strong>Сканирование штрихкода</strong>
-        <button type="button" className="secondary compact" onClick={() => setCameraOpen(false)}>Закрыть</button>
-      </div>
+    {cameraOpen ? <div className="stocktake-camera-panel" role="region" aria-label="Непрерывное сканирование камеры">
+      <div className="stocktake-camera-head"><strong>Камера активна · +1 за вещь</strong>
+        <button className="secondary compact" type="button" onClick={() => setCameraOpen(false)}>Закрыть</button></div>
       <div className="stocktake-camera-preview">
         <video ref={videoRef} playsInline autoPlay muted aria-label="Изображение камеры"
           onLoadedMetadata={() => {
             const video = videoRef.current
-            if (video?.videoWidth && video?.videoHeight) {
-              setCameraFeedback('Камера работает (' + video.videoWidth + ' × ' + video.videoHeight + '). Ищу штрихкод…')
-            }
+            if (video?.videoWidth && video?.videoHeight)
+              setCameraFeedback('Камера ' + video.videoWidth + ' × ' + video.videoHeight + '. Наведите на этикетку.')
           }}/>
         <div className="stocktake-camera-guide" aria-hidden="true"/>
       </div>
-      {cameraStarting ? <small role="status">Открываю камеру…</small> : null}
-      {cameraFeedback ? <div className="stocktake-camera-feedback" role="status">{cameraFeedback}</div> : null}
-      <div className="stocktake-camera-hint">Поместите все полосы и белые поля по краям внутрь рамки. Не подносите телефон вплотную: на экране PDF могут мешать блики и муар. Попробуйте увеличить расстояние или распечатанную этикетку.</div>
+      {cameraStarting ? <small role="status">Запускаю камеру…</small> : null}
+      <div className="stocktake-camera-feedback" role="status">{cameraFeedback}</div>
+      <div className="stocktake-camera-hint">После успешного скана уберите эту этикетку из кадра, затем поднесите следующую. Для одинаковых SKU важно не считать одну вещь дважды.</div>
+      {busy ? <small>Обрабатываю сканы…</small> : null}
+      {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
+      {error ? <div className="stocktake-barcode-error" role="alert">{error}</div> : null}
       {cameraError ? <div className="stocktake-barcode-error" role="alert">{cameraError}</div> : null}
     </div> : null}
     <label className="stocktake-camera-file-label">
-      <span>{photoBusy ? 'Проверяю фотографию…' : 'Или считать с фотографии / скриншота'}</span>
-      <input type="file" accept="image/*" aria-label="Выберите фотографию или скриншот со штрихкодом"
-        disabled={busy || photoBusy || disabled}
+      <span>{photoBusy ? 'Считываю фотографию…' : 'Или считать с фотографии / скриншота'}</span>
+      <input type="file" accept="image/*" aria-label="Выберите фотографию штрихкода"
+        disabled={disabled || photoBusy}
         onChange={event => {
           const file = event.currentTarget.files?.[0]
           event.currentTarget.value = ''
           void scanPhoto(file)
         }}/>
     </label>
-    {disabled ? <small>Сначала дождитесь сохранения введённых вручную значений.</small> : null}
-    <small>Общий SKU только открывает нужную ячейку: введите итоговое фактическое число, не прибавляйте 1 за скан. Индивидуальные метки засчитываются поштучно, повторно не учитываются. Одну вещь нельзя считать дважды — вручную и индивидуальным сканом.</small>
-    {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
-    {error ? <div className="stocktake-barcode-error" role="alert">{error}</div> : null}
+    <small>Полное фактическое количество любого товара можно исправить вручную после сканирования — например, добавить вещи без этикеток. Не нужно сканировать их отдельно.</small>
+    {disabled ? <small>Пока сохраняется ручной ввод, новые сканы приостановлены.</small> : null}
+    {busy && !cameraOpen ? <small>Обрабатываю сканы…</small> : null}
+    {!cameraOpen && notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
+    {!cameraOpen && error ? <div className="stocktake-barcode-error" role="alert">{error}</div> : null}
   </section>
 }
