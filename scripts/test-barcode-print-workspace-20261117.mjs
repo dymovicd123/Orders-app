@@ -54,7 +54,7 @@ assert(page.includes('const current = await onReload()') &&
   'Print must refresh catalog identities but never block legitimate additional copies')
 assert(page.includes('MAX_LABELS = MAX_BARCODE_PRINT_LABELS') && page.includes('totalLabels <= MAX_LABELS'),
   'Mass-print action lacks a visible bounded cap')
-assert(page.includes('Каждый вариант') || page.includes('Один вариант имеет один общий код'),
+assert(page.includes('Все копии одного варианта имеют одинаковый код'),
   'Human print instructions should explain SKU copies')
 assert(page.includes('window.print()') && page.includes('58mm 35mm') &&
   page.includes('@page{size:A4;margin:0}') &&
