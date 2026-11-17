@@ -137,7 +137,8 @@ assert.ok(!header.includes('order-tab-attention') && !header.includes('pendingPh
   'Orders Return/Exchange tabs must not display physical receiving urgency badges')
 assert.ok(inventoryUi.includes('warehouse-receiving-nav-count') && inventoryUi.includes('warehousePhysicalReceivingCount'),
   'Physical intake count must stay in Warehouse navigation')
-assert.ok(header.includes("panel.kind === 'returns'") && header.includes("panel.kind === 'exchange'"))
+assert.ok(header.includes('orderPanelOptions.map((panel)') && header.includes('{panel.label}'),
+  'Orders navigation must keep the Return and Exchange tabs as ordinary text labels')
 
 // Run the exact production Return preparation + POST module compiled by esbuild.
 // This checks monetary/physical separation and retry semantics rather than merely
