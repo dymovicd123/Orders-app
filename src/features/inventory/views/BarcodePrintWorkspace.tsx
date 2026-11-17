@@ -518,7 +518,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
             <strong>Выберите товар слева</strong><p>Здесь появятся его варианты и остатки по двум точкам.</p>
           </div>}
         </div>
-      </div>
+      </div>}
       <div className="barcode-print-footer">
         <div className="barcode-print-summary">
           <strong>{totalLabels ? totalLabels + ' этикеток' : 'Пока ничего не выбрано'}</strong>
