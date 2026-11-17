@@ -29,6 +29,8 @@ export function StocktakeBarcodeScanner({
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [cameraStarting, setCameraStarting] = useState(false)
+  const [cameraFeedback, setCameraFeedback] = useState('')
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [total, setTotal] = useState<number | null>(null)
@@ -54,12 +56,49 @@ export function StocktakeBarcodeScanner({
     return () => { alive = false }
   }, [sessionId])
 
+  function acceptDecodedCode(value: string) {
+    const scanned = value.trim().toUpperCase()
+    if (!/^OC(?:S|U)1-[0-9A-Z-]+$/.test(scanned)) {
+      setCameraFeedback('Код прочитан, но это не этикетка Orders-app. Нужен код OCS1 или OCU1.')
+      return
+    }
+    if (capturedRef.current) return
+    capturedRef.current = true
+    setCode(scanned)
+    setCameraFeedback('')
+    setNotice('Код считан: ' + scanned + '. Проверьте его и нажмите «Найти / учесть».')
+    setCameraOpen(false)
+  }
+
+  async function scanPhoto(file: File | undefined) {
+    if (!file || photoBusy || busy || disabled) return
+    setCameraOpen(false)
+    setPhotoBusy(true)
+    setCameraError('')
+    setError('')
+    setNotice('')
+    capturedRef.current = false
+    const url = URL.createObjectURL(file)
+    try {
+      const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
+      const result = await new BrowserMultiFormatOneDReader().decodeFromImageUrl(url)
+      acceptDecodedCode(result.getText())
+      if (!capturedRef.current) setError('Изображение прочитано, но на нём нет этикетки Orders-app.')
+    } catch {
+      setError('Не удалось распознать штрихкод на фотографии. Нужен чёткий кадр с целым кодом и белыми полями по краям; можно ввести код вручную.')
+    } finally {
+      URL.revokeObjectURL(url)
+      setPhotoBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (!cameraOpen || disabled) return
     let cancelled = false
     capturedRef.current = false
     setCameraStarting(true)
     setCameraError('')
+    setCameraFeedback('Ищу штрихкод Code 128… Убедитесь, что весь код и белые поля по краям видны.')
     const run = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
@@ -69,16 +108,15 @@ export function StocktakeBarcodeScanner({
         if (cancelled || !videoRef.current) return
         const reader = new BrowserMultiFormatOneDReader()
         const controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: 'environment' } }, audio: false },
+          { video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          }, audio: false },
           videoRef.current,
           (result) => {
             if (cancelled || capturedRef.current || !result) return
-            const scanned = result.getText().trim().toUpperCase()
-            if (!/^OC[SU]1-[0-9A-Z-]+$/.test(scanned)) return
-            capturedRef.current = true
-            setCode(scanned)
-            setNotice('Код считан: ' + scanned + '. Нажмите «Найти / учесть», чтобы подтвердить действие.')
-            setCameraOpen(false)
+            acceptDecodedCode(result.getText())
           },
         )
         if (cancelled) controls.stop()
@@ -187,11 +225,35 @@ export function StocktakeBarcodeScanner({
       </button>
     </form>
     {cameraOpen ? <div className="stocktake-camera-panel" role="region" aria-label="Камера для сканирования штрихкода">
-      <video ref={videoRef} playsInline autoPlay muted aria-label="Изображение камеры"/>
-      <div className="stocktake-camera-hint">Наведите заднюю камеру на полосы этикетки Code 128. После распознавания проверьте код и подтвердите действие кнопкой «Найти / учесть».</div>
-      {cameraStarting ? <small>Открываю камеру…</small> : null}
+      <div className="stocktake-camera-head">
+        <strong>Сканирование штрихкода</strong>
+        <button type="button" className="secondary compact" onClick={() => setCameraOpen(false)}>Закрыть</button>
+      </div>
+      <div className="stocktake-camera-preview">
+        <video ref={videoRef} playsInline autoPlay muted aria-label="Изображение камеры"
+          onLoadedMetadata={() => {
+            const video = videoRef.current
+            if (video?.videoWidth && video?.videoHeight) {
+              setCameraFeedback('Камера работает (' + video.videoWidth + ' × ' + video.videoHeight + '). Ищу штрихкод…')
+            }
+          }}/>
+        <div className="stocktake-camera-guide" aria-hidden="true"/>
+      </div>
+      {cameraStarting ? <small role="status">Открываю камеру…</small> : null}
+      {cameraFeedback ? <div className="stocktake-camera-feedback" role="status">{cameraFeedback}</div> : null}
+      <div className="stocktake-camera-hint">Поместите все полосы и белые поля по краям внутрь рамки. Не подносите телефон вплотную: на экране PDF могут мешать блики и муар. Попробуйте увеличить расстояние или распечатанную этикетку.</div>
       {cameraError ? <div className="stocktake-barcode-error" role="alert">{cameraError}</div> : null}
     </div> : null}
+    <label className="stocktake-camera-file-label">
+      <span>{photoBusy ? 'Проверяю фотографию…' : 'Или считать с фотографии / скриншота'}</span>
+      <input type="file" accept="image/*" aria-label="Выберите фотографию или скриншот со штрихкодом"
+        disabled={busy || photoBusy || disabled}
+        onChange={event => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          void scanPhoto(file)
+        }}/>
+    </label>
     {disabled ? <small>Сначала дождитесь сохранения введённых вручную значений.</small> : null}
     <small>Общий SKU только открывает нужную ячейку: введите итоговое фактическое число, не прибавляйте 1 за скан. Индивидуальные метки засчитываются поштучно, повторно не учитываются. Одну вещь нельзя считать дважды — вручную и индивидуальным сканом.</small>
     {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}

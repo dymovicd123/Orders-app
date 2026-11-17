@@ -50,6 +50,7 @@ import '../../styles/w5-3-selective-queue.css'
 import '../../styles/w5-5-found-items.css'
 import '../../styles/w9-warehouse-catalog-cleanup.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
+import '../../styles/196-mobile-warehouse-20261117.css'
 
 type SimpleStockDetail = {
   source: InventorySourceKey
