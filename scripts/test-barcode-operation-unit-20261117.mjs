@@ -53,7 +53,7 @@ const db={
 }
 const serial=n=>'44444444-4444-4444-8444-'+String(n).padStart(12,'0')
 const sourceCount=point=>sqlite.prepare('SELECT quantity FROM inventory_stock WHERE inventory_source=?').get(point).quantity
-const unit=uid=>sqlite.prepare('SELECT inventory_source,unit_status,coverage_status FROM inventory_units WHERE unit_id=?').get(uid)
+const unit=uid=>({...sqlite.prepare('SELECT inventory_source,unit_status,coverage_status FROM inventory_units WHERE unit_id=?').get(uid)})
 const n=table=>sqlite.prepare('SELECT COUNT(*) AS n FROM '+table).get().n
 const labels=await prepareUnitLabelBatch(db,{variantId:101,source:'warehouse',quantity:2,requestId:serial(1)},'admin')
 const [first,second]=labels.labels
