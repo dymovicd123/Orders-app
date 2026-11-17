@@ -249,7 +249,7 @@ export async function editDdsEntry(
   checkRole(actor,true)
   if (!Number.isSafeInteger(entryId) || entryId<1) throw invalid('Неверная запись.')
   const id=requestId(input.requestId)
-  const old=await db.prepare(rowSelect + ` WHERE id=?`).bind(entryId).first<DdsRow & {
+  const old=await db.prepare(rowSelect.replace(' FROM dds_entries', ', edit_version, last_edit_request_id FROM dds_entries') + ` WHERE id=?`).bind(entryId).first<DdsRow & {
     edit_version:number; last_edit_request_id:string|null
   }>()
   if (!old) throw invalid('Запись не найдена.',404)
