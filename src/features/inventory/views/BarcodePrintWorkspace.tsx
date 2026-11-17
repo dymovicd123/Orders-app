@@ -64,9 +64,9 @@ function renderPrintSheet(target: Window, items: VerifiedPrintItem[]): void {
     '.labels{display:flex;gap:12px;flex-wrap:wrap;padding:18px;align-items:flex-start}' +
     '.label{width:58mm;height:35mm;background:white;padding:1.8mm 2mm;overflow:hidden;' +
     'display:flex;flex-direction:column;align-items:stretch;gap:.7mm;page-break-inside:avoid}' +
-    '.product{font-size:9pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.product{font-size:8.5pt;line-height:1.08;max-height:7mm;overflow:hidden;overflow-wrap:anywhere}' +
     '.identity{font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-    '.bars{display:block;min-height:0;flex:1;width:100%}' +
+    '.bars{display:block;min-height:10mm;flex:1;width:100%}' +
     '.code{font-size:8pt;font-weight:bold;text-align:center;letter-spacing:.3px}' +
     '.hint{font-size:6pt;text-align:center}' +
     '@media print{body{background:white}.controls{display:none}.labels{display:block;padding:0}' +
@@ -351,6 +351,13 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         <div className="barcode-print-summary">
           <strong>{totalLabels ? totalLabels + ' этикеток' : 'Пока ничего не выбрано'}</strong>
           <span>{selectedPrint.length} вариантов · формат 58 × 35 мм</span>
+          {selectedPrint.length ? <details className="barcode-selected-details">
+            <summary>Что будет напечатано</summary>
+            <ul>{selectedPrint.map(item => <li key={item.variant.id}>
+              <span>{item.variant.productName} · {displayLabel(item.variant)}</span>
+              <strong>{item.quantity} шт.</strong>
+            </li>)}</ul>
+          </details> : null}
           {invalidStock ? <small className="barcode-print-warning">Обнаружены повторные строки остатка. Печать заблокирована до сверки.</small> : null}
           {excess.length ? <small className="barcode-print-warning">
             Количество этикеток превышает остаток для {excess.length} вариантов. Уменьшите количество.
