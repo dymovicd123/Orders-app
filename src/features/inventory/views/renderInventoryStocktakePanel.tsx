@@ -256,7 +256,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                     {stocktakeSession?.status === 'completed' ? (
                       stocktakePrintOpen && stocktakeLabelCount > 0 ? (
-                        <section className="stocktake-postcheck-choice" aria-live="polite" aria-label="Ревизия завершена — выбор печати этикеток">
+                        <section className="stocktake-postcheck-choice" data-stocktake-print-choice="true" aria-live="polite" aria-label="Ревизия завершена — выбор печати этикеток">
                           <div className="stocktake-postcheck-header">
                             <span className="stocktake-step-kicker">Ревизия успешно завершена</span>
                             <h4>Распечатать этикетки для найденных товаров?</h4>
