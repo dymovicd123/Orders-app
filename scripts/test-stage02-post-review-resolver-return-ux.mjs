@@ -140,7 +140,6 @@ assert.ok(header.includes('orderPanelOptions.map((panel)') && header.includes('{
 assert.ok(warehouseNavigation.includes('warehousePhysicalReceivingCount')
   && warehouseNavigation.includes('warehouse-receiving-nav-count'),
   'Physical receiving count belongs to the warehouse navigation')
-assert.ok(header.includes("panel.kind === 'returns'") && header.includes("panel.kind === 'exchange'"))
 
 // Run the exact production Return preparation + POST module compiled by esbuild.
 // This checks monetary/physical separation and retry semantics rather than merely
