@@ -21,36 +21,32 @@ import { fulfillOrderReservationsV2, confirmItemStillHere, reconcileIssuedBefore
 import { confirmRetiredOrderItemDelivered } from '../worker/domains/retired-item-handover.ts'
 import { dispatchRestoredReturnV2ReservationPrototype } from '../worker/domains/return-v2-resumed-shipment-prototype.ts'
 import {handleOrderReturnV2Route,returnV2SchemaReadiness,RETURN_V2_REQUIRED_TABLES,RETURN_V2_REQUIRED_COLUMNS} from '../worker/routes/order-return-v2.ts'
-import {returnV2PreviewMode,allowLegacyReturnEditor} from '../src/features/sections/returnV2UiMode.ts'
+import {returnV2PreviewMode} from '../src/features/sections/returnV2UiMode.ts'
 
 // Prevent recurrence of a serious employee-facing integration bug: enabled
 // Return V2 with an ineligible order/error must NEVER show legacy V1 editing.
 assert.equal(returnV2PreviewMode({ok:true,enabled:true,eligible:true},true),'v2')
 assert.equal(returnV2PreviewMode({ok:true,enabled:true,eligible:false,reason:'stock history'},true),'v2')
 assert.equal(returnV2PreviewMode({ok:true,enabled:true,exclusive:true,eligible:false},true),'v2')
-assert.equal(returnV2PreviewMode({ok:true,enabled:false,eligible:false},true),'legacy')
+assert.equal(returnV2PreviewMode({ok:true,enabled:false,eligible:false},true),'error')
 assert.equal(returnV2PreviewMode({ok:false,enabled:false},true),'error')
 assert.equal(returnV2PreviewMode({ok:true,eligible:false},true),'error')
 assert.equal(returnV2PreviewMode({ok:true,enabled:false},false),'error')
 assert.equal(returnV2PreviewMode(null,true),'error')
-for(const mode of ['checking','v2','error']){
- assert.equal(allowLegacyReturnEditor(9551,9551,mode),false)
-}
-assert.equal(allowLegacyReturnEditor(9551,9551,'legacy'),true)
-assert.equal(allowLegacyReturnEditor(9551,9552,'legacy'),false)
-assert.equal(allowLegacyReturnEditor(0,0,'checking'),true)
+// Return V2 is the only editor: a disabled flag or empty order cannot fall back to V1.
+assert.equal(returnV2PreviewMode({ok:true,enabled:false},true),'error')
 
 
 // Validate the runnable, no-network Branch2 preflight against the COMPLETE
 // migration chain in CI, not just individual Worker SQL statements.
-const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-main-readiness.mjs'],{
+const stagePreflight=spawnSync(process.execPath,['scripts/return-v2-branch2-readiness.mjs'],{
  encoding:'utf8',timeout:90000
 })
 assert.equal(stagePreflight.status,0,
- 'Read-only Main local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
+ 'Read-only Branch2 local preflight failed:\n'+stagePreflight.stdout+'\n'+stagePreflight.stderr)
 const stageReport=JSON.parse(stagePreflight.stdout)
 assert.equal(stageReport.mode,'local-in-memory')
-assert.equal(stageReport.target,'orders-app')
+assert.equal(stageReport.target,'orders-app-branch2')
 assert.equal(stageReport.schema.ready,true)
 assert.equal(stageReport.schema.expectedTables,RETURN_V2_REQUIRED_TABLES.length)
 assert.equal(stageReport.schema.expectedColumns,10)
