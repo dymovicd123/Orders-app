@@ -2,9 +2,13 @@ import { isUnitBarcode } from '../../shared/barcode-unit.ts'
 import { lookupIndividualUnitBarcode } from './barcode-unit-preparation.ts'
 
 export class StocktakeBarcodeScanError extends Error {
-  constructor(public code: string, message: string, public status = 409) {
+  code: string
+  status: number
+  constructor(code: string, message: string, status = 409) {
     super(message)
     this.name = 'StocktakeBarcodeScanError'
+    this.code = code
+    this.status = status
   }
 }
 
