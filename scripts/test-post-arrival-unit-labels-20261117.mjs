@@ -31,7 +31,8 @@ assert(section.includes('arrivalPrintReceipt: arrivalBarcodeReceipt') &&
   'Only a completed arrival result may expose optional print action')
 assert(section.includes('receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}') &&
   section.includes('onReload={reloadBarcodePrintData}') &&
-  section.includes('onFinishArrivalResult: () => setArrivalBarcodeReceipt(null)'),
+  section.includes('onFinishArrivalResult: () => {') &&
+  section.includes('setArrivalBarcodeReceipt(null)') && section.includes('setArrivalCompletion(null)'),
   'Offer a shared SKU printer in the completion step, with optional finish')
 assert(!section.includes('<UnitBarcodePreparation'),
   'Never send completed arrival through the legacy individual-unit preparation UI')
