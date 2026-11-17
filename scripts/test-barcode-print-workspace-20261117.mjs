@@ -48,10 +48,10 @@ assert(page.includes('record.physicalUnit !== false') &&
   page.includes('record.barcode !== skuBarcodeForVariantId(item.variant.id)') &&
   page.includes('textOf(record.size) !== textOf(item.variant.sizeLabel)'),
   'Selected barcode identities require a fresh server preflight')
-assert(page.includes('const current = await onReload()') &&
-  page.includes('const latestVariant = current.catalog.variants.find') &&
+assert(page.includes("await fetch('/api/barcodes/sku/'") &&
+  page.includes('record.active') && page.includes('record.barcode !== skuBarcodeForVariantId') &&
   !page.includes('if (item.quantity > physical)'),
-  'Print must refresh catalog identities but never block legitimate additional copies')
+  'Print must revalidate current SKU identity without refreshing full inventory or blocking extra copies')
 assert(page.includes('MAX_LABELS = MAX_BARCODE_PRINT_LABELS') && page.includes('totalLabels <= MAX_LABELS'),
   'Mass-print action lacks a visible bounded cap')
 assert(page.includes('Все копии одного варианта имеют одинаковый код'),
