@@ -6,8 +6,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     kaspiMode = false,
     orderPanel,
     orderPanelOptions,
-    returnHistorySummary,
-    exchangeHistorySummary,
     sectorStyle,
     setEditorOpen,
     setOrderPanel,
@@ -34,8 +32,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
               title={panel.help}
             >
               {panel.label}
-              {panel.kind === 'returns' && Number(returnHistorySummary?.pendingPhysicalQuantity || 0) > 0 ? <b className="order-tab-attention">{returnHistorySummary.pendingPhysicalQuantity}</b> : null}
-              {panel.kind === 'exchange' && Number(exchangeHistorySummary?.pendingPhysicalQuantity || 0) > 0 ? <b className="order-tab-attention">{exchangeHistorySummary.pendingPhysicalQuantity}</b> : null}
             </button>
           ))}
         </div>
