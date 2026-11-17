@@ -1184,23 +1184,34 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     }
   }
 
-  async function onStocktakeBarcodeScan(variantId: number) {
-    const sessionId = stocktakeSession?.id
-    if (!sessionId || !variantId) return
-    const latest = await loadInventoryStocktakeSession(sessionId)
-    if (!latest?.session || stocktakeSessionIdRef.current !== sessionId) return
-    adoptStocktakeSession(latest.session)
-    const target = (latest.session.items || []).find((item: any) => Number(item.variantId) === variantId)
-    if (target) {
-      const productKey = Number(target.productId || 0) > 0
-        ? `product:${target.productId}` : `name:${normalizeSuggestion(target.productName)}`
-      const keys = Array.from(new Set((latest.session.items || []).map((item: any) =>
-        Number(item.productId || 0) > 0
-          ? `product:${item.productId}` : `name:${normalizeSuggestion(item.productName)}`
-      )))
-      const index = keys.indexOf(productKey)
-      if (index >= 0) setStocktakeProductIndex(index)
+  async function onStocktakeBarcodeScan(result: {
+    itemId?: number; variantId?: number; countedQuantity?: number; productName?: string
+  }) {
+    const sessionId = stocktakeSessionIdRef.current
+    const itemId = Number(result.itemId)
+    const counted = Number(result.countedQuantity)
+    if (!sessionId || !Number.isSafeInteger(itemId) || itemId <= 0 ||
+        !Number.isSafeInteger(counted) || counted < 0) {
+      throw new Error('Скан принят, но сервер не вернул корректное количество. Обновите ревизию.')
     }
+    const localEdit = stocktakeTouchedIds.current.has(itemId) ||
+      stocktakePendingValues.current.has(itemId) ||
+      stocktakeSaveInFlight.current.has(itemId) ||
+      stocktakeSaveTimers.current.has(itemId)
+    if (localEdit) {
+      setStocktakeNotice('Скан сохранён. Эта позиция редактировалась вручную одновременно — проверьте итоговое число перед завершением.')
+      return
+    }
+    // The POST is already an atomic persisted count. Patch just one cell;
+    // reloading/reordering the whole stocktake on every scan was unnecessarily slow.
+    stocktakeLastPersistedValues.current.set(itemId, String(counted))
+    setStocktakeFacts((current) => ({ ...current, [String(itemId)]: String(counted) }))
+    setStocktakeSession((current) => current?.id === sessionId ? {
+      ...current,
+      items: (current.items || []).map((item: any) => Number(item.id) === itemId
+        ? { ...item, countedQuantity: counted, status: 'counted', countedAt: new Date().toISOString() }
+        : item),
+    } : current)
   }
 
   async function startStocktake() {
