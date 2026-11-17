@@ -60,7 +60,7 @@ const [first,second]=labels.labels
 const boutiqueLabel=await prepareUnitLabelBatch(db,{variantId:101,source:'boutique',quantity:1,requestId:serial(2)},'admin')
 assert.equal(normalizeOutboundUnitBarcodes([first.token.toLowerCase()])[0],first.token)
 assert.deepEqual(normalizeOutboundUnitBarcodes(undefined),[])
-assert.throws(()=>normalizeOutboundUnitBarcodes(['WRONG']),/индивидуальными|индивидуальных/)
+assert.throws(()=>normalizeOutboundUnitBarcodes(['WRONG']),/индивидуальные/)
 assert.throws(()=>normalizeOutboundUnitBarcodes([first.token,first.token]),/дважды/)
 const normal=(mode,fromSource,toSource,operationId,tokens,maximum)=>prepareOutboundBarcodeStatements(db,{
  mode,fromSource,toSource,operationId,tokens:normalizeOutboundUnitBarcodes(tokens),
