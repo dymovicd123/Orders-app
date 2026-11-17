@@ -505,6 +505,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
           placeholder="Например: неверно указана сумма" value={editDraft.reason}
           onChange={e=>setEditDraft(v=>({...v,reason:e.target.value}))}/></label>
         <p className="dds-muted">Изменение даты переносит запись в соответствующий месяц отчёта. Исправление суммы пересчитывает баланс.</p>
+        {error?<div className="dds-alert is-error" role="alert">{error}</div>:null}
         <div className="dds-modal-actions"><button type="button" className="secondary" onClick={closeEdit}>Назад</button>
           <button type="submit" className="primary" disabled={saving||!integerAmount(editDraft.amount)||editDraft.reason.trim().length<3}>
             {saving?'Сохраняю…':'Сохранить исправление'}</button></div>
