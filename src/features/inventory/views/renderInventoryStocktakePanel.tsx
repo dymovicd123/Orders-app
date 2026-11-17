@@ -271,7 +271,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           {stocktakePrintFormOpen ? <div className="stocktake-postcheck-printer">
                             <div className="stocktake-postcheck-top-actions">
                               <button type="button" className="secondary" onClick={onStocktakePrintClose}>← К выбору</button>
-                              <button type="button" className="secondary" onClick={dismissStocktakeOutcome}>Завершить без печати</button>
+                              <button type="button" className="secondary" onClick={dismissStocktakeOutcome}>Готово</button>
                             </div>
                             {stocktakeLabelPrinter}
                           </div> : <div className="stocktake-postcheck-main-actions">
