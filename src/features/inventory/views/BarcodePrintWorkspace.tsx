@@ -242,20 +242,12 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     setError('')
     setNotice('')
     try {
-      const current = await onReload()
-      if (!current) throw new Error('Не удалось обновить остатки перед печатью. Попробуйте ещё раз.')
       const verified: VerifiedPrintItem[] = new Array(selectedPrint.length)
       let nextIndex = 0
       const verifyOne = async () => {
         while (nextIndex < selectedPrint.length) {
           const itemIndex = nextIndex++
           const item = selectedPrint[itemIndex]
-        const latestVariant = current.catalog.variants.find(variant => variant.id === item.variant.id)
-        const latestProduct = current.catalog.products.find(product => product.id === item.variant.productId)
-        if (!latestVariant?.isActive || !latestProduct?.isActive ||
-          displayLabel(latestVariant) !== displayLabel(item.variant)) {
-          throw new Error('Характеристики товара изменились. Список обновлён — проверьте выбор перед печатью.')
-        }
         const result = await fetch('/api/barcodes/sku/' + encodeURIComponent(String(item.variant.id)), {
           method: 'GET', credentials: 'same-origin', cache: 'no-store',
         })
