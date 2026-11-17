@@ -132,7 +132,14 @@ const historyPanel = read('src/features/inventory/views/renderInventoryHistoryPa
 assert.ok(historyPanel.includes('Физическая операция') && historyPanel.includes('transferLineQuantity'), 'Inventory history still hides physical operation quantity behind stock delta')
 
 const header = read('src/features/sections/OrdersHeaderSection.tsx')
-assert.ok(header.includes('order-tab-attention'))
+const warehouseNavigation = read('src/features/sections/InventorySection.tsx')
+assert.ok(!header.includes('order-tab-attention') && !header.includes('pendingPhysicalQuantity'),
+  'Orders Return and Exchange tabs should not duplicate Warehouse receiving badges')
+assert.ok(header.includes('orderPanelOptions.map((panel)') && header.includes('{panel.label}'),
+  'Orders Return and Exchange tabs must retain their normal labels')
+assert.ok(warehouseNavigation.includes('warehousePhysicalReceivingCount')
+  && warehouseNavigation.includes('warehouse-receiving-nav-count'),
+  'Physical receiving count belongs to the warehouse navigation')
 assert.ok(header.includes("panel.kind === 'returns'") && header.includes("panel.kind === 'exchange'"))
 
 // Run the exact production Return preparation + POST module compiled by esbuild.
