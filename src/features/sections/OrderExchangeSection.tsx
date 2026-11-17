@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { OrderExchangeSmartSection } from './OrderExchangeSmartSection'
+import '../inventory/views/warehouseReceiving.css'
 type SectionContext = Record<string, any>
 
 export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
