@@ -1,0 +1,42 @@
+name: Branch2 Return V2 single UI and persistent enablement CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'wrangler.jsonc'
+      - 'src/features/sections/OrderReturnV2Flow.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/returnV2UiMode.ts'
+      - 'scripts/return-v2-branch2-readiness.mjs'
+      - 'scripts/test-branch2-return-v2-permanent-ux-20261117.mjs'
+      - '.github/workflows/ci-branch2-return-v2-persistent-20261117.yml'
+permissions:
+  contents: read
+jobs:
+  return-v2-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Only Return V2 UI, permanent enablement and no fallback
+        run: |
+          node scripts/test-branch2-return-v2-permanent-ux-20261117.mjs
+          node scripts/return-v2-branch2-readiness.mjs
+      - name: Return V2 cancelled/unissued/workshop/receipt and finance safety
+        run: |
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+          node scripts/test-return-v2-unified-finance-20261114.mjs
+          node scripts/test-return-v2-unified-posting-prototype-20261114.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-stage02-post-review-resolver-return-ux.mjs
+          node scripts/test-return-unissued-physical-safety-r2.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+      - name: Full Main-safe business regressions and build
+        run: |
+          npm run release:check
+          npm run build

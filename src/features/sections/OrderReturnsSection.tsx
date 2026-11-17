@@ -1,49 +1,20 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useEffect, useState } from 'react'
-import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { OrderReturnV2Flow } from './OrderReturnV2Flow'
-import {allowLegacyReturnEditor,type ReturnV2UiMode} from './returnV2UiMode'
 import '../../styles/194-return-smart-ux.css'
 import '../inventory/views/warehouseReceiving.css'
 type SectionContext = Record<string, any>
 
 export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   const {
-    cancelReturnEntry,
-    closeReturnForm,
-    createReturnDraft,
-    formatMoney,
-    FriendlyNumberInput,
-    handleEditOrder,
-    isAdmin,
-    ManagerBadge,
-    managerColorFor,
-    orderPanelStyle,
-    returnBusy,
-    returnDraft,
-    returnFormRef,
-    returnHistory,
-    returnHistoryBusy,
-    returnHistoryError,
-    returnHistoryFilters,
-    returnHistoryHasMore,
-    returnHistorySummary,
-    returnPendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
-    loadReturnPendingInbox,
-    loadReturnHistory,
-    returnSelectedOrder,
-    refreshOrdersAfterReturn,
-    receiveReturnedItemAction,
-    reconcileKnownInventoryLifecycle,
-    saveReturn,
-    sectorStyle,
-    setOrderPanel,
-    canManageWarehouse,
-    openWarehouseReceiving,
-    setReturnDraft,
-    setReturnHistoryFilters,
-    SmartPickerInput,
-    suggestionValues,
+    cancelReturnEntry, closeReturnForm, formatMoney, ManagerBadge, managerColorFor,
+    orderPanelStyle, returnBusy, returnFormRef, returnHistory, returnHistoryBusy,
+    returnHistoryError, returnHistoryFilters, returnHistoryHasMore,
+    returnHistorySummary, loadReturnPendingInbox, loadReturnHistory,
+    returnSelectedOrder, refreshOrdersAfterReturn, receiveReturnedItemAction,
+    reconcileKnownInventoryLifecycle, sectorStyle, setOrderPanel,
+    canManageWarehouse, openWarehouseReceiving, setReturnHistoryFilters,
+    SmartPickerInput, suggestionValues,
   } = ctx
 
   const formatReturnItemCharacteristics = (item: any) => {
@@ -66,7 +37,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
       ? 'Бутик'
       : 'Без возврата в остатки'
 
-  const [v2Navigation,setV2Navigation]=useState<{orderId:number;mode:ReturnV2UiMode}>({orderId:0,mode:'checking'})
   const selectedId=Number(returnSelectedOrder?.id||0)
   const [activeView,setActiveView]=useState<'form'|'history'>('form')
   const [savedReturn,setSavedReturn]=useState<{returnId:number;cashRefund:number;remainingSale:number;intakePending:boolean}|null>(null)
@@ -87,7 +57,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     })
     return ()=>{cancelAnimationFrame(firstFrame);cancelAnimationFrame(secondFrame)}
   },[selectedId,returnFormRef])
-  const showLegacyReturnEditor=allowLegacyReturnEditor(selectedId,v2Navigation.orderId,v2Navigation.mode)
   const returnReceiptNeedsRecovery = (item: any) => Boolean(
     item.physicalTracking
     && item.physicalReceivedAt
@@ -123,53 +92,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (item.lifecycleStatus === 'cancelled') return `Получен; проведение в ${destination} отменено`
     if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
     return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
-  }
-  const returnSourceLabel = (item: any) => item.sourceType === 'workshop'
-    ? 'Цех'
-    : item.sourceType === 'boutique'
-      ? 'Бутик'
-      : 'Склад'
-  const defaultReturnDestination = (item: any): 'warehouse' | 'boutique' | 'no_stock' =>
-    item.sourceType === 'workshop' || item.isWorkshop
-      ? 'no_stock'
-      : item.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
-  const selectedReturnLines = (returnDraft.items || []).filter((item: any) => item.issuedToClient !== false && Number(item.quantity || 0) > 0)
-  const selectedReturnQuantity = selectedReturnLines.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-  const returnMoneySelected = Number(returnDraft.amount || 0) > 0
-  const returnGoodsSelected = selectedReturnQuantity > 0
-  const returnKind = returnMoneySelected && returnGoodsSelected
-    ? 'Возврат товаров и денег'
-    : returnMoneySelected
-      ? 'Возврат только денег'
-      : returnGoodsSelected
-        ? 'Возврат только товаров'
-        : 'Возврат не заполнен'
-  const pendingSelectedQty = selectedReturnLines
-    .filter((item: any) => item.physicalState === 'pending')
-    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-  const arrivedStockQty = selectedReturnLines
-    .filter((item: any) => item.physicalState === 'warehouse' || item.physicalState === 'boutique')
-    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-  const arrivedNoStockQty = selectedReturnQuantity - pendingSelectedQty - arrivedStockQty
-  const patchReturnItem = (orderItemId: number, patch: Record<string, unknown>) => setReturnDraft((current: any) => ({
-    ...current,
-    items: current.items.map((entry: any) => Number(entry.orderItemId || 0) === Number(orderItemId || 0)
-      ? { ...entry, ...patch }
-      : entry),
-  }))
-  const toggleReturnItem = (item: any) => {
-    if (item.issuedToClient === false) return
-    const selected = Number(item.quantity || 0) > 0
-    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : Math.max(1, Number(item.maxQuantity || 1)), physicalState: 'pending', restock: false })
-  }
-  const markReturnArrived = (item: any) => {
-    const physicalState = defaultReturnDestination(item)
-    patchReturnItem(item.orderItemId, {
-      physicalState,
-      restock: physicalState === 'warehouse' || physicalState === 'boutique',
-    })
   }
 
   return (
@@ -220,7 +142,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   formatMoney={formatMoney}
                   SmartPickerInput={SmartPickerInput}
                   paymentMethods={suggestionValues.paymentMethods}
-                  onMode={(id,mode)=>setV2Navigation({orderId:id,mode})}
                   onSaved={(posted)=>{
                     setSavedReturn({returnId:posted.returnId,cashRefund:posted.cashRefund,remainingSale:posted.remainingSale,intakePending:Boolean(posted.receipt?.receiptPending)})
                     closeReturnForm(false)
@@ -232,322 +153,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   onCancelled={()=>{void loadReturnHistory();void loadReturnPendingInbox();void refreshOrdersAfterReturn()}}
                   onBack={()=>closeReturnForm(true)}
                 />
-              <section className="mini-panel debt-form-panel"
-                style={!showLegacyReturnEditor ? {display:'none'} : undefined}>
-                <div className="mini-panel-head">
-                  <h3>Форма возврата</h3>
-                  <div className="mini-panel-actions">
-                    {returnSelectedOrder ? (
-                      <button className="secondary compact back-action" type="button" onClick={() => closeReturnForm(true)} disabled={returnBusy}>
-                        Назад
-                      </button>
-                    ) : null}
-                    <button
-                      className="secondary compact"
-                      type="button"
-                      onClick={() => setReturnDraft(createReturnDraft(returnSelectedOrder))}
-                      disabled={!returnSelectedOrder || returnBusy}
-                    >
-                      Сбросить
-                    </button>
-                  </div>
-                </div>
-    
-                {returnSelectedOrder ? (
-                  <>
-                    <div className="editor-summary debt-target-summary">
-                      <div className="editor-summary-head">
-                        <div>
-                          <strong>{returnSelectedOrder.external_id}</strong>
-                          <span>{returnSelectedOrder.order_date} · {returnSelectedOrder.manager_name || '—'} · {returnSelectedOrder.customer_name || returnSelectedOrder.customer_phone || '—'}</span>
-                          <span className={`status-pill ${returnSelectedOrder.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>
-                            По системе: {returnSelectedOrder.shipping_status === 'sent'
-                              ? `Отправлен${returnSelectedOrder.shipping_date ? ` · ${returnSelectedOrder.shipping_date}` : ''}`
-                              : 'Не отправлен'}
-                          </span>
-                        </div>
-                        <span className="status-pill status-warning">
-                          Доступно {formatMoney(Math.max(0, Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0)))}
-                        </span>
-                      </div>
-                      <div className="editor-summary-grid">
-                        <div>
-                          <span>Сумма заказа</span>
-                          <strong>{formatMoney(returnSelectedOrder.total_amount)}</strong>
-                        </div>
-                        <div>
-                          <span>Получено</span>
-                          <strong>{formatMoney(returnSelectedOrder.received_amount)}</strong>
-                        </div>
-                        <div>
-                          <span>Уже возвращено</span>
-                          <strong>{formatMoney(returnSelectedOrder.return_amount)}</strong>
-                        </div>
-                        <div>
-                          <span>Новый возврат</span>
-                          <strong>{formatMoney(returnDraft.amount)}</strong>
-                        </div>
-                      </div>
-                    </div>
-    
-                    <div className="stack">
-                      <div className="mini-item order-payment-card">
-                        <div className="mini-item-head">
-                          <strong>Параметры возврата</strong>
-                        </div>
-                        <div className="subgrid order-payment-grid">
-                          <label>
-                            <span>Дата возврата</span>
-                            <input
-                              type="date"
-                              value={returnDraft.returnDate}
-                              onChange={(event) => setReturnDraft((current) => ({ ...current, returnDate: event.target.value }))}
-                            />
-                          </label>
-                          <label>
-                            <span>Сумма возврата</span>
-                            <FriendlyNumberInput
-                              type="number"
-                              min="0"
-                              value={returnDraft.amount}
-                              onChange={(event) => setReturnDraft((current) => ({ ...current, amount: Number(event.target.value) }))}
-                            />
-                            <small className="field-hint">Введите фактическую сумму возврата вручную. Система не подставляет цену товара или текущую цену Каталога автоматически.</small>
-                            {returnDraft.items.some((item: any) => item.issuedToClient === false) ? <small className="field-hint">Если это отмена невыданного товара, денежный возврат сам по себе не убирает товар из заказа — сначала используйте «Изменить заказ» ниже.</small> : null}
-                          </label>
-                          <label>
-                            <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
-                            <SmartPickerInput
-                              value={returnDraft.paymentMethod}
-                              strictOptions options={suggestionValues.paymentMethods}
-                              onChange={(value) => setReturnDraft((current) => ({ ...current, paymentMethod: value }))}
-                              placeholder="Например, НАЛИЧКА"
-                            />
-                          </label>
-                          {Number(returnDraft.amount || 0) > 1 ? (
-                            <div className="wide-field">
-                              {!returnDraft.extraRefundEnabled ? (
-                                <button type="button" className="secondary compact" disabled={returnBusy}
-                                  onClick={() => setReturnDraft((current) => ({ ...current, extraRefundEnabled: true, extraRefundAmount: 0, extraRefundMethod: '' }))}>
-                                  + Добавить ещё способ возврата денег
-                                </button>
-                              ) : (
-                                <div className="mini-item">
-                                  <div className="mini-item-head"><strong>Второй способ возврата</strong></div>
-                                  <div className="subgrid order-payment-grid">
-                                    <label><span>Способ</span><SmartPickerInput
-                                      value={returnDraft.extraRefundMethod}
-                                      strictOptions options={suggestionValues.paymentMethods}
-                                      placeholder="Например, KASPI"
-                                      onChange={(value) => setReturnDraft((current) => ({ ...current, extraRefundMethod: value }))}
-                                    /></label>
-                                    <label><span>Сумма вторым способом</span><FriendlyNumberInput
-                                      type="number" min="1" max={Math.max(1, Number(returnDraft.amount || 0) - 1)}
-                                      value={returnDraft.extraRefundAmount}
-                                      onChange={(event) => setReturnDraft((current) => ({ ...current, extraRefundAmount: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))}
-                                    /></label>
-                                  </div>
-                                  <small className="field-hint">Первым способом: {formatMoney(Math.max(0, Number(returnDraft.amount || 0) - Number(returnDraft.extraRefundAmount || 0)))} ₸. Общая сумма возврата не меняется.</small>
-                                  <button type="button" className="secondary compact" disabled={returnBusy}
-                                    onClick={() => setReturnDraft((current) => ({ ...current, extraRefundEnabled: false, extraRefundAmount: 0, extraRefundMethod: '' }))}>
-                                    Убрать второй способ
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : null}
-                          <label className="wide-field">
-                            <span>Причина / комментарий</span>
-                            <SmartPickerInput
-                              value={returnDraft.comment}
-                              options={suggestionValues.returnReasons}
-                              onChange={(value) => setReturnDraft((current) => ({ ...current, comment: value }))}
-                              placeholder="Выберите причину или напишите свою"
-                            />
-                          </label>
-                        </div>
-                      </div>
-    
-                      <div className="mini-item order-payment-card">
-                        <div className="mini-item-head">
-                          <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">В отправленных заказах автоматически отмечены доступные к возврату выданные товары. В неотправленных заказах позиции выбирают вручную. Снимите лишнее и проверьте количество. Пока не подтвердили физическое получение, товары считаются «Ещё едет обратно» и НЕ увеличивают остаток. Деньги указывают отдельно.</span>
-                        </div>
-                        {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
-                          <div className="history-note">
-                            <span>Есть товары, которые клиенту не выдавали</span>
-                            <strong>Их нельзя «вернуть на склад»: они и так физически остались у вас. Если позицию отменили до выдачи, сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0 и укажите сумму выше.</strong>
-                            <div className="mini-panel-actions">
-                              {isAdmin ? (
-                                <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
-                              ) : <span className="muted-small">Для изменения состава заказа обратитесь к администратору. Исправление цены и реквизитов доступно в «Доп. действия».</span>}
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="return-smart-grid">
-                          {returnDraft.items.length ? returnDraft.items.map((item: any) => {
-                            const selected = Number(item.quantity || 0) > 0
-                            const arrived = item.physicalState !== 'pending'
-                            const maxQuantity = Math.max(0, Number(item.maxQuantity || 0))
-                            return (
-                              <div
-                                className={`return-smart-card ${selected ? 'is-selected' : ''} ${item.issuedToClient === false ? 'is-unissued' : ''}`}
-                                key={`return-item-${item.orderItemId}`}
-                              >
-                                <button
-                                  type="button"
-                                  className="return-smart-pick"
-                                  disabled={item.issuedToClient === false || returnBusy}
-                                  onClick={() => toggleReturnItem(item)}
-                                >
-                                  <span className="return-smart-check">{selected ? '✓' : ''}</span>
-                                  <span className="return-smart-main">
-                                    <strong>{item.productName}</strong>
-                                    <small className="return-smart-characteristics">{formatReturnItemCharacteristics(item)}</small>
-                                    <small>{returnSourceLabel(item)} · доступно {maxQuantity} шт.</small>
-                                  </span>
-                                  <b>{item.issuedToClient === false ? 'Не выдавали' : selected ? 'Возвращаем' : 'Выбрать'}</b>
-                                </button>
-
-                                {item.issuedToClient === false ? (
-                                  <div className="return-smart-unissued">
-                                    <strong>Товар остаётся у вас</strong>
-                                    <span>Физического возврата нет. Если позицию отменили до выдачи, измените состав заказа.</span>
-                                  </div>
-                                ) : selected ? (
-                                  <div className="return-smart-controls">
-                                    {maxQuantity > 1 ? (
-                                      <div className="return-smart-quantity">
-                                        <span>Сколько возвращается</span>
-                                        <div>
-                                          <button
-                                            type="button"
-                                            aria-label="Уменьшить количество"
-                                            disabled={returnBusy || Number(item.quantity || 0) <= 1}
-                                            onClick={() => patchReturnItem(item.orderItemId, { quantity: Math.max(1, Number(item.quantity || 0) - 1) })}
-                                          >−</button>
-                                          <FriendlyNumberInput
-                                            type="number"
-                                            min="1"
-                                            max={maxQuantity}
-                                            value={item.quantity}
-                                            onChange={(event) => patchReturnItem(item.orderItemId, {
-                                              quantity: Math.min(maxQuantity, Math.max(1, Number(event.target.value || 1))),
-                                            })}
-                                          />
-                                          <button
-                                            type="button"
-                                            aria-label="Увеличить количество"
-                                            disabled={returnBusy || Number(item.quantity || 0) >= maxQuantity}
-                                            onClick={() => patchReturnItem(item.orderItemId, {
-                                              quantity: Math.min(maxQuantity, Number(item.quantity || 0) + 1),
-                                            })}
-                                          >+</button>
-                                          <button
-                                            type="button"
-                                            className="return-smart-all"
-                                            disabled={returnBusy || Number(item.quantity || 0) === maxQuantity}
-                                            onClick={() => patchReturnItem(item.orderItemId, { quantity: maxQuantity })}
-                                          >Все {maxQuantity}</button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="return-smart-one-unit">Возвращается 1 шт.</div>
-                                    )}
-
-                                    <div className="return-smart-physical">
-                                      <span>Где товар сейчас?</span>
-                                      <div className="return-smart-choice-row">
-                                        <button
-                                          type="button"
-                                          className={!arrived ? 'is-active' : ''}
-                                          disabled={returnBusy}
-                                          onClick={() => patchReturnItem(item.orderItemId, { physicalState: 'pending', restock: false })}
-                                        >
-                                          Ещё едет обратно
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={arrived ? 'is-active' : ''}
-                                          disabled={returnBusy}
-                                          onClick={() => markReturnArrived(item)}
-                                        >
-                                          Уже вернули
-                                        </button>
-                                      </div>
-                                      {!arrived ? (
-                                        <small>После оформления позиция появится сверху в очереди «Нужно принять».</small>
-                                      ) : (
-                                        <label>
-                                          <span>Куда принять</span>
-                                          <select
-                                            value={item.physicalState}
-                                            disabled={returnBusy}
-                                            onChange={(event) => {
-                                              const physicalState = event.target.value as 'warehouse' | 'boutique' | 'no_stock'
-                                              patchReturnItem(item.orderItemId, {
-                                                physicalState,
-                                                restock: physicalState === 'warehouse' || physicalState === 'boutique',
-                                              })
-                                            }}
-                                          >
-                                            <option value="warehouse">Склад</option>
-                                            <option value="boutique">Бутик</option>
-                                            <option value="no_stock">Не добавлять в остаток</option>
-                                          </select>
-                                          {item.sourceType === 'workshop'
-                                            ? <small>Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small>
-                                            : null}
-                                        </label>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          }) : (
-                            <div className="return-smart-empty">У заказа нет позиций, доступных для возврата.</div>
-                          )}
-                        </div>
-
-                        <div className="return-smart-summary" role="status" aria-live="polite">
-                          <div>
-                            <span>Вид операции — проверьте перед сохранением</span>
-                            <strong>{returnKind}</strong>
-                          </div>
-                          <div>
-                            <span>Деньги клиенту</span>
-                            <strong>{formatMoney(Number(returnDraft.amount || 0))} ₸</strong>
-                          </div>
-                          <div>
-                            <span>Выбранные товары</span>
-                            <strong>{selectedReturnLines.length} поз. · {selectedReturnQuantity} шт.</strong>
-                          </div>
-                          {returnGoodsSelected ? (
-                            <p>Ещё едут: {pendingSelectedQty} шт. · Уже получили на склад/бутик: {arrivedStockQty} шт. · Получены без остатка: {arrivedNoStockQty} шт.</p>
-                          ) : returnMoneySelected ? (
-                            <p><strong>Товары не выбраны.</strong> Система зафиксирует только возврат денег. Физическое получение вещей не будет зарегистрировано.</p>
-                          ) : <p>Укажите сумму возврата или выберите хотя бы один товар.</p>}
-                          <p>Перед подтверждением убедитесь, что выбор товаров и их физический статус соответствуют фактам. Не отмечайте «Уже вернули», пока вещь не приехала.</p>
-                        </div>
-                      </div>
-                    </div>
-    
-                    <div className="actions order-create-actions form-bottom-actions">
-                      <button className="primary" type="button" onClick={() => void saveReturn()} disabled={returnBusy}>
-                        {returnBusy ? 'Сохраняю...' : 'Оформить возврат'}
-                      </button>
-                      <button className="secondary back-action" type="button" onClick={() => closeReturnForm()} disabled={returnBusy}>
-                        Назад к таблице
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="empty-state debt-empty-state">
-                    Нажмите кнопку `Возврат` у нужного заказа в главной таблице. После сохранения форма автоматически закроется.
-                  </div>
-                )}
-              </section>
               </div>
 
               {activeView==='history'?<section id="return-workspace-history" role="tabpanel" className="mini-panel debt-history-panel history-cards-panel">
@@ -619,7 +224,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       disabled={returnBusy || returnHistoryBusy}
                                       onClick={() => void finishKnownReturnIntake(item)}
                                     >
-                                      Завершить приёмку
+                                      Завершить учёт
                                     </button>
                                   </div>
                                 ) : null}

@@ -34,8 +34,10 @@ assert.equal(dbConfig?.database_name,'orders_db_branch2_mirror_20261027',
  'Unexpected D1 target; stop before inspecting the wrong database.')
 assert.equal(dbConfig?.database_id,'0904a573-21ff-44d8-93b0-c9200f771702',
  'D1 database ID changed. Require explicit review before using the script.')
-assert(cfg.vars?.RETURN_V2_ENABLED!=='true' && cfg.vars?.RETURN_V2_ENABLED!==true,
- 'Return V2 must not be automatically enabled by the configuration.')
+assert.equal(cfg.vars?.RETURN_V2_ENABLED,'true',
+ 'Branch2 must explicitly enable Return V2 in its versioned Worker configuration.')
+assert.equal(cfg.keep_vars,true,
+ 'Branch2 deploys must preserve other Worker variables and secrets.')
 const missing=required.filter(file=>!fs.existsSync('migrations/'+file))
 assert.equal(missing.length,0,'Missing Return V2 migrations: '+missing.join(', '))
 const fingerprint=createHash('sha256')
@@ -99,7 +101,7 @@ console.log(JSON.stringify({
  migrations:{first:'0124',last:'0132',count:required.length,
    fingerprintSha256:fingerprint.digest('hex')},
  schema:status,
- featureFlag:'OFF - no configuration change',
+ featureFlag:'ON in Branch2 source config; active Worker version still requires verification',
  remoteMigrationPerformed:false,remoteDeploymentPerformed:false,
  note:status.ready
   ?'Schema capability only; this is NOT employee/browser acceptance or Main release approval.'
