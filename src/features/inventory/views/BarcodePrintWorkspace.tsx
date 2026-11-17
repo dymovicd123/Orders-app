@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CatalogResponse, CatalogVariantRecord, InventoryResponse } from '../../../app/types'
 import { skuBarcodeForVariantId } from '../../../../shared/barcode-sku.ts'
 import { encodeCode128B } from '../../../../shared/barcode-code128.ts'
+import { paginateBarcodeLabels, MAX_BARCODE_PRINT_LABELS, A4_LABELS_PER_PAGE, type BarcodePrintMode } from './barcodePrintPages'
 import './barcodePrintWorkspace.css'
 
 type Source = 'warehouse' | 'boutique'
@@ -15,7 +16,7 @@ type Props = {
 type PrintItem = { variant: CatalogVariantRecord; quantity: number }
 type VerifiedPrintItem = PrintItem & { barcode: string; productName: string }
 
-const MAX_LABELS = 300
+const MAX_LABELS = MAX_BARCODE_PRINT_LABELS
 
 const textOf = (value: unknown) => String(value ?? '').trim()
 const visibleAttribute = (value: unknown) => {
@@ -33,16 +34,17 @@ const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g,
 
 function drawBars(code: string): string {
   const encoded = encodeCode128B(code)
-  const bars = encoded.bars.map(bar =>
-    '<rect x="' + bar.x + '" y="3" width="' + bar.width + '" height="58" fill="#111"/>').join('')
+  const paths = encoded.bars.map(bar =>
+    'M' + bar.x + ',3h' + bar.width + 'v58h-' + bar.width + 'z').join('')
   return '<svg viewBox="0 0 ' + encoded.width + ' 64" preserveAspectRatio="none" ' +
     'xmlns="http://www.w3.org/2000/svg" class="bars" aria-label="Штрихкод">' +
-    '<rect width="' + encoded.width + '" height="64" fill="#fff"/>' + bars + '</svg>'
+    '<rect width="' + encoded.width + '" height="64" fill="#fff"/>' +
+    '<path d="' + paths + '" fill="#111"/></svg>'
 }
 
-function renderPrintSheet(target: Window, items: VerifiedPrintItem[]): void {
+function renderPrintSheet(target: Window, items: VerifiedPrintItem[], mode: BarcodePrintMode): void {
   const count = items.reduce((sum, item) => sum + item.quantity, 0)
-  const labels = items.flatMap(item => Array.from({ length: item.quantity }, () => {
+  const labelMarkup = items.flatMap(item => Array.from({ length: item.quantity }, () => {
     const identity = [item.variant.color, item.variant.gender,
       item.variant.sizeLabel ? 'Размер ' + item.variant.sizeLabel : ''].filter(Boolean).join(' · ')
     const extra = [visibleAttribute(item.variant.material), visibleAttribute(item.variant.length)]
@@ -51,32 +53,51 @@ function renderPrintSheet(target: Window, items: VerifiedPrintItem[]): void {
       '</strong><div class="identity">' + escapeHtml(identity) + '</div>' +
       (extra ? '<div class="identity">' + escapeHtml(extra) + '</div>' : '') +
       drawBars(item.barcode) + '<div class="code">' + escapeHtml(item.barcode) +
-      '</div><div class="hint">Общий код варианта</div></article>'
-  })).join('')
-  const page = '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
+      '</div></article>'
+  }))
+  const pages = paginateBarcodeLabels(labelMarkup, mode)
+  const sheets = pages.map((page, index) =>
+    '<section class="sheet" aria-label="Лист ' + (index + 1) + '">' + page.join('') + '</section>').join('')
+  const isA4 = mode === 'a4'
+  const pageCss = isA4
+    ? '@page{size:A4;margin:0}'
+    : '@page{size:58mm 35mm;margin:0}'
+  const sheetCss = isA4
+    ? '.sheet{width:210mm;height:297mm;padding:14mm 15mm;display:grid;' +
+      'grid-template-columns:repeat(3,58mm);grid-template-rows:repeat(7,35mm);' +
+      'gap:3mm;align-content:start;justify-content:start}'
+    : '.sheet{width:58mm;height:35mm;padding:0;display:block}'
+  const hint = isA4
+    ? count + ' этикеток · ' + pages.length + ' листов A4 · ' + A4_LABELS_PER_PAGE + ' этикетка на полном листе. ' +
+      'В печати выберите бумагу A4, масштаб 100%, без полей.'
+    : count + ' этикеток · ' + count + ' отдельных этикеток 58 × 35 мм. ' +
+      'Выберите принтер этикеток и в его настройках размер 58 × 35 мм, масштаб 100%.'
+  const html = '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
     '<title>Этикетки · ' + count + ' шт.</title><style>' +
-    '@page{size:58mm 35mm;margin:0}*{box-sizing:border-box}' +
-    'body{margin:0;background:#f1f3f6;color:#101418;font-family:Arial,sans-serif}' +
+    pageCss + '*{box-sizing:border-box}' +
+    'body{margin:0;background:#e9edf2;color:#101418;font-family:Arial,sans-serif}' +
     '.controls{position:sticky;top:0;background:white;padding:14px 18px;' +
-    'display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid #ddd}' +
+    'display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid #ddd;z-index:1}' +
     '.controls button{padding:10px 18px;border:0;border-radius:7px;background:#183c60;color:white;cursor:pointer}' +
     '.controls p{margin:0;font-size:13px;line-height:1.4}' +
-    '.labels{display:flex;gap:12px;flex-wrap:wrap;padding:18px;align-items:flex-start}' +
+    '.pages{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:18px}' +
+    '.sheet{background:white;box-shadow:0 2px 8px rgba(10,20,30,.12)}' + sheetCss +
     '.label{width:58mm;height:35mm;background:white;padding:1.8mm 2mm;overflow:hidden;' +
-    'display:flex;flex-direction:column;align-items:stretch;gap:.7mm;page-break-inside:avoid}' +
+    'display:flex;flex-direction:column;align-items:stretch;gap:.7mm;' +
+    'outline:1px dashed #e5e7eb;outline-offset:-1px;break-inside:avoid}' +
     '.product{font-size:8.5pt;line-height:1.08;max-height:7mm;overflow:hidden;overflow-wrap:anywhere}' +
     '.identity{font-size:7pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.bars{display:block;min-height:10mm;flex:1;width:100%}' +
     '.code{font-size:8pt;font-weight:bold;text-align:center;letter-spacing:.3px}' +
-    '.hint{font-size:6pt;text-align:center}' +
-    '@media print{body{background:white}.controls{display:none}.labels{display:block;padding:0}' +
-    '.label{break-after:page;page-break-after:always}.label:last-child{break-after:auto;page-break-after:auto}}' +
-    '</style></head><body><div class="controls"><button onclick="window.print()">Печатать / Сохранить в PDF</button>' +
-    '<p>' + count + ' этикеток · размер 58 × 35 мм · масштаб печати 100%. ' +
-    'Все копии одного варианта имеют одинаковый штрихкод.</p></div>' +
-    '<main class="labels">' + labels + '</main></body></html>'
+    '@media print{body{background:white}.controls{display:none}' +
+    '.pages{display:block;padding:0}.sheet{box-shadow:none;break-after:page;page-break-after:always}' +
+    '.sheet:last-child{break-after:auto;page-break-after:auto}' +
+    '.label{outline:none}}' +
+    '</style></head><body><div class="controls">' +
+    '<button type="button" onclick="window.print()">Печатать / Сохранить в PDF</button>' +
+    '<p>' + hint + '</p></div><main class="pages">' + sheets + '</main></body></html>'
   target.document.open()
-  target.document.write(page)
+  target.document.write(html)
   target.document.close()
   target.focus()
 }
