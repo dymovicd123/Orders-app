@@ -292,7 +292,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     if (!/^\d*$/.test(raw)) return
     const text = raw.replace(/^0+(?=\d)/, '')
     const amount = text ? Number(text) : 0
-    if (!Number.isSafeInteger(amount) || amount > MAX_LABELS) return
+    if (!Number.isSafeInteger(amount) || amount > 99999) return
     setQuantityDrafts(current => ({ ...current, [id]: text }))
     setCounts(current => ({ ...current, [id]: amount }))
     setError('')
@@ -406,8 +406,8 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
             <div className="barcode-variant-tools">
               <span>Показано {visibleVariants.length} из {choices.length} вариантов</span>
               <button className="secondary compact" type="button" disabled={!visibleVariants.length || printing}
-                onClick={useVisibleStock} title="Подставить физический остаток для показанных вариантов; потом любое число можно изменить">
-                Заполнить количество по остатку
+                onClick={useVisibleStock} title="Подставить остаток всем отфильтрованным вариантам, включая свёрнутые цвета. Каждое число можно затем изменить">
+                По остатку: {visibleVariants.length} вариантов
               </button>
             </div>
             <div className="barcode-color-groups">
