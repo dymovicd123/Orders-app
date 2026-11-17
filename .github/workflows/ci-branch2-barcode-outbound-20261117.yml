@@ -19,6 +19,8 @@ jobs:
         run: node scripts/test-barcode-operation-unit-20261117.mjs
       - name: Arrival and stocktake share SKU lookup without implicit quantity writes
         run: node scripts/test-arrival-stocktake-shared-sku-20261117.mjs
+      - name: Stocktake completion print choice and mobile camera local scan safety
+        run: node scripts/test-stocktake-camera-print-step-20261117.mjs
       - name: Completed stocktake newly found SKU printing remains optional and no re-arrival
         run: node scripts/test-stocktake-found-labels-20261117.mjs
       - name: Stock correction barcode lookup never mutates on scan
