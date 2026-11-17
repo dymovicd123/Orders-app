@@ -21,8 +21,10 @@ assert(!finish.includes('prepareUnitLabelBatch('),
   'Arrival finish must never create labels automatically or alter physical stock')
 assert(movement.includes("onSuccess: async (recoveryResult) => { await finishMovement(recoveryResult as InventoryMovementSaveResponse) }"),
   'Catalog recovery must use the exact same post-commit safe flow')
-assert(panel.includes("return ctx.saveInventoryMovement(codes, ctx.onArrivalBarcodeReady)"),
-  'Warehouse operation must forward confirmed Arrival receipt to its own view')
+assert(panel.includes("onSave={codes=>ctx.saveInventoryMovement(codes)}"),
+  'Preserve the original inventory operation callback and all existing barcode/writeoff tests')
+assert(section.includes('return saveInventoryMovement(codes, setArrivalBarcodeReceipt)'),
+  'Warehouse section forwards only a post-commit arrival result to optional UI')
 assert(panel.includes('ctx.clearArrivalBarcodeReady()'), 'A new operation clears stale barcode suggestions')
 assert(section.includes('inventoryDraft.movementType === \'arrival\' && arrivalBarcodeReceipt'),
   'Label offer must not appear on other inventory operations')
