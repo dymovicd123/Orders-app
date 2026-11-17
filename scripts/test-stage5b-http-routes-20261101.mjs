@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 
 const sql=new DatabaseSync(':memory:')
 for(const m of fs.readdirSync('migrations').filter(x=>/^\d{4}.*\.sql$/.test(x)).sort()){
@@ -113,10 +114,15 @@ try{
  const sentAgain=await api('POST',prefix+'/dispatches',{
    requestId:'stage5-http-resend-after-undo',items:[{orderItemId:9561,quantity:1}]})
  assert.equal(sentAgain.shippedQuantity,1)
- const physicalReturn=await api('POST','/api/returns',{
+ const retired=await api('POST','/api/returns',{
+   requestId:'stage5-http-retired-v1-proof',orderId:9551,amount:0,
+   items:[{orderItemId:9561,quantity:1,physicalState:'pending',restock:true}],
+ },410)
+ assert.equal(retired.code,'return_v1_retired')
+ const physicalReturn=await createHistoricalReturn(DB,{
    requestId:'stage5-http-return-one-unit',orderId:9551,returnDate:'2026-11-01',amount:0,
    items:[{orderItemId:9561,quantity:1,physicalState:'pending',restock:true}],
- },201)
+ })
  assert(physicalReturn.returnId>0,'Physical Return must record shipped item')
  const remainingAfterReturn=await api('GET',prefix+'/plan')
  assert.equal(remainingAfterReturn.selectedQuantity,2,'Return of dispatched row cannot lock sibling reserve')
@@ -174,10 +180,10 @@ try{
    requestId:'stage5-http-mixed-workshop-shipped',items:[{orderItemId:9565,quantity:1}]})
  assert.equal(workshopSent.shippedQuantity,1)
  assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9552').get().shipping_status,'not_sent')
- const workshopReturn=await api('POST','/api/returns',{
+ const workshopReturn=await createHistoricalReturn(DB,{
    requestId:'stage5-http-workshop-partial-return',orderId:9552,returnDate:'2026-11-01',amount:0,
    items:[{orderItemId:9565,quantity:1,physicalState:'pending',restock:true}],
- },201)
+ })
  assert(workshopReturn.returnId>0,'Partially shipped Workshop item must remain returnable')
  const afterWorkshopReturn=await api('GET','/api/orders/9552/shipping/plan')
  assert.equal(afterWorkshopReturn.selectedQuantity,1,'Workshop Return cannot block independent Warehouse stock')

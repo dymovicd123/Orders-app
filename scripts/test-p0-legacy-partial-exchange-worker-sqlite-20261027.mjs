@@ -273,13 +273,16 @@ try {
     paymentMethod:'НАЛИЧКА', comment:'Изолированный возврат, проверка отмены',
     items:[{orderItemId:item.id,quantity:1,restock:true,physicalState:'warehouse'}],
   }
-  const returned = await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
-  const returnId=Number(returned.data.returnId)
+  const closedV1=await api('/api/returns','POST',returnPayload,{expectedStatus:410,requestId:'stability-return-one'})
+  assert.equal(closedV1.data.code,'return_v1_retired','Legacy V1 must not create new returns via HTTP')
+  // Historical V1 fixture is created through its isolated domain, not the retired public endpoint.
+  const returned=await legacyCreateReturn(db,{...returnPayload,requestId:'stability-return-one'})
+  const returnId=Number(returned.returnId)
   assert(returnId>0,'Return ID required')
   assert.equal(Number(stock().quantity),1,'Returning one physically received SKU adds exactly one')
   assert.equal(sql('SELECT status FROM returns WHERE id=?',returnId).status,'completed')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',orderId).return_amount),1000)
-  await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
+  await legacyCreateReturn(db,{...returnPayload,requestId:'stability-return-one'})
   assert.equal(Number(stock().quantity),1,'Return replay may not duplicate arrival')
   assert.equal(count('returns','order_id='+orderId+' AND status=\'completed\''),1)
   const cancellation=await api('/api/returns/'+returnId+'/cancel','PATCH',{
@@ -604,24 +607,24 @@ try {
     items:[{orderItemId:failedItemId,quantity:1,restock:true,physicalState:'warehouse'}],
   }
   failNextSqlWriteContaining='INSERT INTO return_items'
-  const injected=await api('/api/returns','POST',failedReturnPayload,{
-    expectedStatus:500,requestId:'stability-recover-mid-return',
-  })
-  assert.equal(injected.data.ok,false)
+  let injected
+  try {
+    injected=await legacyCreateReturn(db,{...failedReturnPayload,requestId:'stability-recover-mid-return'})
+  } catch(error) {
+    assert.match(String(error),/INJECTED_NETWORK_OR_DB_FAILURE_BEFORE_WRITE/)
+    injected={ok:false}
+  }
+  assert.equal(injected.ok,false)
   assert.equal(count('returns','order_id='+failedId),0,'Atomic Return must not leave an orphan refund header when item claim fails')
   assert.equal(Number(stock().quantity),0,'Uncompleted Return must not restock physical')
-  const recovered=await api('/api/returns','POST',failedReturnPayload,{
-    expectedStatus:201,requestId:'stability-recover-mid-return',
-  })
-  const recoveredReturnId=Number(recovered.data.returnId)
+  const recovered=await legacyCreateReturn(db,{...failedReturnPayload,requestId:'stability-recover-mid-return'})
+  const recoveredReturnId=Number(recovered.returnId)
   assert(recoveredReturnId>0,'Partial Return must recover under original requestId')
   assert.equal(count('returns','order_id='+failedId),1,'Retry cannot create duplicate refund header')
   assert.equal(count('return_items','return_id='+recoveredReturnId),1,'Retry must create exactly one return item')
   assert.equal(Number(stock().quantity),1,'Recovered Return must restock exactly one')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),1000)
-  await api('/api/returns','POST',failedReturnPayload,{
-    expectedStatus:201,requestId:'stability-recover-mid-return',
-  })
+  await legacyCreateReturn(db,{...failedReturnPayload,requestId:'stability-recover-mid-return'})
   assert.equal(Number(stock().quantity),1,'Completed Return replay must be idempotent')
   await api('/api/returns/'+recoveredReturnId+'/cancel','PATCH',{},{
     requestId:'stability-recover-mid-return-cancel',

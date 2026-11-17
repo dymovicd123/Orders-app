@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -150,13 +151,26 @@ async function createSent(id){
  assert.equal(retry.status,200)
  return {orderId,lineId:Number(line.id)}
 }
+async function historicalReturn(input) {
+ try {
+  const data=await createHistoricalReturn(db,input)
+  return {status:data?.ok===false?409:201,data}
+ } catch(error) {
+  return {status:409,data:{ok:false,message:String(error)}}
+ }
+}
+const blockedV1=await http('POST','/api/returns',{
+ requestId:'v1-must-be-retired',orderId:1,amount:0,items:[]
+})
+assert.equal(blockedV1.status,410)
+assert.equal(blockedV1.data.code,'return_v1_retired')
 const one=await createSent('return-v2-capacity-legacy')
 const getOne=()=>readReturnV2ContractCapacity(db,one.orderId,one.lineId)
 let l=await getOne()
 assert.equal(l.availableForNewReturn,2)
 assert.equal(l.alreadyReturnedWithoutLineReduction,0)
 assert.equal(l.alreadyReturnedWithLineReduction,0)
-const legacy=await http('POST','/api/returns',{
+const legacy=await historicalReturn({
  requestId:'legacy-row-0125',orderId:one.orderId,returnDate:'2026-11-14',amount:0,
  items:[{orderItemId:one.lineId,quantity:1,physicalState:'pending',restock:false}]
 })
@@ -166,14 +180,14 @@ assert.equal(sql.prepare('SELECT contract_quantity_applied c FROM return_items W
 l=await getOne()
 assert.deepEqual([l.currentOrderItemQuantity,l.alreadyReturnedWithoutLineReduction,
   l.alreadyReturnedWithLineReduction,l.availableForNewReturn],[2,1,0,1])
-const legacySecond=await http('POST','/api/returns',{
+const legacySecond=await historicalReturn({
  requestId:'legacy-second-0125',orderId:one.orderId,returnDate:'2026-11-14',amount:0,
  items:[{orderItemId:one.lineId,quantity:1,physicalState:'pending',restock:false}]
 })
 assert.equal(legacySecond.status,201)
 l=await getOne()
 assert.deepEqual([l.currentOrderItemQuantity,l.totalPhysicalReturnQuantity,l.availableForNewReturn],[2,2,0])
-const tooMany=await http('POST','/api/returns',{
+const tooMany=await historicalReturn({
  requestId:'legacy-third-0125',orderId:one.orderId,returnDate:'2026-11-14',amount:0,
  items:[{orderItemId:one.lineId,quantity:1,physicalState:'pending',restock:false}]
 })
@@ -231,7 +245,7 @@ assert.equal(sql.prepare('SELECT COUNT(*) n FROM returns WHERE id=?').get(future
 
 sql.prepare('UPDATE inventory_stock SET quantity=2,reserved_quantity=0 WHERE id=9041').run()
 const mixed=await createSent('return-v2-capacity-mixed')
-const oldOne=await http('POST','/api/returns',{
+const oldOne=await historicalReturn({
  requestId:'mixed-legacy',orderId:mixed.orderId,returnDate:'2026-11-14',amount:0,
  items:[{orderItemId:mixed.lineId,quantity:1,physicalState:'pending',restock:false}]
 })
