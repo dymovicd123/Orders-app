@@ -342,21 +342,63 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload, receipt, onDis
 
   return <section className="barcode-workspace" aria-label="Штрихкоды товаров">
     <div className="barcode-page-head">
-      <div><h3>Штрихкоды</h3><p>Найдите модель, выберите варианты и укажите количество этикеток.</p></div>
-      <button type="button" className="secondary compact" onClick={() => void refresh()} disabled={refreshing || printing}>
-        {refreshing ? 'Обновляю…' : 'Обновить остатки'}
-      </button>
+      <div>{receipt ? <>
+        <span className="barcode-arrival-success">Приход сохранён</span>
+        <h3>Распечатать этикетки?</h3>
+        <p>Поступившие варианты уже выбраны. Количество копий можно изменить, печать необязательна.</p>
+      </> : <><h3>Штрихкоды</h3><p>Найдите модель, выберите варианты и укажите количество этикеток.</p></>}</div>
+      <div className="barcode-arrival-head-actions">
+        {receipt && onDismiss ? <button type="button" className="secondary compact"
+          disabled={printing} onClick={onDismiss}>Не печатать</button> : null}
+        <button type="button" className="secondary compact" onClick={() => void refresh()} disabled={refreshing || printing}>
+          {refreshing ? 'Обновляю…' : 'Обновить остатки'}
+        </button>
+      </div>
     </div>
     <p className="barcode-workflow-note">
-      Модель → цвет и размер → количество → печать. Остатки служат ориентиром,
-      а не ограничением печати. Все копии одного варианта имеют одинаковый код.
+      {receipt
+        ? 'Напечатать общие коды можно сейчас или позднее во вкладке «Штрихкоды». Этикетки не изменяют остаток.'
+        : 'Модель → цвет и размер → количество → печать. Остатки служат ориентиром, а не ограничением печати. Все копии одного варианта имеют одинаковый код.'}
     </p>
     {error ? <p className="barcode-workspace-error" role="alert">{error}</p> : null}
     {refreshing ? <p className="barcode-workspace-status" role="status">Загружаю актуальный каталог и остатки обеих точек…</p> : null}
     {!refreshing && !ready && !error ?
       <p className="barcode-workspace-error" role="alert">Не все данные загрузились. Нажмите «Обновить остатки». Печать недоступна.</p> : null}
     {ready && <>
-      <div className="barcode-workspace-layout">
+      {receipt ? <div className="barcode-arrival-rows" role="list" aria-label="Поступившие варианты">
+        {[...new Map(receipt.items.map(item => [item.variantId, item])).values()].map(item => {
+          const variant = activeVariants.find(row => row.id === item.variantId)
+          const balance = balances.values.get(item.variantId) || { warehouse: 0, boutique: 0 }
+          const received = receipt.items.filter(row => row.variantId === item.variantId)
+            .reduce((sum, row) => sum + row.quantity, 0)
+          return <div className="barcode-arrival-row" role="listitem" key={item.variantId}>
+            <div className="barcode-arrival-identity">
+              <strong>{item.productName}</strong><span>{item.variantLabel}</span>
+              {!variant ? <small className="barcode-print-warning">Вариант отсутствует в действующем каталоге</small> : null}
+            </div>
+            <div className="barcode-arrival-actual">
+              <span>Поступило <strong>{received} шт.</strong></span>
+              <small>Сейчас в {receipt.source === 'warehouse' ? 'складе' : 'бутике'}: {
+                receipt.source === 'warehouse' ? balance.warehouse : balance.boutique
+              } шт.</small>
+            </div>
+            <label className="barcode-arrival-quantity">
+              <span>Этикеток</span>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0"
+                autoComplete="off"
+                value={quantityDrafts[item.variantId] ?? (counts[item.variantId] ? String(counts[item.variantId]) : '')}
+                onFocus={event => event.currentTarget.select()}
+                onChange={event => updateCount(item.variantId, event.target.value)}
+                onBlur={() => finishCount(item.variantId)}
+                disabled={printing || !variant}
+                aria-label={'Количество этикеток: ' + item.productName + ' · ' + item.variantLabel}/>
+            </label>
+          </div>
+        })}
+        {missingReceiptVariants.length ? <p className="barcode-workspace-error" role="alert">
+          Некоторые варианты не найдены в каталоге. Печать недоступна, но приход уже сохранён.
+        </p> : null}
+      </div> : <div className="barcode-workspace-layout">
         <div className="barcode-models">
           <label className="barcode-model-search"><span>Поиск товара</span>
             <input value={search} onChange={event => {
