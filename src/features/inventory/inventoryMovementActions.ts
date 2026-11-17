@@ -401,6 +401,7 @@ export function createInventoryMovementActions({
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
       await finishMovement(result)
+      return true
     } catch (err) {
       // Keep the original draft and review visible so users can inspect the same
       // variants instead of starting over. A failed response is not proof that
