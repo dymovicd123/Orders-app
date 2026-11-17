@@ -32,8 +32,8 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'be24ef5a1b5def7be74a151c7c24272d1bb81b2f'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/main-return-v2-final-worker-release-20261117.yml'
+          test "$(git rev-parse HEAD^)" = '06f37a382b4865be70ab983f36d59e217e2b649d'
+          test "$(git diff --name-only HEAD^ HEAD | sort)" = "$(printf '%s\n' '.github/workflows/main-return-v2-final-worker-release-20261117.yml' 'scripts/test-warehouse-return-exchange-receiving-20261117.mjs' | sort)"
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           grep -Fq '"name": "orders-app"' wrangler.jsonc
           grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
@@ -71,7 +71,7 @@ jobs:
       - name: Deploy production Worker only, preserving secrets (NO D1 migration)
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'be24ef5a1b5def7be74a151c7c24272d1bb81b2f'
+          test "$(git rev-parse HEAD^)" = '06f37a382b4865be70ab983f36d59e217e2b649d'
           npx --no-install wrangler deploy --config .main-return-v2-final-release.jsonc --name orders-app --keep-vars --strict
       - name: Verify the new active version has exact D1, V2 flag and admin secrets
         run: |
