@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
+import { resolveOperationBarcode, type OperationBarcodeLookup } from '../operationBarcodeSelection'
 import '../../../styles/193-unified-inventory-operations.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
@@ -101,6 +102,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const observedArrivalCompletion = useRef<string | null>(null)
   const [scanCode, setScanCode] = useState('')
+  const [matchedSkuId, setMatchedSkuId] = useState<number | null>(null)
+  const [skuQuantityDraft, setSkuQuantityDraft] = useState('')
+  const skuQuantityRef = useRef<HTMLInputElement>(null)
+  const scanInputRef = useRef<HTMLInputElement>(null)
+  const scanContextRef = useRef('')
   type ScannedUnit = { code: string; unitId: string; variantId: number; name: string }
   const [scannedUnits, setScannedUnits] = useState<ScannedUnit[]>([])
   const [scanBusy, setScanBusy] = useState(false)
@@ -108,7 +114,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const [scanNotice, setScanNotice] = useState('')
   const scanRunningRef = useRef(false)
   const scansRef = useRef<ScannedUnit[]>([])
-  const clearScans = () => { scansRef.current=[];setScannedUnits([]);setScanCode('');setScanNotice('');setScanError('') }
+  const clearScans = () => {
+    scansRef.current=[];setScannedUnits([]);setScanCode('');setScanNotice('');setScanError('')
+    setMatchedSkuId(null);setSkuQuantityDraft('')
+  }
+  scanContextRef.current = mode + ':' + source + ':' + targetSource
   useEffect(() => { clearScans() }, [mode, source, targetSource])
   const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
     .filter((g): g is Group => Boolean(g)), [selected, groups])
@@ -116,6 +126,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const draftMap = useMemo(() => new Map(draft.filter(item => item.variantId || item.draftKey)
     .map(item => [String(item.draftKey || item.variantId), item])), [draft])
   const allRows = useMemo(() => new Map(groups.flatMap(g => g.rows.map(r => [String(r.variantId), r] as const))), [groups])
+  const matchedSkuRow = matchedSkuId ? allRows.get(String(matchedSkuId)) : undefined
+  const scannedSkuMin = matchedSkuId ? scansRef.current.filter(unit=>unit.variantId===matchedSkuId).length : 0
   const entries = useMemo(() => draft.filter(item => (item.variantId || item.draftKey) &&
     (mode === 'manual_set' ? item.touched : int(item.quantity) > 0))
     .map(item => ({ row: allRows.get(String(item.draftKey || item.variantId)), quantity: int(item.quantity) }))
