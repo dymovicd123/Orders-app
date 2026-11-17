@@ -17,7 +17,7 @@ type ScanAttempt = { code: string; requestId: string; origin: 'camera' | 'usb' |
 const VALID_BARCODE = /^OC(?:S|U)1-[0-9A-Z-]+$/
 
 export function StocktakeBarcodeScanner({
-  sessionId, source, disabled, onScanned,
+  sessionId, disabled, onScanned,
 }: {
   sessionId: string
   source: 'warehouse' | 'boutique'
