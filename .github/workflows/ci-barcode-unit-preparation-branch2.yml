@@ -10,6 +10,7 @@ on:
       - 'src/features/inventory/views/unitBarcodePreparation.css'
       - 'src/features/inventory/views/catalogPolishExecutionGroups.tsx'
       - 'scripts/test-barcode-unit-label-preparation-20261116.mjs'
+      - 'scripts/test-barcode-no-hardware-20261117.mjs'
       - '.github/workflows/ci-barcode-unit-preparation-branch2.yml'
 permissions:
   contents: read
@@ -31,5 +32,6 @@ jobs:
           node scripts/test-barcode-unit-foundation-20261116.mjs
           node scripts/test-barcode-unit-catalog-integrity-20261116.mjs
           node scripts/test-barcode-unit-label-preparation-20261116.mjs
+          node scripts/test-barcode-no-hardware-20261117.mjs
       - name: Compile and build
         run: npm run build
