@@ -544,3 +544,31 @@
   min-width: 0;
   margin-top: 4px;
 }
+
+
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary {
+  flex-wrap: wrap;
+}
+@media(max-width:900px) {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary {
+    display: grid;
+    grid-template-columns: repeat(4,minmax(0,1fr));
+    gap: 5px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button {
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+    padding: 9px 6px;
+  }
+}
+@media(max-width:600px) {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary {
+    grid-template-columns: repeat(3,minmax(0,1fr));
+  }
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button strong {
+    font-size: 11px;
+  }
+}
