@@ -1,0 +1,34 @@
+name: Branch2 common SKU scan in transfer/writeoff CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/features/inventory/operationBarcodeSelection.ts
+      - src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx
+      - src/styles/193-unified-inventory-operations.css
+      - scripts/test-sku-scan-unified-outbound-20261117.mjs
+      - .github/workflows/ci-branch2-sku-scan-outbound-20261117.yml
+permissions:
+  contents: read
+jobs:
+  sku-outbound:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Mixed SKU/unit scan and manual stock safety
+        run: |
+          node scripts/test-sku-scan-unified-outbound-20261117.mjs
+          node scripts/test-barcode-operation-unit-20261117.mjs
+          node scripts/test-w6-unified-operations.mjs
+          node scripts/test-inventory-writeoff-review.mjs
+          node scripts/test-transfer-canonical-barcode-identity-20261030.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-barcode-sku-foundation.mjs
+      - name: TypeScript and client build
+        run: npm run build
