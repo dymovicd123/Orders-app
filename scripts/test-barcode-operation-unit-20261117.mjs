@@ -83,7 +83,7 @@ assert.equal(sourceCount('boutique'),before.b+1)
 assert.deepEqual(unit(first.unitId),{inventory_source:'boutique',unit_status:'on_hand',coverage_status:'linked'})
 assert.deepEqual(unit(second.unitId),{inventory_source:'warehouse',unit_status:'unverified',coverage_status:'unlinked'})
 assert.equal(n('inventory_outbound_unit_scans'),1)
-assert.equal(n('inventory_unit_events'),3)
+assert.equal(n('inventory_unit_events'),4)
 await assert.rejects(normal('transfer','warehouse','boutique','transfer-other',[first.token],1),/исходной точке/)
 assert.throws(()=>sqlite.prepare("UPDATE inventory_outbound_unit_scans SET actor='edited' WHERE operation_id='transfer-101'").run(),/BARCODE_OUTBOUND_IMMUTABLE/)
 
@@ -105,7 +105,7 @@ await db.batch([
 assert.deepEqual(unit(second.unitId),{inventory_source:'none',unit_status:'not_stock',coverage_status:'excluded'})
 assert.equal(sourceCount('warehouse'),before.w-2)
 assert.equal(n('inventory_outbound_unit_scans'),2)
-assert.equal(n('inventory_unit_events'),4)
+assert.equal(n('inventory_unit_events'),5)
 await assert.rejects(normal('writeoff','warehouse','none','again',[second.token],1),/уже выбыла/)
 const writtenAfterTransfer=await normal('writeoff','boutique','none','writeoff-boutique',[first.token],1)
 await db.batch([
@@ -117,7 +117,7 @@ await db.batch([
 assert.equal(unit(first.unitId).unit_status,'not_stock')
 assert.equal(sourceCount('boutique'),before.b)
 assert.equal(n('inventory_outbound_unit_scans'),3)
-assert.equal(n('inventory_unit_events'),5)
+assert.equal(n('inventory_unit_events'),6)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_stock WHERE reserved_quantity<0').get().n,0)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
