@@ -92,4 +92,21 @@ assert(domain.includes("'/api/returned-items/receive'") && domain.includes('prep
  'Use established idempotent receive flow with stocktake freshness guards')
 assert(!code.includes("fetch(") && !code.includes("/api/returned-items/receive"),
  'The inventory view must not bypass canonical receipt action')
+const receiptServer=readFileSync('worker/domains/order-returned-item-receipt.ts','utf8')
+const labelsUi=readFileSync('src/features/inventory/views/UnitBarcodePreparation.tsx','utf8')
+assert(receiptServer.includes("!isWorkshop && receivedVariantId > 0 && (stockApplied || stockAlreadyApplied)"),
+  'Only a completed non-workshop physical stock application can suggest barcode preparation')
+assert(receiptServer.includes('barcodePreparation:') && receiptServer.includes('pendingInventoryCount:'),
+  'Barcode suggestion supplements, never replaces, canonical receipt lifecycle')
+assert(!receiptServer.includes('prepareUnitLabelBatch('),
+  'Receiving an item must not silently create labels or duplicate stock movements')
+assert(domain.includes('onBarcodePreparationReady') && code.includes('onBarcodePreparationReady: details'),
+  'Only successful canonical receive result can offer post-intake labels')
+assert(code.includes('<UnitBarcodePreparation') && code.includes('setReceivedForLabels(null)'),
+  'Warehouse intake offers optional labels only after a successful receipt, reset between attempts')
+assert(labelsUi.includes("initialSource = 'warehouse'") && labelsUi.includes('initialQuantity = 1'),
+  'Label preparation safely preselects the recorded stock destination and number of pieces')
+assert(code.includes('Это не новый приход: количество в остатке повторно не увеличится.'),
+  'No ambiguity about whether label creation changes stock')
+
 console.log('WAREHOUSE_RECEIVING_BRANCH2_PASS: 2 work queues, accurate badges, Set V2, cancellation guard, same physical receive API, order history retained')
