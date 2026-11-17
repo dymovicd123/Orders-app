@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { resolveOperationBarcode, type OperationBarcodeLookup } from '../operationBarcodeSelection'
 import './stocktakeBarcodeScanner.css'
 
 type ScanResponse = {
@@ -12,11 +13,13 @@ type ScanResponse = {
 }
 
 export function StocktakeBarcodeScanner({
-  sessionId, disabled, onScanned,
+  sessionId, source, disabled, onScanned, onSkuFound,
 }: {
   sessionId: string
+  source: 'warehouse' | 'boutique'
   disabled: boolean
   onScanned: (variantId: number) => Promise<void>
+  onSkuFound: (variantId: number) => string | null
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const busyRef = useRef(false)
@@ -46,12 +49,30 @@ export function StocktakeBarcodeScanner({
 
   async function scan() {
     const typed = code.trim()
-    if (busyRef.current || disabled || total === null || !typed) return
+    if (busyRef.current || disabled || !typed) return
     busyRef.current = true
     setBusy(true)
     setError('')
     setNotice('')
+    let focusScanner = true
     try {
+      if (typed.toUpperCase().startsWith('OCS1')) {
+        // Shared SKU is only a navigator. Unlike a physical unit label it must
+        // never call the stocktake POST endpoint or add one to counted_quantity.
+        const response = await fetch('/api/barcodes/lookup?code=' + encodeURIComponent(typed.trim().toUpperCase()), {
+          method: 'GET', credentials: 'same-origin', cache: 'no-store',
+        })
+        const result = await response.json() as OperationBarcodeLookup
+        if (!response.ok) throw new Error(result.message || 'Не удалось найти SKU.')
+        const match = resolveOperationBarcode(typed, result, source)
+        if (match.kind !== 'sku') throw new Error('Для поиска варианта требуется общий SKU.')
+        const selected = onSkuFound(match.variantId)
+        if (!selected) throw new Error('Этот вариант не входит в текущую проверку. Выберите товар вручную или добавьте его через «Найденная позиция».')
+        setNotice('Найден ' + selected + '. Перейдите к полю и введите весь фактический остаток, включая вещи без этикеток. Поиск ничего не прибавляет.')
+        focusScanner = false
+        return
+      }
+      if (total === null) throw new Error('Подсчёт индивидуальных меток пока недоступен. Дождитесь загрузки.')
       const response = await fetch('/api/inventory/stocktakes/' + encodeURIComponent(sessionId) + '/scans', {
         method: 'POST',
         credentials: 'same-origin',
@@ -77,31 +98,31 @@ export function StocktakeBarcodeScanner({
       setCode('')
       setBusy(false)
       busyRef.current = false
-      inputRef.current?.focus()
+      if (focusScanner) inputRef.current?.focus()
     }
   }
 
-  return <section className="stocktake-barcode-scanner" aria-label="Подсчёт по индивидуальным штрихкодам">
+  return <section className="stocktake-barcode-scanner" aria-label="Поиск SKU и подсчёт по индивидуальным штрихкодам">
     <div className="stocktake-barcode-title">
       <div>
-        <strong>Подсчёт сканером</strong>
-        <span>Индивидуальная этикетка вещи · без изменения остатков до завершения ревизии</span>
+        <strong>Штрихкоды при проверке</strong>
+        <span>Общий SKU — открыть вариант без изменения количества. Индивидуальный код вещи — учесть +1.</span>
       </div>
       <span className="stocktake-barcode-total">{total === null ? 'Проверяю…' : `Сканов: ${total}`}</span>
     </div>
     <form onSubmit={event => { event.preventDefault(); void scan() }} className="stocktake-barcode-form">
       <input ref={inputRef} type="text" autoComplete="off" spellCheck={false}
-        aria-label="Индивидуальный штрихкод"
-        placeholder="Сканируйте индивидуальную метку"
+        aria-label="Штрихкод SKU или индивидуальная метка"
+        placeholder="Общий SKU или индивидуальная метка"
         value={code} onChange={event => setCode(event.target.value)}
-        disabled={busy || total === null}/>
+        disabled={busy || disabled}/>
       <button type="submit" className="secondary compact"
-        disabled={busy || disabled || total === null || !code.trim()}>
-        {busy ? 'Считаю…' : 'Учесть вещь'}
+        disabled={busy || disabled || !code.trim()}>
+        {busy ? 'Проверяю…' : 'Найти / учесть'}
       </button>
     </form>
     {disabled ? <small>Сначала дождитесь сохранения введённых вручную значений.</small> : null}
-    <small>Одинаковый код дважды не засчитывается, даже после повторного открытия ревизии. Вещи без этикеток считайте вручную. Не считайте одну вещь одновременно вручную и сканером.</small>
+    <small>Общий SKU только открывает нужную ячейку: введите итоговое фактическое число, не прибавляйте 1 за скан. Индивидуальные метки засчитываются поштучно, повторно не учитываются. Одну вещь нельзя считать дважды — вручную и индивидуальным сканом.</small>
     {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
     {error ? <div className="stocktake-barcode-error" role="alert">{error}</div> : null}
   </section>

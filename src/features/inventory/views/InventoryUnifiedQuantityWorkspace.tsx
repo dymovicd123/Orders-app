@@ -251,6 +251,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       const data=await response.json() as OperationBarcodeLookup
       if (context !== scanContextRef.current) return
       if (!response.ok) throw new Error(data.message||'Не удалось найти код товара.')
+      if (mode==='arrival' && data.barcodeType!=='sku') {
+        throw new Error('При приходе сканирование используется только для поиска по общему SKU. Новые вещи приходят без индивидуальных меток; выберите вариант вручную или отсканируйте общий код.')
+      }
       const match=resolveOperationBarcode(code,data,source)
       const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===match.variantId))
       const row=group?.rows.find(row=>Number(row.variantId)===match.variantId)
@@ -264,7 +267,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         setCurrent(group.key);setStage('quantities')
         setScanNotice(mode==='manual_set'
           ? 'Вариант найден. Укажите фактический остаток: скан общего SKU не меняет количество.'
-          : 'Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
+          : mode==='arrival'
+            ? 'Вариант найден. Укажите, сколько единиц поступило. Скан ничего не добавляет к приходу.'
+            : 'Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
         window.requestAnimationFrame(()=>skuQuantityRef.current?.focus())
         return
       }
@@ -314,7 +319,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     p.onQuantity(matchedSkuRow,String(quantity))
     setScanNotice(mode==='manual_set'
       ? 'Фактический остаток '+quantity+' шт. внесён в черновик. Остатки изменятся только после подтверждения.'
-      : quantity===0 ? 'Количество очищено. Вещи не перемещены и не списаны.'
+      : quantity===0 ? 'Количество очищено. Остатки не меняются.'
       : 'Для варианта установлено '+quantity+' шт. Можно искать следующий товар или проверить результат.')
     setScanError('')
     setMatchedSkuId(null);setSkuQuantityDraft('')
@@ -395,13 +400,15 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       </div>
     </div>
 
-    {(mode==='transfer'||mode==='writeoff'||mode==='manual_set') && stage!=='review' && <section className="operation-barcode-area" aria-label="Поиск товара по штрихкоду">
-      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)}{mode==='manual_set'?'':` · индивидуальных вещей: ${scannedUnits.length}`}</span></div>
-      <p className="operation-barcode-explain">{mode==='manual_set'
-        ? 'Общий SKU и индивидуальная метка только находят вариант. Укажите полный фактический остаток вручную, включая вещи без этикеток. Скан не меняет количество.'
-        : 'Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.'}</p>
+    {(mode==='transfer'||mode==='writeoff'||mode==='manual_set'||mode==='arrival') && stage!=='review' && stage!=='complete' && <section className="operation-barcode-area" aria-label="Поиск товара по штрихкоду">
+      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)}{mode==='manual_set'||mode==='arrival'?'':` · индивидуальных вещей: ${scannedUnits.length}`}</span></div>
+      <p className="operation-barcode-explain">{mode==='arrival'
+        ? 'Необязательный поиск по общему SKU для уже маркированных вариантов. Введите количество поступивших вещей самостоятельно. Товары без этикеток выбирайте в обычном списке.'
+        : mode==='manual_set'
+          ? 'Общий SKU и индивидуальная метка только находят вариант. Укажите полный фактический остаток вручную, включая вещи без этикеток. Скан не меняет количество.'
+          : 'Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.'}</p>
       <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
-        <input ref={scanInputRef} aria-label="Штрихкод товара — общий SKU или индивидуальный" value={scanCode} onChange={event=>setScanCode(event.target.value)}
+        <input ref={scanInputRef} aria-label={mode==='arrival'?'Общий штрихкод SKU для прихода':'Штрихкод товара — общий SKU или индивидуальный'} value={scanCode} onChange={event=>setScanCode(event.target.value)}
           autoComplete="off" spellCheck={false} placeholder="Отсканируйте или введите код и нажмите Enter" disabled={scanBusy||busy||loading||matchedSkuId!==null}/>
         <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||matchedSkuId!==null||!scanCode.trim()}>
           {scanBusy?'Ищу…':'Найти по коду'}
@@ -417,7 +424,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
             {scannedSkuMin>0&&<small>Индивидуальных меток этого варианта: {scannedSkuMin} шт. (входят в количество)</small>}
           </div>
           <form className="operation-sku-match-form" onSubmit={event=>{event.preventDefault();applySkuQuantity()}}>
-            <label>{mode==='manual_set'?'Фактический остаток':mode==='transfer'?'Всего переместить':'Всего списать'}
+            <label>{mode==='manual_set'?'Фактический остаток':mode==='arrival'?'Всего пришло':mode==='transfer'?'Всего переместить':'Всего списать'}
               <input ref={skuQuantityRef} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
                 placeholder="0" value={skuQuantityDraft} onFocus={event=>event.currentTarget.select()}
                 onChange={event=>{if(/^[0-9]{0,6}$/.test(event.target.value)){setSkuQuantityDraft(event.target.value);setScanError('')}}}
@@ -444,9 +451,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
             setScanNotice('Код убран из операции.')
           }}>Убрать</button>
         </div>)}</div>}
-      <small>{mode==='manual_set'
-        ? 'Код используется только для поиска. Не забудьте посчитать вещи без этикеток. Корректировка не создаёт физический учёт меток.'
-        : 'Сканированные вещи входят в указанное количество. Остальные можно указать вручную. Никаких изменений остатков до подтверждения.'}</small>
+      <small>{mode==='arrival'
+        ? 'Скан общего SKU только находит вариант. Он не создаёт приход и не добавляет количество. После сохранения можно распечатать этикетки.'
+        : mode==='manual_set'
+          ? 'Код используется только для поиска. Не забудьте посчитать вещи без этикеток. Корректировка не создаёт физический учёт меток.'
+          : 'Сканированные вещи входят в указанное количество. Остальные можно указать вручную. Никаких изменений остатков до подтверждения.'}</small>
       {scanError&&<div className="stocktake-barcode-error" role="alert">{scanError}</div>}
       {scanNotice&&<div className="stocktake-barcode-notice" role="status">{scanNotice}</div>}
     </section>}

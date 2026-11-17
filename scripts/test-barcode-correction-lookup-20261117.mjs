@@ -23,8 +23,8 @@ assert.throws(()=>resolveOperationBarcode(sku,{...skuResult,active:false},'wareh
 const ui=readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 const panel=readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx','utf8')
 const worker=readFileSync('worker/domains/inventory-movement.ts','utf8')
-assert(ui.includes("(mode==='transfer'||mode==='writeoff'||mode==='manual_set')"),
-  'Stock corrections must expose the same barcode input as transfer and writeoff')
+assert(ui.includes("(mode==='transfer'||mode==='writeoff'||mode==='manual_set'||mode==='arrival')"),
+  'Stock corrections must retain barcode lookup alongside transfer, writeoff and optional arrival lookup')
 assert(ui.includes("const match=resolveOperationBarcode(code,data,source)"),
   'All barcode lookups must verify active variant and physical source')
 const locate=ui.slice(ui.indexOf("if (mode==='manual_set') {",ui.indexOf("async function scanOperationUnit()")),

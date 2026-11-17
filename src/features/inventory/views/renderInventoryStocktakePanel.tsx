@@ -1,6 +1,7 @@
 import type { InventoryRenderContext } from './types'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
 import { StocktakeBarcodeScanner } from './StocktakeBarcodeScanner'
+import { findStocktakeSku } from '../stocktakeSkuFinder'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'addStocktakeNewCombination'
@@ -369,8 +370,24 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                         {!stocktakeReviewMode ? <StocktakeBarcodeScanner
                           sessionId={stocktakeSession.id}
+                          source={stocktakeSession.source}
                           disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0}
                           onScanned={onStocktakeBarcodeScan}
+                          onSkuFound={(variantId: number) => {
+                            const found = findStocktakeSku(stocktakeGroups, variantId)
+                            if (!found) return null
+                            setStocktakeProductSearch('')
+                            setStocktakeProductIndex(found.groupIndex)
+                            window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+                              const field = document.querySelector<HTMLInputElement>(
+                                'input[data-stocktake-count-input="1"][data-stocktake-item-id="' + found.itemId + '"]')
+                              if (field) {
+                                field.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                                field.focus({ preventScroll: true })
+                              }
+                            }))
+                            return found.label
+                          }}
                         /> : null}
 
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>

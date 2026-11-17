@@ -17,6 +17,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Real SQLite physical barcode operations test
         run: node scripts/test-barcode-operation-unit-20261117.mjs
+      - name: Arrival and stocktake share SKU lookup without implicit quantity writes
+        run: node scripts/test-arrival-stocktake-shared-sku-20261117.mjs
       - name: Stock correction barcode lookup never mutates on scan
         run: node scripts/test-barcode-correction-lookup-20261117.mjs
       - name: Barcode receiving finder and existing Return V2 intake
