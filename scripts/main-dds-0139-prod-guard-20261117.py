@@ -12,8 +12,8 @@ if PHASE not in ('before','after','worker-after'):
 PROD_DB='17e68a41-1d58-4a36-8a63-47c3e32443c4'
 PROD_WORKER='orders-app'
 raw=Path('wrangler.jsonc').read_text()
-raw=re.sub(r'/\*[\s\S]*?\*/','',raw)
-raw=re.sub(r'^\s*//[^\n]*$','',raw,flags=re.M)
+raw=re.sub(r'("(?:\\.|[^"\\])*")|(/\*[\s\S]*?\*/|//[^\n]*)',
+           lambda match: match.group(1) if match.group(1) is not None else '', raw)
 cfg=json.loads(raw)
 if cfg.get('name')!=PROD_WORKER or cfg.get('main')!='worker/index.ts':
     raise SystemExit('ABORT wrong production Worker configuration')
