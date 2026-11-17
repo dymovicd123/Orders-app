@@ -40,3 +40,8 @@
 .warehouse-receiving-hint p{margin:0;color:#61748b;flex:1 1 200px;line-height:1.5}
 @media(max-width:1000px){.warehouse-receiving-card{flex-wrap:wrap}.warehouse-receiving-actions{flex:1 1 100%}}
 @media(max-width:640px){.warehouse-receiving-header{flex-direction:column;padding:15px}.warehouse-receiving-summary{justify-items:start;min-width:0;width:100%;text-align:left}.warehouse-receiving-tabs .warehouse-receiving-refresh{margin-left:0}.warehouse-receiving-card{padding:12px}.warehouse-receiving-context>div{min-width:125px;flex:1}.warehouse-receiving-actions{flex-direction:column;align-items:stretch}.warehouse-receiving-actions label{width:100%;min-width:0}.warehouse-receiving-actions button{width:100%}}
+
+.warehouse-receiving-label-next{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid var(--border, #d5d9df);border-radius:12px;margin:12px 0;background:var(--surface, transparent)}
+.warehouse-receiving-label-next p{margin:4px 0 0;max-width:680px;font-size:.9rem;line-height:1.5}
+.warehouse-receiving-label-next .unit-barcode-entry{flex-shrink:0}
+@media(max-width:720px){.warehouse-receiving-label-next{align-items:stretch;flex-direction:column}}
