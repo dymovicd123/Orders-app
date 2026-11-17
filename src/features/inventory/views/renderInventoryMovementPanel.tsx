@@ -15,7 +15,7 @@ type PanelContext = { askActionConfirmation: (message: string) => Promise<boolea
 > & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
-}) => void; onInlineCorrectionVariant: (seed: {
+}) => void; clearArrivalBarcodeReady:()=>void; onInlineCorrectionVariant: (seed: {
   productId: number | string; productName: string; category: 'adult'|'child';
   gender:string;material:string;length:string;color:string;size:string;quantity:number;
 }) => void }
@@ -59,11 +59,13 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onMode={next => {
         ctx.clearInventoryMovementError()
         ctx.resetInventoryArrivalForm()
+        ctx.clearArrivalBarcodeReady()
         ctx.selectInventoryOperationMode(next)
       }}
       onSource={next => {
         ctx.clearInventoryMovementError()
         if(mode==='arrival'&&ctx.inventoryArrivalSummary.rows > 0)ctx.resetInventoryArrivalForm()
+        ctx.clearArrivalBarcodeReady()
         ctx.changeInventoryOperationSource(next)
       }}
       onReason={value=>{ctx.clearInventoryMovementError();ctx.setInventoryDraft((current:any)=>({...current,comment:value}))}}
@@ -86,6 +88,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
         ctx.setInventoryDraft((current:any)=>({...current,items:[ctx.createEmptyInventoryItem()],comment:''}))
         ctx.resetInventoryArrivalForm()
         ctx.resetInventoryOperationSelection()
+        ctx.clearArrivalBarcodeReady()
       }}
       onRefresh={()=>{ctx.setMovementSourceRefreshToken((value:number)=>value+1);void ctx.refreshActiveStocktakes()}}
     />

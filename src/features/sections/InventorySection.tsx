@@ -21,6 +21,7 @@ import { renderInventoryHistoryPanel } from '../inventory/views/renderInventoryH
 import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandStatistics'
 import { WarehouseReportsWorkspace } from '../inventory/views/WarehouseReportsWorkspace'
 import { WarehouseReceivingWorkspace } from '../inventory/views/WarehouseReceivingWorkspace'
+import { UnitBarcodePreparation } from '../inventory/views/UnitBarcodePreparation'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
 import '../../styles/182-inventory-stocktake-human.css'
@@ -86,6 +87,11 @@ type SectionContext = Record<string, any> & {
 }
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
+  const [arrivalBarcodeReceipt, setArrivalBarcodeReceipt] = useState<{
+    operationId: string
+    source: 'warehouse' | 'boutique'
+    items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
+  } | null>(null)
   const {
     askActionConfirmation,
     onInlineArrivalVariant,
@@ -2661,6 +2667,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        clearArrivalBarcodeReady: () => setArrivalBarcodeReceipt(null),
         askActionConfirmation,
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
@@ -2695,7 +2702,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         removeInventoryVariantOperationItem,
         resetInventoryArrivalForm,
         resetInventoryOperationSelection,
-        saveInventoryMovement,
+        saveInventoryMovement: (codes: string[] = []) => {
+          setArrivalBarcodeReceipt(null)
+          return saveInventoryMovement(codes, setArrivalBarcodeReceipt)
+        },
         selectInventoryOperationMode,
         selectInventoryOperationVariant,
         selectedInventoryOperationGroup,
@@ -2713,6 +2723,28 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         swapInventoryTransferDirection,
         updateInventoryDirectProductInput
       })}
+              {inventoryPanel === 'movement' && inventoryDraft.movementType === 'arrival' && arrivalBarcodeReceipt
+                ? <section className="inventory-post-arrival-labels" style={inventoryPanelStyle('movement')}>
+                  <div className="inventory-post-arrival-labels-header">
+                    <div>
+                      <strong>Приход сохранён · подготовка этикеток</strong>
+                      <p>Это отдельная маркировка уже принятых вещей, без повторного добавления в остаток.
+                        Для каждой вещи создаётся свой код. Этикетки можно подготовить сейчас или позднее через остатки.</p>
+                    </div>
+                    <button type="button" className="secondary compact"
+                      onClick={() => setArrivalBarcodeReceipt(null)}>Закрыть</button>
+                  </div>
+                  <div className="inventory-post-arrival-labels-list">
+                    {arrivalBarcodeReceipt.items.map(item => <div key={arrivalBarcodeReceipt.operationId + ':' + item.variantId}
+                      className="inventory-post-arrival-labels-row">
+                      <div><strong>{item.productName}</strong><span>{item.variantLabel} · Поступило {item.quantity} шт.</span></div>
+                      <UnitBarcodePreparation key={arrivalBarcodeReceipt.operationId + ':' + item.variantId}
+                        variantId={item.variantId} productName={item.productName} variantLabel={item.variantLabel}
+                        initialSource={arrivalBarcodeReceipt.source} initialQuantity={item.quantity}
+                        buttonLabel="Подготовить этикетки" />
+                    </div>)}
+                  </div>
+                </section> : null}
 
               {renderInventoryHistoryPanel({
         formatHistoryMoment,
