@@ -38,6 +38,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     formatPercent,
     FriendlyNumberInput,
     isAdmin,
+    canManageFinance,
     loadCashRegister,
     loadCashRegisterCycles,
     loadFinancePaymentMethods,
@@ -85,7 +86,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   )
 
 
-  if (financeMode === 'dds') return <div className="finance-tabs-shell finance-truth-shell">{financeTabsNode}<DdsWorkspace apiFetch={ctx.apiFetch} isAdmin={Boolean(isAdmin)} /></div>
+  if (financeMode === 'dds') return <div className="finance-tabs-shell finance-truth-shell">{financeTabsNode}<DdsWorkspace apiFetch={ctx.apiFetch} isAdmin={Boolean(canManageFinance)} /></div>
 
   if (financeMode === 'cash') {
     const entryTypeLabel = (entryType: string) => ({
@@ -884,17 +885,17 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
           <div className="mini-panel-head">
             <div>
               <h3>Способы оплаты</h3>
-              <p className="mini-panel-note">Отсюда берутся списки оплат в заказе, закрытии долга и обмене. Изменять список может только админ.</p>
+              <p className="mini-panel-note">Отсюда берутся списки оплат в заказе, закрытии долга и обмене. Изменять список могут администратор и завсклад.</p>
             </div>
             <button className="secondary compact" type="button" onClick={() => void loadFinancePaymentMethods(true)}>{financeMethodsBusy ? 'Загружаю...' : 'Обновить'}</button>
           </div>
           <div className="subgrid reference-form-grid">
-            <label className="wide-field"><span>Способ оплаты</span><input value={financeMethodDraft.value} disabled={!isAdmin} onChange={(event) => setFinanceMethodDraft((current) => ({ ...current, value: normalizeSuggestion(event.target.value) }))} placeholder="Например: KASPI PAY" /></label>
-            <label><span>Порядок</span><FriendlyNumberInput type="number" disabled={!isAdmin} value={financeMethodDraft.sortOrder} onChange={(event) => setFinanceMethodDraft((current) => ({ ...current, sortOrder: event.target.value }))} /></label>
+            <label className="wide-field"><span>Способ оплаты</span><input value={financeMethodDraft.value} disabled={!canManageFinance} onChange={(event) => setFinanceMethodDraft((current) => ({ ...current, value: normalizeSuggestion(event.target.value) }))} placeholder="Например: KASPI PAY" /></label>
+            <label><span>Порядок</span><FriendlyNumberInput type="number" disabled={!canManageFinance} value={financeMethodDraft.sortOrder} onChange={(event) => setFinanceMethodDraft((current) => ({ ...current, sortOrder: event.target.value }))} /></label>
           </div>
-          <div className="actions"><button className="primary" type="button" disabled={!isAdmin} onClick={() => void saveFinancePaymentMethod()}>{financeMethodDraft.id ? 'Сохранить' : 'Добавить'}</button><button className="secondary" type="button" onClick={() => setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })}>Сбросить</button></div>
+          <div className="actions"><button className="primary" type="button" disabled={!canManageFinance} onClick={() => void saveFinancePaymentMethod()}>{financeMethodDraft.id ? 'Сохранить' : 'Добавить'}</button><button className="secondary" type="button" onClick={() => setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })}>Сбросить</button></div>
           <div className="reference-list finance-method-list">
-            {financePaymentMethods.map((item) => <div key={item.id} className={`reference-row ${financeMethodDraft.id === item.id ? 'is-selected' : ''}`}><div className="reference-row-main"><div className="reference-row-title"><strong>{item.value}</strong></div><span>Порядок: {item.sortOrder ?? 0}</span></div>{isAdmin ? <div className="reference-row-actions"><button className="secondary compact" type="button" onClick={() => setFinanceMethodDraft({ id: item.id, value: item.value, sortOrder: String(item.sortOrder ?? 0), isActive: true })}>Править</button><button className="ghost danger compact" type="button" onClick={() => void removeFinancePaymentMethod(item.id)}>Удалить</button></div> : null}</div>)}
+            {financePaymentMethods.map((item) => <div key={item.id} className={`reference-row ${financeMethodDraft.id === item.id ? 'is-selected' : ''}`}><div className="reference-row-main"><div className="reference-row-title"><strong>{item.value}</strong></div><span>Порядок: {item.sortOrder ?? 0}</span></div>{canManageFinance ? <div className="reference-row-actions"><button className="secondary compact" type="button" onClick={() => setFinanceMethodDraft({ id: item.id, value: item.value, sortOrder: String(item.sortOrder ?? 0), isActive: true })}>Править</button><button className="ghost danger compact" type="button" onClick={() => void removeFinancePaymentMethod(item.id)}>Удалить</button></div> : null}</div>)}
             {!financePaymentMethods.length ? <div className="empty-state">Способы оплаты ещё не загружены.</div> : null}
           </div>
         </section>

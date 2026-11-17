@@ -116,6 +116,7 @@ export type OrderTableSectionContext = Corrections & Cancellations & Shipping & 
   handleOpenExchange: (order:OrderRecord)=>Promise<unknown>
   handleOpenReturn: (order:OrderRecord)=>Promise<unknown>
   isAdmin: boolean
+  canManageOrderEdit: boolean
   kaspiMode?: boolean
   ManagerBadge: typeof ManagerBadge
   apiFetch: (input:RequestInfo | URL, init?:RequestInit)=>Promise<Response>

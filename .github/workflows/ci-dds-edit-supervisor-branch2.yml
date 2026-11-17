@@ -1,0 +1,34 @@
+name: Branch2 DDS audited correction and Zavsklad permission CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/dds.ts'
+      - 'worker/domains/dds-directory.ts'
+      - 'worker/index.ts'
+      - 'migrations/0139_dds_entry_edits_audit.sql'
+      - 'src/App.tsx'
+      - 'src/features/finance/**'
+      - 'src/features/renderers/FinanceDashboardRenderer.tsx'
+      - 'scripts/test-dds-edit-pagination-supervisor-20261117.mjs'
+      - '.github/workflows/ci-dds-edit-supervisor-branch2.yml'
+permissions:
+  contents: read
+jobs:
+  dds-correction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: DDS ledger and immutable correction acceptance
+        run: |
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-edit-pagination-supervisor-20261117.mjs
+          node scripts/test-payment-method-validation-20261116.mjs
+      - name: Complete build
+        run: npm run build

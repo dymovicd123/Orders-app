@@ -12,7 +12,7 @@ function invalid(message:string,status=400){
 function requireAccess(actor:AuthUser|null,admin=false){
   if(!actor||(actor.role!=='admin'&&actor.role!=='manager'))
     throw invalid('Нет доступа к справочнику ДДС.',403)
-  if(admin&&actor.role!=='admin')throw invalid('Изменять статьи и категории может только администратор.',403)
+  if(admin&&actor.role!=='admin'&&actor.employeeRole!=='Завсклад')throw invalid('Изменять статьи и категории может только администратор или завсклад.',403)
 }
 function nameField(value:unknown,max:number,label:string){
   const name=typeof value==='string'?value.trim().replace(/\s+/g,' '):''

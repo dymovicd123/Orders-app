@@ -2,11 +2,12 @@ export type DdsEntry = {
   id:number;kind:'funding'|'expense'|'reversal_funding'|'reversal_expense'
   businessDate:string;amount:number;category:string;article:string
   comment:string;createdAt:string;reversesEntryId:number|null;reversed:number
+  editVersion?:number;editedAt?:string|null
 }
 export type DdsDirectoryArticle={id:number;name:string;active:boolean}
 export type DdsDirectoryCategory={id:number;name:string;active:boolean;articles:DdsDirectoryArticle[]}
 export type DdsReport = {
-  ok:boolean;month:string;currentBalance:number;openingBalance:number;monthAdded:number
+  ok:boolean;month:string;permissions?:{canEdit:boolean};currentBalance:number;openingBalance:number;monthAdded:number
   monthSpent:number;closingBalance:number
   categories:Array<{name:string;total:number;articles:Array<{name:string;amount:number}>}>
   entries:DdsEntry[]

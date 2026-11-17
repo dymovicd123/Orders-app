@@ -1242,9 +1242,10 @@ export async function updateOrderCritical(
     .filter(field=>field!=='requestId')
   const raw=input as Record<string,unknown>
   const managerMetadataOnly=fields.length===1 && fields[0]==='metadataCorrection'
+  const canFullyEdit = actor?.role==='admin' || actor?.employeeRole==='Завсклад'
   const managerPriceOnly=fields.length===1 && fields[0]==='itemPriceCorrections'
     && Array.isArray(raw.itemPriceCorrections) && raw.itemPriceCorrections.length>0
-  if(actor?.role!=='admin' && options.lifecycleAction!=='order_delete'
+  if(!canFullyEdit && options.lifecycleAction!=='order_delete'
       && !managerMetadataOnly && !managerPriceOnly)
     throw new CriticalOperationConflictError(
       'Полное редактирование заказа доступно только администратору. Менеджеру доступны «Исправить записанную цену» и «Исправить реквизиты».'
@@ -1309,7 +1310,7 @@ export async function updateOrderCritical(
       ||Object.keys(rawMetadata.next).some(field=>!metadataFields.includes(field as typeof metadataFields[number]))
       ||metadataFields.some(field=>rawMetadata.next[field].length>500 || rawMetadata.expected[field].length>500))
       throw new OrderInputValidationError('Реквизиты переданы в неверном формате. Обновите заказ.');
-    if(actor?.role!=='admin' && cleanText(rawMetadata.next.orderDate) && rawMetadata.next.orderDate!==rawMetadata.expected.orderDate)
+    if(!canFullyEdit && cleanText(rawMetadata.next.orderDate) && rawMetadata.next.orderDate!==rawMetadata.expected.orderDate)
       throw new CriticalOperationConflictError('Изменение даты заказа разрешено только администратору.');
   }
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -1505,7 +1506,7 @@ export async function updateOrderCritical(
       if (itemContentReplacementRequested && existingShippingStatus === 'sent') {
         throw new CriticalOperationConflictError('Отправленный заказ нельзя менять по составу. Используйте возврат, обмен или складскую корректировку.');
       }
-      const workingModeEdit = actor?.role !== 'admin';
+      const workingModeEdit = !canFullyEdit;
       if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus)
         || (existingShippingStatus === 'sent' && !recordedPriceOnlyRequest && !isolatedMetadataRequest))) {
         throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');

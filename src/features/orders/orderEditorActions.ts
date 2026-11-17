@@ -256,7 +256,7 @@ function removeEditorItem(index: number) {
   async function correctRecordedPaymentMethod(
     order:OrderRecord,payment:OrderRecord['payments'][number],nextMethod:string,
   ):Promise<{ok:boolean;message:string}>{
-    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет только администратор.'}
+    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет администратор или завсклад.'}
     const method=String(nextMethod||'').trim()
     if(!method)return {ok:false,message:'Выберите способ оплаты.'}
     if(!Number.isSafeInteger(Number(payment.id))||Number(payment.id)<=0)
