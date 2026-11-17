@@ -675,6 +675,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [stocktakeSelectedProductIds, setStocktakeSelectedProductIds] = useState<number[]>([])
   const [stocktakeSession, setStocktakeSession] = useState<InventoryStocktakeSession | null>(null)
   const [stocktakePrintSessionId, setStocktakePrintSessionId] = useState<string | null>(null)
+  const [stocktakePrintFormOpen, setStocktakePrintFormOpen] = useState(false)
   const stocktakePrintReceipt = stocktakeFoundSkuPrintReceipt(stocktakeSession)
   const [stocktakeActiveSessions, setStocktakeActiveSessions] = useState<InventoryStocktakeSessionSummary[]>([])
   const [stocktakeBusy, setStocktakeBusy] = useState(false)
@@ -1452,10 +1453,20 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setStocktakeNotice(result?.message || 'Ревизию пока нельзя завершить.')
         return
       }
-      if (result.session) { adoptStocktakeSession(result.session); setStocktakeNotice('') }
-      else { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(result.message || 'Проверка завершена.') }
+      if (result.session) {
+        adoptStocktakeSession(result.session)
+        setStocktakeNotice('')
+        const printable = stocktakeFoundSkuPrintReceipt(result.session)
+        setStocktakePrintSessionId(printable ? result.session.id : null)
+        setStocktakePrintFormOpen(false)
+      } else {
+        setStocktakeSession(null)
+        setStocktakeFacts({})
+        setStocktakeNotice(result.message || 'Проверка завершена.')
+        setStocktakePrintSessionId(null)
+        setStocktakePrintFormOpen(false)
+      }
       setStocktakeReviewMode(false)
-      setStocktakePrintSessionId(null)
       await Promise.allSettled([refreshInventoryModule(true), refreshActiveStocktakes()])
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось завершить ревизию.')
@@ -2529,11 +2540,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         cycleCountOpen,
         cycleCountValues,
         discardStocktake,
-        dismissStocktakeOutcome: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false); setStocktakePrintSessionId(null) },
+        dismissStocktakeOutcome: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false); setStocktakePrintSessionId(null); setStocktakePrintFormOpen(false) },
         stocktakeLabelCount: stocktakePrintReceipt?.items.reduce((sum, item) => sum + item.quantity, 0) || 0,
         stocktakePrintOpen: stocktakePrintSessionId === stocktakeSession?.id,
-        onStocktakePrintOpen: () => { if (stocktakePrintReceipt) setStocktakePrintSessionId(stocktakeSession?.id || null) },
-        onStocktakePrintClose: () => setStocktakePrintSessionId(null),
+        stocktakePrintFormOpen,
+        onStocktakePrintOpen: () => { if (stocktakePrintReceipt) { setStocktakePrintSessionId(stocktakeSession?.id || null); setStocktakePrintFormOpen(true) } },
+        onStocktakePrintClose: () => setStocktakePrintFormOpen(false),
+        onStocktakePrintBackToOutcome: () => { setStocktakePrintSessionId(null); setStocktakePrintFormOpen(false) },
         stocktakeLabelPrinter: stocktakePrintReceipt ? <BarcodePrintWorkspace
           key={stocktakePrintReceipt.operationId}
           receipt={stocktakePrintReceipt}
@@ -2551,7 +2564,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryPanelStyle,
         markCurrentStocktakeProductRemainingZero,
         normalizeSuggestion,
-        openStocktakeOutcomeIssues: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false); setStocktakePrintSessionId(null); setAttentionCategory('identify'); openInventoryPanel('attention'); void loadWarehouseAttention(true) },
+        openStocktakeOutcomeIssues: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false); setStocktakePrintSessionId(null); setStocktakePrintFormOpen(false); setAttentionCategory('identify'); openInventoryPanel('attention'); void loadWarehouseAttention(true) },
         openStocktakeFoundForPosition,
         openStocktakeInlineColor,
         openStocktakeInlineSize,
