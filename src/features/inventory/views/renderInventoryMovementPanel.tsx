@@ -15,7 +15,7 @@ type PanelContext = { askActionConfirmation: (message: string) => Promise<boolea
 > & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
-}) => void; onArrivalBarcodeReady: (receipt: { operationId: string; source: 'warehouse'|'boutique'; items: Array<{variantId:number;productName:string;variantLabel:string;quantity:number}> }) => void; clearArrivalBarcodeReady:()=>void; onInlineCorrectionVariant: (seed: {
+}) => void; clearArrivalBarcodeReady:()=>void; onInlineCorrectionVariant: (seed: {
   productId: number | string; productName: string; category: 'adult'|'child';
   gender:string;material:string;length:string;color:string;size:string;quantity:number;
 }) => void }
