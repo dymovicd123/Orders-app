@@ -4,7 +4,7 @@ import { loadOperationStockSources } from '../inventory/loadOperationStockSource
 import { useInventoryHistoryWorkspace } from '../inventory/useInventoryHistoryWorkspace'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
-import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
+import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryMovementRecord, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
 import { renderInventoryHealthPanel } from '../inventory/views/renderInventoryHealthPanel'
 import { renderInventoryExactPanel } from '../inventory/views/renderInventoryExactPanel'
 import { renderInventorySourceToolbar } from '../inventory/views/renderInventorySourceToolbar'
@@ -21,7 +21,7 @@ import { renderInventoryHistoryPanel } from '../inventory/views/renderInventoryH
 import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandStatistics'
 import { WarehouseReportsWorkspace } from '../inventory/views/WarehouseReportsWorkspace'
 import { WarehouseReceivingWorkspace } from '../inventory/views/WarehouseReceivingWorkspace'
-import { BarcodePrintWorkspace } from '../inventory/views/BarcodePrintWorkspace'
+import { BarcodePrintWorkspace, type ArrivalSkuPrintReceipt } from '../inventory/views/BarcodePrintWorkspace'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
 import '../../styles/182-inventory-stocktake-human.css'
@@ -92,6 +92,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     source: 'warehouse' | 'boutique'
     items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
   } | null>(null)
+  const [historyArrivalPrint, setHistoryArrivalPrint] = useState<{ rowId: number; receipt: ArrivalSkuPrintReceipt } | null>(null)
+  const [historyArrivalPrintBusyId, setHistoryArrivalPrintBusyId] = useState<number | null>(null)
+  const [historyArrivalPrintError, setHistoryArrivalPrintError] = useState<{ rowId: number; message: string } | null>(null)
   const {
     askActionConfirmation,
     onInlineArrivalVariant,
@@ -1781,6 +1784,40 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return freshCatalog?.ok && warehouse?.ok && boutique?.ok
       ? { catalog: freshCatalog, warehouse, boutique } : null
   }
+  const openHistoryArrivalPrint = async (row: InventoryMovementRecord) => {
+    if (historyArrivalPrintBusyId !== null || !row.referenceId ||
+      row.movementType !== 'arrival' || row.referenceType !== 'manual' || row.reversedAt) return
+    setHistoryArrivalPrintBusyId(row.id)
+    setHistoryArrivalPrintError(null)
+    setHistoryArrivalPrint(null)
+    try {
+      const response = await fetch('/api/inventory/arrivals/' +
+        encodeURIComponent(row.referenceId) + '/labels', {
+        method: 'GET', credentials: 'same-origin', cache: 'no-store',
+      })
+      const data = await response.json() as { ok?: boolean; message?: string; receipt?: ArrivalSkuPrintReceipt }
+      const receipt = data.receipt
+      if (!response.ok || !data.ok || !receipt || receipt.operationId !== row.referenceId ||
+        !['warehouse', 'boutique'].includes(receipt.source) ||
+        !receipt.items?.length || receipt.items.some(item => !Number.isSafeInteger(item.variantId) ||
+          item.variantId <= 0 || !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
+        throw new Error(data.message || 'Не удалось восстановить товары этого прихода.')
+      }
+      setHistoryArrivalPrint({ rowId: row.id, receipt })
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        document.getElementById('history-arrival-print-' + row.id)?.scrollIntoView({
+          behavior: 'smooth', block: 'start',
+        })
+      }))
+    } catch (cause) {
+      setHistoryArrivalPrintError({
+        rowId: row.id,
+        message: cause instanceof Error ? cause.message : 'Не удалось подготовить печать.',
+      })
+    } finally {
+      setHistoryArrivalPrintBusyId(null)
+    }
+  }
 
   const warehousePhysicalReceivingCount = Math.max(0, Number(returnPendingInbox?.pendingQuantity || 0))
     + Math.max(0, Number(exchangePendingInbox?.pendingQuantity || 0))
@@ -2749,6 +2786,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
 
               {renderInventoryHistoryPanel({
+        historyArrivalPrint,
+        historyArrivalPrintBusyId,
+        historyArrivalPrintError,
+        onOpenHistoryArrivalPrint: openHistoryArrivalPrint,
+        historyArrivalPrintContent: historyArrivalPrint ? <BarcodePrintWorkspace
+          key={historyArrivalPrint.receipt.operationId}
+          receipt={historyArrivalPrint.receipt}
+          onDismiss={() => setHistoryArrivalPrint(null)}
+          catalog={catalogData} stock={inventoryData}
+          onReload={reloadBarcodePrintData}
+        /> : null,
         formatHistoryMoment,
         historyBusy,
         historyCheckLabel,
