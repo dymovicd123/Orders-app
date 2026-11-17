@@ -4,6 +4,7 @@ import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { OrderReturnV2Flow } from './OrderReturnV2Flow'
 import {allowLegacyReturnEditor,type ReturnV2UiMode} from './returnV2UiMode'
 import '../../styles/194-return-smart-ux.css'
+import '../inventory/views/warehouseReceiving.css'
 type SectionContext = Record<string, any>
 
 export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
