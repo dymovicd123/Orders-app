@@ -89,16 +89,20 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
   const [refreshing, setRefreshing] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
 
   const refresh = async () => {
     setRefreshing(true)
     setError('')
+    setLoadError('')
     try {
       if (!await onReload()) throw new Error('Не удалось загрузить актуальные товары и остатки.')
       setNotice('Остатки склада и бутика обновлены.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось обновить остатки.')
+      const message = cause instanceof Error ? cause.message : 'Не удалось обновить остатки.'
+      setLoadError(message)
+      setError(message)
     } finally {
       setRefreshing(false)
     }
@@ -106,16 +110,19 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
 
   useEffect(() => { void refresh() }, [])
 
-  const ready = Boolean(!refreshing && !error && catalog?.ok && stock.warehouse?.ok && stock.boutique?.ok)
+  const ready = Boolean(!refreshing && !loadError && catalog?.ok && stock.warehouse?.ok && stock.boutique?.ok)
   const balances = useMemo(() => {
     const values = new Map<number, { warehouse: number; boutique: number }>()
     const repeated = new Set<number>()
+    const seen = new Set<string>()
     for (const source of ['warehouse', 'boutique'] as const) {
       for (const row of stock[source]?.items || []) {
         const id = Number(row.variantId)
         if (!Number.isSafeInteger(id) || id <= 0) continue
         const value = values.get(id) || { warehouse: 0, boutique: 0 }
-        if (value[source] !== 0) repeated.add(id)
+        const key = source + ':' + id
+        if (seen.has(key)) repeated.add(id)
+        seen.add(key)
         value[source] += stockNumber(row.quantity)
         values.set(id, value)
       }
@@ -155,14 +162,19 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
 
   const products = productRows.filter(row => {
     if (onlyStocked && row.stockTotal <= 0) return false
-    const q = normalized(search)
-    if (!q) return true
-    return normalized(row.product.name).includes(q) ||
-      row.variants.some(variant => normalized(displayLabel(variant)).includes(q))
+    const words = normalized(search).split(/\s+/).filter(Boolean)
+    if (!words.length) return true
+    return row.variants.some(variant => {
+      const searchable = normalized(row.product.name + ' ' + displayLabel(variant))
+      return words.every(word => searchable.includes(word))
+    })
   })
 
   const selected = products.find(row => row.product.id === selectedProductId) || products[0] || null
   const visibleVariants = (selected?.variants || []).filter(variant => {
+    const words = normalized(search).split(/\s+/).filter(Boolean)
+    if (words.length && !words.every(word => normalized(selected?.product.name || '').includes(word)) &&
+      !words.every(word => normalized((selected?.product.name || '') + ' ' + displayLabel(variant)).includes(word))) return false
     if (!onlyStocked) return true
     const amount = balances.values.get(variant.id)
     return (amount?.warehouse || 0) + (amount?.boutique || 0) > 0 || (counts[variant.id] || 0) > 0
@@ -203,7 +215,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         }
         if (!result.ok || !record.ok || !record.active || record.physicalUnit !== false ||
           record.variantId !== item.variant.id ||
-          record.barcode !== skuBarcodeForVariantId(item.variant.id) ||
+          !record.barcode || record.barcode !== skuBarcodeForVariantId(item.variant.id) ||
           record.color !== item.variant.color || record.gender !== item.variant.gender ||
           record.material !== item.variant.material || record.length !== item.variant.length ||
           record.size !== item.variant.sizeLabel) {
