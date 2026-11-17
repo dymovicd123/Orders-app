@@ -47,9 +47,9 @@ function DdsDialog({title,description,children,onClose}:{
   </div>
 }
 
-function DdsTransactions({entries,isAdmin,saving,onReverse,onEdit,short=false}:{
+function DdsTransactions({entries,isAdmin,saving,onReverse,onEdit,onViewEdits,short=false}:{
   entries:DdsEntry[];isAdmin:boolean;saving:boolean;onReverse:(id:number)=>void;
-  onEdit:(entry:DdsEntry)=>void;short?:boolean
+  onEdit:(entry:DdsEntry)=>void;onViewEdits:(entry:DdsEntry)=>void;short?:boolean
 }) {
   if(entries.length===0) return <div className="dds-empty">
     <strong>Пока нет операций</strong><span>После первой записи история появится здесь.</span>
@@ -73,7 +73,7 @@ function DdsTransactions({entries,isAdmin,saving,onReverse,onEdit,short=false}:{
               <strong>{entry.comment}</strong>
             </div>}
             {Boolean(entry.reversed)&&<small className="dds-reversed">Исходная запись отменена</small>}
-            {Boolean(entry.editedAt)&&<small className="dds-edited">Исправлено · версия {entry.editVersion}</small>}
+            {Boolean(entry.editedAt)&&<button type="button" className="dds-text-button dds-edit-history-link" onClick={()=>onViewEdits(entry)}>Исправлено · история изменений ({entry.editVersion})</button>}
           </div>
           <div className="dds-transaction-side">
             <strong className={signed>=0?'is-plus':'is-minus'}>{signed>=0?'+':'−'}{ddsMoney(Math.abs(signed))}</strong>
@@ -102,6 +102,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   const [reverseId,setReverseId]=useState<number|null>(null)
   const [reverseReason,setReverseReason]=useState('')
   const [editEntry,setEditEntry]=useState<DdsEntry|null>(null)
+  const [editAudit,setEditAudit]=useState<{entryId:number;edits:Array<{editVersion:number;changedAt:string;reason:string;oldAmount:number;newAmount:number;oldBusinessDate:string;newBusinessDate:string;oldCategory:string;newCategory:string;oldArticle:string;newArticle:string;oldComment:string;newComment:string}>}|null>(null)
   const [editDraft,setEditDraft]=useState({date:'',amount:'',category:'',article:'',comment:'',reason:''})
   const [historyEntries,setHistoryEntries]=useState<DdsEntry[]>([])
   const [historyCursor,setHistoryCursor]=useState<{beforeDate:string;beforeId:number}|null>(null)
@@ -155,6 +156,17 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     }
   },[apiFetch])
   useEffect(()=>{void loadHistory(true,'');return()=>{historyToken.current++}},[loadHistory])
+  const openEditAudit=async(entry:DdsEntry)=>{
+    if(!canManage)return
+    setError('')
+    try{
+      const response=await apiFetch('/api/dds/entries/'+entry.id+'/edits')
+      const value=await response.json() as {ok:boolean;message?:string;edits:NonNullable<typeof editAudit>['edits']}
+      if(!response.ok||!value.ok)throw new Error(value.message||'Не удалось загрузить изменения.')
+      setEditAudit({entryId:entry.id,edits:value.edits})
+    }catch(err){setError(err instanceof Error?err.message:'Не удалось загрузить историю изменений.')}
+  }
+
   const startEdit=(entry:DdsEntry)=>{
     setEditEntry(entry)
     editRequestRef.current=null
@@ -350,7 +362,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
         </div>
         {historyBusy&&!historyEntries.length?<p className="dds-muted" role="status">Загружаю операции…</p>:
           <DdsTransactions entries={historyEntries} isAdmin={canManage} saving={saving}
-            onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>}
+            onEdit={startEdit} onViewEdits={entry=>void openEditAudit(entry)} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>}
         {historyHasMore&&<button type="button" className="secondary compact dds-load-more" disabled={historyBusy||saving}
           onClick={()=>void loadHistory(false,historyThroughDate,historyCursor)}>
           {historyBusy?'Загружаю…':'Загрузить более ранние записи'}
@@ -389,7 +401,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
             onChange={e=>{if(validMonth(e.target.value))setMonth(e.target.value)}}/>
         </div>
         <DdsTransactions entries={transactions.filter(entry=>entry.kind==='funding'||entry.kind==='reversal_funding')}
-          isAdmin={canManage} saving={saving} onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
+          isAdmin={canManage} saving={saving} onEdit={startEdit} onViewEdits={entry=>void openEditAudit(entry)} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
       </section>
     </div>}
 
@@ -442,11 +454,29 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
           <div className="dds-section-title"><div><h3>История операций</h3><p>Расходы, пополнения и исправления за {ddsMonthLabel(month)}.</p></div>
             <span className="dds-counter">{transactions.length} записей</span></div>
           <DdsTransactions entries={transactions} isAdmin={canManage} saving={saving}
-            onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
+            onEdit={startEdit} onViewEdits={entry=>void openEditAudit(entry)} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
           {transactions.length>=2000&&<p className="dds-warning">Отчёт содержит более 2000 записей. Выгрузка отключена, чтобы не выдать неполные данные.</p>}
         </section>
       </>}
     </div>}
+
+    {canManage&&editAudit!==null&&<DdsDialog title={'История исправлений · запись №'+editAudit.entryId}
+      description="Предыдущие значения не удаляются. Каждое исправление сохраняется отдельно."
+      onClose={()=>setEditAudit(null)}>
+      <div className="dds-edit-audit-list">
+        {editAudit.edits.map((row)=><div key={row.editVersion} className="dds-edit-audit-item">
+          <strong>Версия {row.editVersion} · {new Date(row.changedAt).toLocaleString('ru-RU')}</strong>
+          <span>Причина: {row.reason}</span>
+          <span>Сумма: {ddsMoney(row.oldAmount)} → {ddsMoney(row.newAmount)}</span>
+          <span>Дата: {ddsDateLabel(row.oldBusinessDate)} → {ddsDateLabel(row.newBusinessDate)}</span>
+          {row.oldCategory!==row.newCategory||row.oldArticle!==row.newArticle?<span>
+            Статья: {row.oldCategory} / {row.oldArticle} → {row.newCategory} / {row.newArticle}
+          </span>:null}
+          {row.oldComment!==row.newComment?<span>Комментарий: {row.oldComment||'—'} → {row.newComment||'—'}</span>:null}
+        </div>)}
+        {editAudit.edits.length===100?<p className="dds-warning">Показаны 100 последних исправлений.</p>:null}
+      </div>
+    </DdsDialog>}
 
     {canManage&&editEntry!==null&&<DdsDialog title="Изменить запись ДДС"
       description="Сумма, дата и категория будут исправлены в учёте. Старые значения сохранятся в журнале."
