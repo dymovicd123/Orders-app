@@ -110,6 +110,7 @@ export function StocktakeBarcodeScanner({
     const typed = code.trim()
     if (busyRef.current || disabled || !typed) return
     busyRef.current = true
+    setCameraOpen(false)
     setBusy(true)
     setError('')
     setNotice('')
