@@ -198,6 +198,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   onClick={() => openWarehouseReceiving('return')}>Перейти к приёмке возвратов</button> : null}
               </div>
 
+              {activeView==='form' && selectedId>0 && v2Navigation.orderId===selectedId && v2Navigation.mode==='legacy' ? (
+                <p className="return-v2-notice" role="status">Для этого заказа сервер отключил Return V2. Доступна прежняя форма возврата.</p>
+              ) : null}
               {activeView==='form'&&!returnSelectedOrder ? (
                 <section className="mini-panel debt-table-panel">
                   <div className="mini-panel-head">
