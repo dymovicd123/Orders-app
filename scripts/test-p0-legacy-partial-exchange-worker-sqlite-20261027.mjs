@@ -273,13 +273,16 @@ try {
     paymentMethod:'НАЛИЧКА', comment:'Изолированный возврат, проверка отмены',
     items:[{orderItemId:item.id,quantity:1,restock:true,physicalState:'warehouse'}],
   }
-  const returned = await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
-  const returnId=Number(returned.data.returnId)
+  const closedV1=await api('/api/returns','POST',returnPayload,{expectedStatus:410,requestId:'stability-return-one'})
+  assert.equal(closedV1.data.code,'return_v1_retired','Legacy V1 must not create new returns via HTTP')
+  // Historical V1 fixture is created through its isolated domain, not the retired public endpoint.
+  const returned=await legacyCreateReturn(db,{...returnPayload,requestId:'stability-return-one'})
+  const returnId=Number(returned.returnId)
   assert(returnId>0,'Return ID required')
   assert.equal(Number(stock().quantity),1,'Returning one physically received SKU adds exactly one')
   assert.equal(sql('SELECT status FROM returns WHERE id=?',returnId).status,'completed')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',orderId).return_amount),1000)
-  await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
+  await legacyCreateReturn(db,{...returnPayload,requestId:'stability-return-one'})
   assert.equal(Number(stock().quantity),1,'Return replay may not duplicate arrival')
   assert.equal(count('returns','order_id='+orderId+' AND status=\'completed\''),1)
   const cancellation=await api('/api/returns/'+returnId+'/cancel','PATCH',{
