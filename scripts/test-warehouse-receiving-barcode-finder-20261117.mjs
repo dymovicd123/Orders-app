@@ -40,8 +40,10 @@ const returns=[
 const pendingReturns=pendingReturnPhysicalItems(returns)
 assert.deepEqual(matchingReceivingItems(pendingReturns,variant).map(x=>x.key),['return:11:111','return:12:121'],
   'Two identical SKUs from different orders must remain separate choices, not automatically accept one')
-assert.deepEqual(matchingReceivingItems(pendingReturns,{...variant,variantId:316}),[],
-  'Barcode variant must match a canonical ID, not an identically named model')
+assert.deepEqual(matchingReceivingItems(pendingReturns,{...variant,variantId:316}).map(x=>x.key),['return:13:131'],
+  'Same product name must not select a different variant ID')
+assert.deepEqual(matchingReceivingItems(pendingReturns,{...variant,variantId:999}),[],
+  'Unrecognized variant IDs never select a pending order')
 assert.equal(pendingReturns.find(x=>x.key==='return:16:161')?.currentVariantId,null)
 const exchanges=[{id:40,status:'completed',externalId:'ORD-40',oldItems:[
  {...item(401,315),lifecycleVariantId:315},
