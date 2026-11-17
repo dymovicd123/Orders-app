@@ -33,7 +33,7 @@ assert(printer.includes('onFocus={event => event.currentTarget.select()}') &&
   printer.includes("inputMode=\"numeric\" pattern=\"[0-9]*\" placeholder=\"0\"") &&
   printer.includes('onChange={event => updateCount(item.variantId, event.target.value)}'),
   'Arrival print quantities must be easily editable without the zero-input bug')
-assert(printer.includes('onClick={onDismiss}>Не печатать') &&
+assert(operations.includes('Завершить без печати') &&
   printer.includes('Остатки') &&
   printer.includes('receipt.source') &&
   printer.includes('Поступило <strong>{received} шт.</strong>'),
