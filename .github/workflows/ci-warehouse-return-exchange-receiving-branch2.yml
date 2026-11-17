@@ -32,7 +32,7 @@ jobs:
           node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
           node scripts/test-return-exchange-physical-receipt-r1.mjs
           node scripts/test-return-v2-immediate-intake-20261114.mjs
-          node scripts/test-branch2-exchange-pending-resolver-guard-20261028.mjs
+          node scripts/test-stage02-post-review-resolver-return-ux.mjs
           node scripts/test-work733-smart-exchange-inbox-20261101.mjs
       - name: Full TypeScript and build
         run: npm run build
