@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import type { ArrivalSkuPrintReceipt } from './BarcodePrintWorkspace'
 import type { InventoryRenderContext } from './types'
 import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 
@@ -18,7 +20,7 @@ type PanelContext = { askActionConfirmation: (message: string) => Promise<boolea
 }) => void; clearArrivalBarcodeReady:()=>void; onInlineCorrectionVariant: (seed: {
   productId: number | string; productName: string; category: 'adult'|'child';
   gender:string;material:string;length:string;color:string;size:string;quantity:number;
-}) => void }
+}) => void; arrivalPrintReceipt?: ArrivalSkuPrintReceipt | null; renderArrivalLabels?: ReactNode; onFinishArrivalResult?: () => void }
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
   const mode = ctx.inventoryDraft.movementType as 'arrival' | 'writeoff' | 'manual_set' | 'transfer'
@@ -56,6 +58,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onInlineArrivalVariant={ctx.onInlineArrivalVariant}
       onInlineCorrectionVariant={ctx.onInlineCorrectionVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
+      arrivalPrintAvailable={Boolean(ctx.arrivalPrintReceipt?.items.length)}
+      arrivalLabelPrinter={ctx.renderArrivalLabels}
+      onFinishArrivalResult={ctx.onFinishArrivalResult}
       onMode={next => {
         ctx.clearInventoryMovementError()
         ctx.resetInventoryArrivalForm()
