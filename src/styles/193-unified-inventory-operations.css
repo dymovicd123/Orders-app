@@ -233,3 +233,26 @@
 
 .inventory-post-arrival-labels{margin:14px 0 0;border:1px solid var(--line,#dce3e8);border-radius:14px;padding:16px;background:var(--card-bg,#fff);scroll-margin-top:22px}
 @media(max-width:620px){.inventory-post-arrival-labels{padding:12px}}
+
+
+.inventory-arrival-finished{display:grid;gap:18px;padding:25px;max-width:1040px;margin:10px auto 24px;border:1px solid var(--line,#dce3e8);background:var(--card-bg,#fff);border-radius:16px;min-height:330px;scroll-margin-top:28px}
+.inventory-arrival-result-head{display:flex;align-items:flex-start;gap:17px;padding-bottom:18px;border-bottom:1px solid var(--line,#e0e6ed)}
+.inventory-arrival-result-mark{display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:50%;background:rgba(28,144,87,.12);color:#168554;font-size:26px;font-weight:800}
+.inventory-arrival-result-head h3{font-size:23px;line-height:1.35;margin:5px 0 6px;outline:none}
+.inventory-arrival-result-head p{font-size:13px;color:var(--muted,#64748b);line-height:1.55;margin:0}
+.inventory-arrival-finished h4{font-size:18px;line-height:1.4;margin:2px 0 -10px}
+.inventory-arrival-result-help{color:var(--muted,#64748b);font-size:13px;line-height:1.55;margin:0;max-width:750px}
+.inventory-arrival-result-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.inventory-arrival-result-actions button{min-height:49px;padding:10px 21px;font-size:13px}
+.inventory-arrival-result-note{margin:0;padding:10px 14px;border:1px solid var(--line,#dce3e8);border-radius:9px;font-size:12px;line-height:1.5;color:var(--muted,#64748b)}
+.inventory-arrival-print-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.inventory-arrival-finished .barcode-arrival-print{padding:0;margin:0;max-width:none}
+@media(max-width:600px){
+ .inventory-arrival-finished{padding:15px;gap:14px}
+ .inventory-arrival-result-head{gap:12px}
+ .inventory-arrival-result-head h3{font-size:21px}
+ .inventory-arrival-result-actions{display:grid;grid-template-columns:1fr}
+ .inventory-arrival-result-actions button{width:100%}
+ .inventory-arrival-print-actions{display:grid;grid-template-columns:1fr}
+ .inventory-arrival-print-actions button{width:100%}
+}
