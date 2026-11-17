@@ -231,11 +231,5 @@
 .operation-barcode-review{padding:10px 13px;margin:10px 0;border-radius:9px;border:1px solid var(--line,#dce3ea);font-size:13px}
 @media(max-width:540px){.operation-barcode-head{align-items:start}.operation-barcode-form{display:grid}.operation-barcode-form button{width:100%}}
 
-.inventory-post-arrival-labels{margin-top:14px;padding:18px;border:1px solid var(--border,#d5d9df);border-radius:12px}
-.inventory-post-arrival-labels-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
-.inventory-post-arrival-labels-header p{margin:6px 0 12px;max-width:760px;font-size:.92rem;line-height:1.5}
-.inventory-post-arrival-labels-list{display:grid;gap:10px}
-.inventory-post-arrival-labels-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px;border:1px solid var(--border,#d5d9df);border-radius:9px}
-.inventory-post-arrival-labels-row>div:first-child{display:grid;gap:4px}
-.inventory-post-arrival-labels-row span{font-size:.87rem}
-@media(max-width:700px){.inventory-post-arrival-labels-header,.inventory-post-arrival-labels-row{align-items:stretch;flex-direction:column}}
+.inventory-post-arrival-labels{margin:14px 0 0;border:1px solid var(--line,#dce3e8);border-radius:14px;padding:16px;background:var(--card-bg,#fff);scroll-margin-top:22px}
+@media(max-width:620px){.inventory-post-arrival-labels{padding:12px}}
