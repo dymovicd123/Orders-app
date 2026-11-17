@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { UnitBarcodePreparation } from './UnitBarcodePreparation'
 import type { ExchangeHistoryEntry, ReturnHistoryEntry } from '../../../app/types'
 import { pendingReturnPhysicalItems, pendingExchangePhysicalItems, type PendingPhysicalItem, type ReceivingInbox, type ReceivingKind, type ReceivingDestination, type ReceivePhysicalItem } from './warehouseReceivingModel'
 import './warehouseReceiving.css'
@@ -19,6 +20,10 @@ export function WarehouseReceivingWorkspace({
   const [destinations, setDestinations] = useState<Record<string, ReceivingDestination>>({})
   const [receivingKey, setReceivingKey] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('')
+  const [receivedForLabels, setReceivedForLabels] = useState<{
+    key: string; variantId: number; productName: string; variantLabel: string;
+    source: 'warehouse' | 'boutique'; quantity: number
+  } | null>(null)
 
   const inbox = mode === 'return' ? returnInbox : exchangeInbox
   const items = mode === 'return'
@@ -35,6 +40,7 @@ export function WarehouseReceivingWorkspace({
   const receive = async (item: PendingPhysicalItem) => {
     if (receivingKey || !item.operationItemId || item.quantity <= 0) return
     setFeedback('')
+    setReceivedForLabels(null)
     setReceivingKey(item.key)
     try {
       const accepted = await receiveItem({
@@ -44,6 +50,10 @@ export function WarehouseReceivingWorkspace({
         destination: destinations[item.key] || item.defaultDestination,
         productName: item.productName,
         externalId: item.externalId,
+        onBarcodePreparationReady: details => setReceivedForLabels({
+          key: item.key, productName: item.productName,
+          variantLabel: item.characteristics, ...details,
+        }),
       })
       if (accepted) {
         setFeedback(`Приёмка «${item.productName}» зарегистрирована. Очередь обновлена.`)
@@ -72,11 +82,11 @@ export function WarehouseReceivingWorkspace({
       </div>
       <div className="warehouse-receiving-tabs" role="tablist" aria-label="Вид приёмки">
         <button type="button" role="tab" aria-selected={mode === 'return'} aria-controls="warehouse-receiving-list"
-          className={mode === 'return' ? 'is-active' : ''} onClick={() => { setFeedback(''); onModeChange('return') }}>
+          className={mode === 'return' ? 'is-active' : ''} onClick={() => { setFeedback(''); setReceivedForLabels(null); onModeChange('return') }}>
           Возвраты {returnInbox.pendingQuantity > 0 ? <b>{returnInbox.pendingQuantity}</b> : null}
         </button>
         <button type="button" role="tab" aria-selected={mode === 'exchange'} aria-controls="warehouse-receiving-list"
-          className={mode === 'exchange' ? 'is-active' : ''} onClick={() => { setFeedback(''); onModeChange('exchange') }}>
+          className={mode === 'exchange' ? 'is-active' : ''} onClick={() => { setFeedback(''); setReceivedForLabels(null); onModeChange('exchange') }}>
           Обмены {exchangeInbox.pendingQuantity > 0 ? <b>{exchangeInbox.pendingQuantity}</b> : null}
         </button>
         <button type="button" className="warehouse-receiving-refresh secondary compact" onClick={() => void refreshAll()}
@@ -91,6 +101,18 @@ export function WarehouseReceivingWorkspace({
             Для каждой вещи укажите, куда она поступила.</p>
         </div>
         {feedback ? <p className="warehouse-receiving-feedback" role="status">{feedback}</p> : null}
+        {receivedForLabels ? <div className="warehouse-receiving-label-next" role="region" aria-label="Маркировка после приёмки">
+          <div><strong>Товар принят в остаток</strong>
+            <p>Теперь можно подготовить индивидуальные этикетки для «{receivedForLabels.productName}».
+              Это не новый приход: количество в остатке повторно не увеличится.
+              Для цеховых вещей маркировка здесь не предлагается.</p>
+          </div>
+          <UnitBarcodePreparation key={receivedForLabels.key + ':' + receivedForLabels.variantId}
+            variantId={receivedForLabels.variantId} productName={receivedForLabels.productName}
+            variantLabel={receivedForLabels.variantLabel}
+            initialSource={receivedForLabels.source} initialQuantity={receivedForLabels.quantity}
+            buttonLabel="Подготовить этикетки" />
+        </div> : null}
         {inbox.error ? <div className="warehouse-receiving-error" role="alert">
           {inbox.error}
           <button type="button" className="secondary compact" onClick={() => void (mode === 'return' ? loadReturns(false) : loadExchanges(false))}>

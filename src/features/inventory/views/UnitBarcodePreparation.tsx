@@ -78,16 +78,20 @@ async function readJson<T extends { ok?: boolean; message?: string }>(response: 
 }
 
 export function UnitBarcodePreparation({
-  variantId, productName, variantLabel,
+  variantId, productName, variantLabel, initialSource, initialQuantity = 1,
+  buttonLabel = 'Маркировать вещи',
 }: {
   variantId: number
   productName: string
   variantLabel: string
+  initialSource?: 'warehouse' | 'boutique'
+  initialQuantity?: number
+  buttonLabel?: string
 }) {
   const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState<Preview | null>(null)
-  const [source, setSource] = useState<'warehouse' | 'boutique'>('warehouse')
-  const [quantity, setQuantity] = useState(1)
+  const [source, setSource] = useState<'warehouse' | 'boutique'>(initialSource || 'warehouse')
+  const [quantity, setQuantity] = useState(Math.max(1, Math.min(20, Math.floor(initialQuantity))))
   const [batch, setBatch] = useState<Batch | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -109,7 +113,7 @@ export function UnitBarcodePreparation({
       const data = await readJson<Preview>(response)
       if (requestRef.current === current) {
         setPreview(data)
-        if (!data.locations.some(row => row.source === source && row.available > 0)) {
+        if (!initialSource && !data.locations.some(row => row.source === source && row.available > 0)) {
           setSource(data.locations.find(row => row.available > 0)?.source || 'warehouse')
         }
       }
@@ -230,7 +234,7 @@ export function UnitBarcodePreparation({
       setBatch(null)
       setConfirmCancelId('')
       setOpen(true)
-    }}>Маркировать вещи</button>
+    }}>{buttonLabel}</button>
     {open ? <div className="unit-barcode-overlay" role="presentation" onMouseDown={event => {
       if (event.target === event.currentTarget && !saving && !printing && !cancelling) setOpen(false)
     }}>

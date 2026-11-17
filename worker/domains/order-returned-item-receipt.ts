@@ -224,12 +224,14 @@ export async function receiveReturnedItem(
     }
 
     let stockApplied = false;
+    let receivedVariantId = 0;
     let stockAlreadyApplied = false;
     let freshnessProtected = false;
     let pendingInventory: Record<string, unknown> | null = null;
 
     if (destination !== 'no_stock') {
       const resolved = await resolveInventoryLifecycleCandidate(db, item, isWorkshop);
+      receivedVariantId = toInt(resolved.variantId, 0);
       const event = await insertInventoryLifecycleEvent(db, {
         eventKey: operationType === 'return'
           ? `return:${operationId}:item:${operationItemId}`
@@ -310,6 +312,10 @@ export async function receiveReturnedItem(
       freshnessProtected,
       pendingInventory,
       pendingInventoryCount: pendingInventory ? 1 : 0,
+      barcodePreparation: !isWorkshop && receivedVariantId > 0 && stockApplied
+        && (destination === 'warehouse' || destination === 'boutique')
+        ? { variantId: receivedVariantId, source: destination, quantity: Math.max(1, toInt(item.quantity, 1)) }
+        : null,
     };
     await completeCriticalOperation(db, criticalOperation, completedResponse);
 
