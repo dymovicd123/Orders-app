@@ -1,4 +1,6 @@
 import type { ExchangeHistoryEntry, ExchangeHistoryItem, ReturnHistoryEntry, ReturnHistoryItem } from '../../../app/types'
+import { skuBarcodeForVariantId } from '../../../../shared/barcode-sku.ts'
+import { isUnitBarcode } from '../../../../shared/barcode-unit.ts'
 
 export type ReceivingKind = 'return' | 'exchange'
 export type ReceivingDestination = 'warehouse' | 'boutique' | 'no_stock'
@@ -33,6 +35,9 @@ export type PendingPhysicalItem = {
   city: string
   characteristics: string
   defaultDestination: ReceivingDestination
+  currentVariantId: number | null
+  lifecycleVariantId: number | null
+  identity: { gender?: string | null; color?: string | null; material?: string | null; length?: string | null; size?: string | null }
 }
 
 const characteristics = (values: {
@@ -70,6 +75,9 @@ export function pendingReturnPhysicalItems(entries: ReturnHistoryEntry[]): Pendi
           city: entry.city || '',
           characteristics: characteristics(item),
           defaultDestination: defaultDestination(item.sourceType, item.isWorkshop),
+          currentVariantId: Number(item.currentVariantId) || null,
+          lifecycleVariantId: Number(item.lifecycleVariantId) || null,
+          identity: { gender:item.gender, color:item.color, material:item.material, length:item.length, size:item.size },
         }))
     : [])
 }
@@ -95,6 +103,8 @@ export function pendingExchangePhysicalItems(entries: ExchangeHistoryEntry[]): P
         size: entry.oldSize,
         sourceType: entry.oldSourceType,
         isWorkshop: entry.oldIsWorkshop,
+        currentVariantId: entry.oldCurrentVariantId,
+        lifecycleVariantId: entry.oldLifecycleVariantId,
       }
       return {
         key: `exchange:${entry.id}:${operationItemId}`,
@@ -110,8 +120,90 @@ export function pendingExchangePhysicalItems(entries: ExchangeHistoryEntry[]): P
         city: '',
         characteristics: characteristics(oldItem),
         defaultDestination: defaultDestination(oldItem.sourceType, oldItem.isWorkshop),
+        currentVariantId: Number(oldItem.currentVariantId) || null,
+        lifecycleVariantId: Number(oldItem.lifecycleVariantId) || null,
+        identity: { gender:oldItem.gender, color:oldItem.color, material:oldItem.material, length:oldItem.length, size:oldItem.size },
       }
     })
   })
 }
 
+
+export type ReceivingBarcodeLookup = {
+  ok?: boolean
+  message?: string
+  barcodeType?: string
+  barcode?: string
+  variantId?: number
+  productName?: string
+  gender?: string
+  color?: string
+  material?: string
+  length?: string
+  size?: string
+  active?: boolean
+  physicalUnit?: boolean
+  receivingIdentifiable?: boolean
+  unitId?: string
+  status?: string
+}
+
+export type ReceivingBarcodeIdentity = {
+  variantId: number
+  kind: 'sku' | 'unit'
+  productName: string
+  gender: string
+  color: string
+  material: string
+  length: string
+  size: string
+}
+
+export function identifyReceivingBarcode(codeInput: string, result: ReceivingBarcodeLookup): ReceivingBarcodeIdentity {
+  const code=codeInput.trim().toUpperCase()
+  const variantId=Number(result.variantId)
+  if (!result.ok || !Number.isSafeInteger(variantId) || variantId<=0) {
+    throw new Error(result.message || 'Штрихкод не найден или не определён вариант товара.')
+  }
+  if (result.barcodeType==='sku') {
+    if (!result.active || result.physicalUnit!==false ||
+      result.barcode!==skuBarcodeForVariantId(variantId) || code!==result.barcode) {
+      throw new Error('Общий SKU не прошёл проверку или вариант уже неактивен.')
+    }
+  } else if (result.barcodeType==='unit') {
+    if (!isUnitBarcode(code) || code!==result.barcode || !result.unitId || !result.receivingIdentifiable) {
+      throw new Error('Индивидуальная метка недействительна или больше не идентифицирует активный товар.')
+    }
+    if (!['issued','not_stock'].includes(result.status || '')) {
+      throw new Error('Эта индивидуальная метка не числится выбывшей к клиенту. Проверьте статус вещи и выберите приёмку вручную.')
+    }
+  } else {
+    throw new Error('Этот тип штрихкода не поддерживается при приёмке.')
+  }
+  return {
+    variantId, kind:result.barcodeType, productName:result.productName || '',
+    gender:result.gender || '', color:result.color || '', material:result.material || '',
+    length:result.length || '', size:result.size || '',
+  }
+}
+
+function comparable(value: unknown, execution = false) {
+  const normalized=String(value??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleUpperCase('ru')
+  return execution && normalized==='СТАНДАРТ' ? '' : normalized
+}
+
+export function matchingReceivingItems(items: PendingPhysicalItem[], barcode: ReceivingBarcodeIdentity) {
+  return items.filter(item => {
+    if (item.defaultDestination==='no_stock' || !Number.isSafeInteger(barcode.variantId)) return false
+    const variants=[item.currentVariantId,item.lifecycleVariantId]
+      .map(value=>Number(value)).filter(value=>Number.isSafeInteger(value)&&value>0)
+    if (!variants.length || variants.some(value=>value!==barcode.variantId)) return false
+    if (!comparable(item.productName) || comparable(item.productName)!==comparable(barcode.productName)) return false
+    for (const key of ['gender','color','material','length','size'] as const) {
+      const expected=comparable(item.identity[key],key==='material'||key==='length')
+      const actual=comparable(barcode[key],key==='material'||key==='length')
+      if (expected && expected!==actual) return false
+    }
+    return true
+  })
+}
