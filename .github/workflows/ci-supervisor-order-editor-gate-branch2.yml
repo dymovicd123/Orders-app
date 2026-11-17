@@ -1,0 +1,28 @@
+name: Branch2 supervisor order editor gate regression
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/App.tsx
+      - worker/domains/orders-write.ts
+      - src/features/orders/orderEditSessionActions.ts
+      - src/features/orders/orderEditPersistenceActions.ts
+      - scripts/test-branch2-supervisor-editor-gate-20261117.mjs
+      - .github/workflows/ci-supervisor-order-editor-gate-branch2.yml
+permissions:
+  contents: read
+jobs:
+  editor-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node scripts/test-branch2-supervisor-editor-gate-20261117.mjs
+      - run: node scripts/test-stage01-order-truth-projection-r1.mjs
+      - run: node scripts/test-order-exchange-bulk-cancellation-20261018.mjs
+      - run: npm run build
