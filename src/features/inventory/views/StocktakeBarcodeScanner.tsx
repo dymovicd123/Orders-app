@@ -22,7 +22,13 @@ export function StocktakeBarcodeScanner({
   onSkuFound: (variantId: number) => string | null
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const capturedRef = useRef(false)
+  const cameraStopRef = useRef<(() => void) | null>(null)
   const busyRef = useRef(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState('')
+  const [cameraStarting, setCameraStarting] = useState(false)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [total, setTotal] = useState<number | null>(null)
@@ -30,6 +36,7 @@ export function StocktakeBarcodeScanner({
   const [error, setError] = useState('')
 
   useEffect(() => {
+    setCameraOpen(false)
     let alive = true
     setCode('')
     setNotice('')
@@ -46,6 +53,58 @@ export function StocktakeBarcodeScanner({
     })
     return () => { alive = false }
   }, [sessionId])
+
+  useEffect(() => {
+    if (!cameraOpen || disabled) return
+    let cancelled = false
+    capturedRef.current = false
+    setCameraStarting(true)
+    setCameraError('')
+    const run = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
+          throw new Error('Камера доступна только в современном браузере по HTTPS.')
+        }
+        const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
+        if (cancelled || !videoRef.current) return
+        const reader = new BrowserMultiFormatOneDReader()
+        const controls = await reader.decodeFromConstraints(
+          { video: { facingMode: { ideal: 'environment' } }, audio: false },
+          videoRef.current,
+          (result) => {
+            if (cancelled || capturedRef.current || !result) return
+            const scanned = result.getText().trim().toUpperCase()
+            if (!/^OC[SU]1-[0-9A-Z-]+$/.test(scanned)) return
+            capturedRef.current = true
+            setCode(scanned)
+            setNotice('Код считан: ' + scanned + '. Нажмите «Найти / учесть», чтобы подтвердить действие.')
+            setCameraOpen(false)
+          },
+        )
+        if (cancelled) controls.stop()
+        else cameraStopRef.current = () => controls.stop()
+      } catch (cause) {
+        if (!cancelled) {
+          const reason = cause instanceof Error ? cause.name : ''
+          setCameraError(reason === 'NotAllowedError'
+            ? 'Нет разрешения на камеру. Разрешите доступ в браузере или введите код вручную.'
+            : reason === 'NotFoundError'
+              ? 'На устройстве не найдена камера. Используйте поле ручного ввода.'
+              : cause instanceof Error ? cause.message : 'Не удалось открыть камеру. Введите код вручную.')
+        }
+      } finally {
+        if (!cancelled) setCameraStarting(false)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+      cameraStopRef.current?.()
+      cameraStopRef.current = null
+      const stream = videoRef.current?.srcObject
+      if (stream instanceof MediaStream) stream.getTracks().forEach(track => track.stop())
+    }
+  }, [cameraOpen, disabled])
 
   async function scan() {
     const typed = code.trim()
@@ -120,7 +179,18 @@ export function StocktakeBarcodeScanner({
         disabled={busy || disabled || !code.trim()}>
         {busy ? 'Проверяю…' : 'Найти / учесть'}
       </button>
+      <button type="button" className="secondary compact stocktake-camera-toggle"
+        disabled={busy || disabled} aria-expanded={cameraOpen}
+        onClick={() => { setCameraError(''); setNotice(''); setCameraOpen(current => !current) }}>
+        {cameraOpen ? 'Закрыть камеру' : 'Сканировать камерой'}
+      </button>
     </form>
+    {cameraOpen ? <div className="stocktake-camera-panel" role="region" aria-label="Камера для сканирования штрихкода">
+      <video ref={videoRef} playsInline autoPlay muted aria-label="Изображение камеры"/>
+      <div className="stocktake-camera-hint">Наведите заднюю камеру на полосы этикетки Code 128. После распознавания проверьте код и подтвердите действие кнопкой «Найти / учесть».</div>
+      {cameraStarting ? <small>Открываю камеру…</small> : null}
+      {cameraError ? <div className="stocktake-barcode-error" role="alert">{cameraError}</div> : null}
+    </div> : null}
     {disabled ? <small>Сначала дождитесь сохранения введённых вручную значений.</small> : null}
     <small>Общий SKU только открывает нужную ячейку: введите итоговое фактическое число, не прибавляйте 1 за скан. Индивидуальные метки засчитываются поштучно, повторно не учитываются. Одну вещь нельзя считать дважды — вручную и индивидуальным сканом.</small>
     {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
