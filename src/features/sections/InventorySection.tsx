@@ -2793,7 +2793,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyArrivalPrintContent: historyArrivalPrint ? <BarcodePrintWorkspace
           key={historyArrivalPrint.receipt.operationId}
           receipt={historyArrivalPrint.receipt}
-          onDismiss={() => setHistoryArrivalPrint(null)}
+          onDismiss={() => setHistoryArrivalPrint(null)} dismissLabel="Закрыть печать"
           catalog={catalogData} stock={inventoryData}
           onReload={reloadBarcodePrintData}
         /> : null,
