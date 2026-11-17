@@ -1,0 +1,37 @@
+name: Branch2 post-arrival SKU printing UX CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/features/inventory/views/BarcodePrintWorkspace.tsx
+      - src/features/inventory/views/barcodePrintWorkspace.css
+      - src/features/sections/InventorySection.tsx
+      - src/styles/193-unified-inventory-operations.css
+      - scripts/test-post-arrival-sku-print-20261117.mjs
+      - scripts/test-post-arrival-unit-labels-20261117.mjs
+      - .github/workflows/ci-branch2-post-arrival-sku-print-20261117.yml
+permissions:
+  contents: read
+jobs:
+  arrival-sku-print:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verified arrival and barcode printing regression
+        run: |
+          node scripts/test-post-arrival-sku-print-20261117.mjs
+          node scripts/test-post-arrival-unit-labels-20261117.mjs
+          node scripts/test-barcode-print-workspace-20261117.mjs
+          node scripts/test-barcode-print-v2-20261117.mjs
+          node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-materialization-reliability.mjs
+          node scripts/test-arrival-canonical-barcode-sku-20261030.mjs
+      - name: TypeScript and application build
+        run: npm run build
