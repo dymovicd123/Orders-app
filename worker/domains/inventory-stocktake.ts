@@ -75,6 +75,7 @@ export async function serializeInventoryStocktakeSession(db: D1Database, session
     openingQuantity: toInt(row.opening_quantity, 0),
     openingReservedQuantity: Math.max(0, toInt(row.opening_reserved_quantity, 0)),
     baselineQuantity: toInt(row.baseline_quantity, 0),
+    createdAt: cleanText(row.created_at),
     countedQuantity: row.counted_quantity === null || row.counted_quantity === undefined ? null : Math.max(0, toInt(row.counted_quantity, 0)),
     countedAt: cleanText(row.counted_at) || null,
     status: cleanText(row.status) || 'pending',
