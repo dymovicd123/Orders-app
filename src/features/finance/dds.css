@@ -122,3 +122,11 @@
   .dds-transaction-comment{display:block}
   .dds-transaction-comment span{display:block;margin-bottom:2px}
 }
+
+.dds-transaction-controls{display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.dds-edited{color:var(--dds-green,#236b58)!important}
+.dds-load-more{display:block;margin:14px auto 0;min-width:200px}
+.dds-history-jump{display:flex;align-items:center;gap:9px;color:var(--muted,#718397);font-size:12px}
+.dds-history-jump input{width:175px}
+.dds-modal-form select{width:100%;min-height:43px;border:1px solid var(--border,#cdd7df);border-radius:10px;background:var(--card,#fff);color:inherit;padding:8px 12px;font:inherit}
+@media(max-width:600px){.dds-history-jump{flex-wrap:wrap}.dds-transaction-controls{gap:6px}}
