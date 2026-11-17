@@ -45,3 +45,19 @@
 .warehouse-receiving-label-next p{margin:4px 0 0;max-width:680px;font-size:.9rem;line-height:1.5}
 .warehouse-receiving-label-next .unit-barcode-entry{flex-shrink:0}
 @media(max-width:720px){.warehouse-receiving-label-next{align-items:stretch;flex-direction:column}}
+
+.warehouse-receiving-barcode{display:grid;gap:10px;border:1px solid #d8e3f0;border-radius:12px;padding:14px 16px;background:var(--card,#fff)}
+.warehouse-receiving-barcode-intro{display:grid;gap:4px}
+.warehouse-receiving-barcode-intro strong{font-size:15px}
+.warehouse-receiving-barcode-intro p{margin:0;color:var(--muted,#65768a);font-size:12px;line-height:1.5}
+.warehouse-receiving-barcode-form{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.warehouse-receiving-barcode-form input{flex:1 1 245px;min-width:0;min-height:43px;border:1px solid #d2dcec;border-radius:9px;padding:9px 12px;background:var(--card,#fff);color:inherit}
+.warehouse-receiving-barcode-form button{min-height:43px}
+.warehouse-receiving-barcode-result{display:grid;gap:9px;border-top:1px solid #e2e9f2;padding-top:11px;font-size:13px}
+.warehouse-receiving-barcode-result>strong{font-size:14px}
+.warehouse-receiving-barcode-result span{color:var(--muted,#5a6f84)}
+.warehouse-receiving-barcode-result small{line-height:1.55;color:var(--muted,#5a6f84)}
+.warehouse-receiving-barcode-switches{display:flex;flex-wrap:wrap;gap:8px}
+.warehouse-receiving-barcode-switches button{min-height:36px;padding:7px 12px;background:var(--card,#fff);border:1px solid #cfdaea;color:inherit;border-radius:9px;cursor:pointer}
+.warehouse-receiving-barcode-switches button.is-active{border-color:#3872d7;background:#eaf2ff;color:#1653a9;font-weight:700}
+@media(max-width:640px){.warehouse-receiving-barcode{padding:12px}.warehouse-receiving-barcode-form input{flex-basis:100%}.warehouse-receiving-barcode-form button{flex:1}}

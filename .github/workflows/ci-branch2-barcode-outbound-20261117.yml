@@ -19,6 +19,10 @@ jobs:
         run: node scripts/test-barcode-operation-unit-20261117.mjs
       - name: Stock correction barcode lookup never mutates on scan
         run: node scripts/test-barcode-correction-lookup-20261117.mjs
+      - name: Barcode receiving finder and existing Return V2 intake
+        run: |
+          node scripts/test-warehouse-receiving-barcode-finder-20261117.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
       - name: Existing warehouse operations, barcode and stocktake tests
         run: |
           node scripts/test-w6-unified-operations.mjs

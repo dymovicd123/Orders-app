@@ -360,6 +360,7 @@ export async function lookupIndividualUnitBarcode(db: D1Database, codeInput: str
     source: row.inventory_source,
     status,
     active,
+    receivingIdentifiable: row.label_state === 'active' && row.unit_status !== 'retired' && skuActive,
     physicalUnit: true,
     verified: row.unit_status === 'on_hand' && row.coverage_status === 'linked',
     message: !active ? 'Метка отозвана или её вариант больше неактивен.'
