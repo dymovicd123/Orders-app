@@ -87,7 +87,6 @@ type SectionContext = Record<string, any> & {
 }
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
-  const arrivalPrintRef = useRef<HTMLElement | null>(null)
   const [arrivalBarcodeReceipt, setArrivalBarcodeReceipt] = useState<{
     operationId: string
     source: 'warehouse' | 'boutique'
@@ -1783,14 +1782,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       ? { catalog: freshCatalog, warehouse, boutique } : null
   }
 
-  useEffect(() => {
-    if (!arrivalBarcodeReceipt || activeSector !== 'inventory' || inventoryPanel !== 'movement') return
-    const frame = window.requestAnimationFrame(() => {
-      arrivalPrintRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [arrivalBarcodeReceipt, activeSector, inventoryPanel])
-
   const warehousePhysicalReceivingCount = Math.max(0, Number(returnPendingInbox?.pendingQuantity || 0))
     + Math.max(0, Number(exchangePendingInbox?.pendingQuantity || 0))
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
@@ -2693,6 +2684,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        arrivalPrintReceipt: arrivalBarcodeReceipt,
+        renderArrivalLabels: arrivalBarcodeReceipt ? <BarcodePrintWorkspace
+          key={arrivalBarcodeReceipt.operationId + ':' + arrivalBarcodeReceipt.source}
+          receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}
+          onReload={reloadBarcodePrintData} embeddedAfterArrival
+        /> : null,
+        onFinishArrivalResult: () => setArrivalBarcodeReceipt(null),
         clearArrivalBarcodeReady: () => setArrivalBarcodeReceipt(null),
         askActionConfirmation,
         onInlineArrivalVariant,
@@ -2749,16 +2747,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         swapInventoryTransferDirection,
         updateInventoryDirectProductInput
       })}
-              {inventoryPanel === 'movement' && inventoryDraft.movementType === 'arrival' && arrivalBarcodeReceipt
-                ? <section className="inventory-post-arrival-labels" ref={arrivalPrintRef} style={inventoryPanelStyle('movement')}>
-                  <BarcodePrintWorkspace
-                    key={arrivalBarcodeReceipt.operationId + ':' + arrivalBarcodeReceipt.source + ':' +
-                      arrivalBarcodeReceipt.items.map(item => item.variantId + '-' + item.quantity).join(',')}
-                    receipt={arrivalBarcodeReceipt} catalog={catalogData} stock={inventoryData}
-                    onReload={reloadBarcodePrintData}
-                    onDismiss={() => setArrivalBarcodeReceipt(null)}
-                  />
-                </section> : null}
 
               {renderInventoryHistoryPanel({
         formatHistoryMoment,
