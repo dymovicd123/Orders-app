@@ -70,7 +70,8 @@ assert(inventory.includes('warehousePhysicalReceivingCount > 0') && inventory.in
 assert(inventory.includes('<WarehouseReceivingWorkspace') && inventory.includes('receiveItem={receiveReturnedItemAction}'))
 assert(inventory.includes("setAttentionCategory('intake')") && inventory.includes('Завершить учёт'),
  'Independent already-received inventory lifecycle work must stay reachable')
-assert(role.includes("'reports', 'receiving', 'attention'"),'Supervisor must be allowed through inventory panel style')
+assert(/const inventoryAdminPanels: InventoryPanel\[\] = \[[^\]]*'receiving'/.test(role),
+ 'Supervisor must be allowed through inventory panel style regardless of tab order')
 assert(app.includes("if (!authReady || activeSector !== 'inventory') return\n    // Both badge counts"))
 assert(app.includes('loadReturnPendingInbox(false), loadExchangePendingInbox(false)'))
 assert(app.includes('openWarehouseReceiving') && app.includes("setInventoryPanel('receiving')"))
