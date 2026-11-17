@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import {createReturn as createHistoricalReturn} from '../worker/domains/order-return-creation.ts'
 import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
@@ -248,10 +249,10 @@ const two=await prepareReturnV2(db,{...request,requestId:'two-units',items:[{ord
 assert.equal(two.plannedContractReduction,30000)
 assert.equal(staged().length,3,'Several previews are harmless; no goods have actually been returned')
 assert.deepEqual(snapshot(),before,'Drafts must not change order/cash/reservations or stock')
-const oldReturn=await http('POST','/api/returns',{
+const oldReturn={status:201,data:await createHistoricalReturn(db,{
  requestId:'legacy-existing-return-after-v2-preparation',orderId,returnDate:'2026-10-31',amount:0,
  items:[{orderItemId:lineId,quantity:1,physicalState:'pending',restock:false}]
-})
+})}
 assert.equal(oldReturn.status,201,'Existing Return still works, prepared proposals are inert: '+JSON.stringify(oldReturn))
 assert.equal(oldStock().quantity,0,'No auto restock')
 await assert.rejects(prepareReturnV2(db,{...request,requestId:'after-old-return'}),/уже содержит возврат|действующую логику/)
