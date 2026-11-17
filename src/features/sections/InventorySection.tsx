@@ -1386,6 +1386,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function discardStocktake() {
     if (!stocktakeSession?.id || stocktakeBusy) return
+    if (stocktakeScannerBusy) { setStocktakeNotice('Дождитесь сохранения отсканированных вещей перед отменой ревизии.'); return }
     if (!(await askActionConfirmation('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.'))) return
     setStocktakeBusy(true)
     try {
@@ -1457,7 +1458,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function applyStocktake() {
-    if (!stocktakeSession?.id || stocktakeBusy) return
+    if (!stocktakeSession?.id || stocktakeBusy || stocktakeScannerBusy) return
     if (!await flushStocktakeFacts()) return
     setStocktakeBusy(true)
     try {
