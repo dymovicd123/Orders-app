@@ -5,7 +5,7 @@ import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } fro
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
 import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
-import { addDdsExpense, addDdsFunds, readDdsMonth, reverseDdsEntry } from './domains/dds.ts'
+import { addDdsExpense, addDdsFunds, editDdsEntry, readDdsEntryEdits, readDdsHistoryPage, readDdsMonth, reverseDdsEntry } from './domains/dds.ts'
 import { addDdsCategory, addDdsArticle, setDdsCategoryActive, setDdsArticleActive } from './domains/dds-directory.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
@@ -557,7 +557,7 @@ export default {
 
       if (url.pathname === '/api/reference-values' && request.method === 'POST') {
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || cleanText(proposal.kind) === 'paymentMethods');
         const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await createReferenceValue(env.DB, request);
@@ -567,7 +567,7 @@ export default {
       if (referenceMatch && request.method === 'PATCH') {
         const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods');
         const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await updateReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
@@ -576,7 +576,7 @@ export default {
       if (referenceMatch && request.method === 'DELETE') {
         const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods');
         const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await deleteReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
@@ -611,6 +611,22 @@ export default {
       // Simple standalone DDS. This never reads or mutates the existing office cash register.
       if (url.pathname === '/api/dds' && request.method === 'GET') {
         return json(await readDdsMonth(env.DB, url.searchParams.get('month'), authUser))
+      }
+      if (url.pathname === '/api/dds/entries' && request.method === 'GET') {
+        return json(await readDdsHistoryPage(env.DB, {
+          beforeDate:url.searchParams.get('beforeDate') || undefined,
+          beforeId:url.searchParams.get('beforeId') || undefined,
+          throughDate:url.searchParams.get('throughDate') || undefined,
+        },authUser))
+      }
+      const ddsEditsMatch = url.pathname.match(/^\/api\/dds\/entries\/(\d+)\/edits$/)
+      if (ddsEditsMatch && request.method === 'GET') {
+        return json(await readDdsEntryEdits(env.DB, Number(ddsEditsMatch[1]), authUser))
+      }
+      const ddsEditMatch = url.pathname.match(/^\/api\/dds\/entries\/(\d+)$/)
+      if (ddsEditMatch && request.method === 'PATCH') {
+        const input = await readJson(request)
+        return json(await editDdsEntry(env.DB, Number(ddsEditMatch[1]), input, authUser))
       }
       if (url.pathname === '/api/dds/directory/categories' && request.method === 'POST') {
         const input = await readJson<{name?:unknown}>(request)
