@@ -30,8 +30,9 @@ assert(labels.includes('Не подтверждайте списание, пер
   'Software-only check must not invite fictitious inventory writes')
 assert(lookup.includes("onSubmit={event => { event.preventDefault(); void lookup() }}") &&
   lookup.includes("method: 'GET'"), 'Read-only lookup must accept keyboard Enter')
-assert(stocktake.includes('onSubmit={event => { event.preventDefault(); void scan() }}'),
-  'Stocktake scanner must accept keyboard Enter')
+assert(stocktake.includes('onSubmit={event => { event.preventDefault(); submitInput(inputRef.current?.value || code) }}') &&
+  stocktake.includes("event.key === 'Enter'"),
+  'Stocktake scanner must accept keyboard Enter / USB HID suffix')
 assert(operations.includes('onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}'),
   'Transfer/writeoff scanner must accept keyboard Enter')
 assert(domain.includes("purpose='existing_stock'"), 'Prepared tokens are tied to existing stock, not a new receipt')
