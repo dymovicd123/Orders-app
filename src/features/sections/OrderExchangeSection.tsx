@@ -38,13 +38,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     setExchangeDraft,
     setExchangeHistoryFilters,
     setOrderPanel,
+    canManageWarehouse,
+    openWarehouseReceiving,
     SmartPickerInput,
     sourceLabel,
     suggestionValues,
   } = ctx
 
   const [financialCorrection, setFinancialCorrection] = useState<any>(null)
-  const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
 
   const openFinancialCorrection = (entry: any) => {
     setFinancialCorrection({
@@ -109,19 +110,6 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     if (lifecycleStatus === 'applied') return `Выдано: ${origin}`
     return `Источник: ${sourceLabel(source as OrderRecord['source_type'])}`
   }
-
-  // One card per physically unreceived OLD item, including multi-item Set V2.
-  // Do not accidentally hide all but the first old SKU of an Exchange.
-  const pendingExchangeIntake = exchangePendingInbox.rows.flatMap((entry: any) => {
-    if (entry.status === 'cancelled') return []
-    const oldItems = (entry.oldItems || []) as any[]
-    const pending = oldItems.filter(old => old.physicalTracking && !old.physicalReceivedAt && Number(old.id) > 0)
-    if (oldItems.length) return pending.map(old => ({ entry, old }))
-    return entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
-      ? [{ entry, old: null }] : []
-  })
-  const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, row: any) =>
-    sum + Math.max(0, Number(row.old?.quantity || row.entry.oldQuantity || 0)), 0)
 
   const itemizedExchange = exchangeSelectedOrder?.pricing_mode === 'itemized_v1'
   const queuedPairs = exchangeDraft.queuedPairs || []
@@ -285,88 +273,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </section>
 
-              {exchangePendingInbox.error ? <p className="history-load-state is-error" role="alert">{exchangePendingInbox.error} <button className="secondary compact" type="button" onClick={() => void loadExchangePendingInbox()}>Повторить</button></p> : null}
-              {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
-              {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
-                <section className="intake-queue" aria-label="Старые вещи, ожидающие приёмки по обменам">
-                  <div className="intake-queue-head">
-                    <div>
-                      <span className="intake-queue-kicker">Нужно принять</span>
-                      <h3>Старые вещи едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Открывать обмен в истории не нужно. Очередь не зависит от поиска и дат ниже; самые старые — первыми.</p>
-                    </div>
-                    <strong className="intake-queue-count">{exchangePendingInbox.pendingQuantity} шт.</strong>
-                  </div>
-                  {pendingExchangeIntake.length ? (
-                    <div className="intake-queue-list">
-                      {pendingExchangeIntake.map(({entry, old}: any) => {
-                        const operationItemId = Number(old?.id || entry.oldOperationItemId)
-                        const productName = old?.productName || entry.oldProductName
-                        const quantity = Number(old?.quantity || entry.oldQuantity || 0)
-                        const isWorkshop = old?.isWorkshop ?? entry.oldIsWorkshop
-                        const receiptKey = `exchange:${entry.id}:${operationItemId}`
-                        const oldDetails = old ? { ...entry,
-                          oldGender: old.gender, oldColor: old.color,
-                          oldMaterial: old.material, oldLength: old.length, oldSize: old.size
-                        } : entry
-                        return (
-                          <div className="intake-queue-row" key={receiptKey}>
-                            <div className="intake-queue-item">
-                              <div className="intake-queue-product-head">
-                                <strong>{productName} × {quantity}</strong>
-                                <span className="intake-queue-operation">Обмен #{entry.id}</span>
-                              </div>
-                              <div className="intake-queue-context">
-                                <div><span>Заказ</span><strong>{entry.externalId}</strong></div>
-                                <div><span>Клиент</span><strong>{entry.customer || 'Не указан'}</strong></div>
-                                <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
-                                <div><span>Дата обмена</span><strong>{entry.exchangeDate || 'Не указана'}</strong></div>
-                              </div>
-                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(oldDetails, 'old')}</small>
-                            </div>
-                            <label className="intake-queue-destination">
-                              <span>Куда принять</span>
-                              <select
-                                value={receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')}
-                                onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
-                                disabled={exchangeBusy}
-                              >
-                                <option value="warehouse">Склад</option>
-                                <option value="boutique">Бутик</option>
-                                <option value="no_stock">Не добавлять в остаток</option>
-                              </select>
-                            </label>
-                            <button
-                              className="primary intake-queue-action"
-                              type="button"
-                              disabled={exchangeBusy}
-                              onClick={() => void receiveReturnedItemAction({
-                                operationType: 'exchange',
-                                operationId: entry.id,
-                                operationItemId,
-                                destination: receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse'),
-                                productName,
-                                externalId: entry.externalId,
-                              })}
-                            >
-                              Принять товар
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="intake-queue-missing">
-                      <span>Ожидающие вещи не поместились на первую страницу очереди. Откройте следующие.</span>
-                      <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё</button>
-                    </div>
-                  )}
-                  {exchangePendingInbox.hasMore && loadedPendingExchangeQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Показать ещё ожидающие</button>
-                  ) : null}
-                </section>
-              ) : null}
-    
+              <div className="warehouse-receiving-hint">
+                <p>Старые вещи по обменам принимает завсклад в разделе «Склад → Приёмка товаров → Обмены».
+                  {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? ` Ожидают получения: ${exchangePendingInbox.pendingQuantity} шт.` : ''}
+                </p>
+                {canManageWarehouse ? <button type="button" className="secondary compact"
+                  onClick={() => openWarehouseReceiving('exchange')}>Перейти к приёмке обменов</button> : null}
+              </div>
+
               <section className="mini-panel debt-form-panel" ref={exchangeFormRef}>
                 <div className="mini-panel-head">
                   <h3>Форма обмена</h3>
@@ -725,31 +639,10 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <div className="history-product-card">
                               <span>Вернули</span><strong>{entry.oldProductName} × {entry.oldQuantity}</strong><em>{formatHistoryCharacteristics(entry, 'old')}</em><b>{oldReturnLabel(entry)}</b>
                               {entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId ? (
-                                <div className="mini-panel-actions">
-                                  <select
-                                    value={receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')}
-                                    onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`exchange:${entry.id}:${entry.oldOperationItemId}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
-                                    disabled={exchangeBusy}
-                                  >
-                                    <option value="warehouse">Склад</option>
-                                    <option value="boutique">Бутик</option>
-                                    <option value="no_stock">Без добавления в остаток</option>
-                                  </select>
-                                  <button
-                                    className="primary compact"
-                                    type="button"
-                                    disabled={exchangeBusy}
-                                    onClick={() => void receiveReturnedItemAction({
-                                      operationType: 'exchange',
-                                      operationId: entry.id,
-                                      operationItemId: entry.oldOperationItemId,
-                                      destination: receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse'),
-                                      productName: entry.oldProductName,
-                                      externalId: entry.externalId,
-                                    })}
-                                  >
-                                    Товар пришёл
-                                  </button>
+                                <div className="warehouse-receiving-hint">
+                                  <p>Старая вещь ещё не принята. Подтверждение физического получения — в разделе склада.</p>
+                                  {canManageWarehouse ? <button type="button" className="secondary compact"
+                                    onClick={() => openWarehouseReceiving('exchange')}>К приёмке на складе</button> : null}
                                 </div>
                               ) : null}
                               {entry.status !== 'cancelled' && entry.oldOperationItemId && oldKnownIntakePending(entry) ? (
@@ -760,7 +653,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     disabled={exchangeBusy || exchangeHistoryBusy}
                                     onClick={() => void finishKnownExchangeIntake(entry)}
                                   >
-                                    Завершить приёмку
+                                    Завершить учёт
                                   </button>
                                 </div>
                               ) : null}
