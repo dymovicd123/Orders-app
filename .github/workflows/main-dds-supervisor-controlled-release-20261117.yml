@@ -1,0 +1,156 @@
+name: Main DDS correction and supervisor controlled production release (NO Branch2)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/main-dds-supervisor-controlled-release-20261117.yml
+permissions:
+  contents: read
+concurrency:
+  group: main-controlled-dds-production-release
+  cancel-in-progress: false
+jobs:
+  main-only:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: One-shot exact Main parent, no unrelated release files
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '53e93f5fde12b1208f30775ae0a0ec3d1ce127d6'
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          python3 - <<'PY'
+          import subprocess
+          changed=set(subprocess.check_output(
+            ['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          expected={
+            'scripts/main-dds-0139-prod-guard-20261117.py',
+            '.github/workflows/main-dds-supervisor-controlled-release-20261117.yml',
+          }
+          if changed!=expected:raise SystemExit('ABORT unexpected Main release scope: '+str(sorted(changed)))
+          print('MAIN_DDS_RELEASE_EXACT_PARENT_AND_SCOPE_PASS')
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Rerun targeted finance/editor invariants and full release regression
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/main-dds-0139-prod-guard-20261117.py
+          node scripts/test-simple-dds-ledger-20261110.mjs
+          node scripts/test-dds-edit-pagination-supervisor-20261117.mjs
+          node scripts/test-dds-excel-ux-20261110.mjs
+          node scripts/test-branch2-supervisor-editor-gate-20261117.mjs
+          node scripts/test-order-exchange-bulk-cancellation-20261018.mjs
+          npm run release:check
+          npm run build
+      - name: Prepare production-only build artifact and dry-run (NO upload)
+        run: |
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const original=readFileSync('wrangler.jsonc','utf8')
+          const safe=original.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/,'')
+          if(safe===original)throw new Error('ABORT cannot remove implicit production rebuild')
+          if(!safe.includes('"name": "orders-app"')||
+             !safe.includes('"database_name": "orders_db_prod"')||
+             !safe.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')||
+             !safe.includes('"RETURN_V2_ENABLED": "true"')||
+             safe.includes('"name": "orders-app-branch2"'))throw new Error('ABORT wrong production configuration')
+          writeFileSync('.main-dds-0139-release.jsonc',safe)
+          NODE
+          npx --no-install wrangler deploy --config .main-dds-0139-release.jsonc --name orders-app --keep-vars --strict --dry-run --outdir .main-dds-0139-release-preview
+      - name: Verify exact live production Worker/D1 and pristine 0139 schema (READ ONLY)
+        run: python3 scripts/main-dds-0139-prod-guard-20261117.py before
+      - name: Capture production D1 Time Travel restore bookmark BEFORE migration
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("Missing production D1 bookmark") end' \
+            > /tmp/main-dds-0139-restore-bookmark
+          test -s /tmp/main-dds-0139-restore-bookmark
+          echo 'PROD_D1_PRE_MIGRATION_BOOKMARK_CAPTURED'
+      - name: Apply ONLY additive DDS audit schema 0139 to production D1
+        run: |
+          set -euo pipefail
+          test -s /tmp/main-dds-0139-restore-bookmark
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --yes --file migrations/0139_dds_entry_edits_audit.sql
+      - name: Verify old entries, sums, immutable audit schema after migration (READ ONLY)
+        run: python3 scripts/main-dds-0139-prod-guard-20261117.py after
+      - name: Record pre-deploy production Worker version
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments" \
+            | jq -er '.result.deployments | sort_by(.created_on) | last.id' \
+            > /tmp/main-dds-0139-before-deployment
+          test -s /tmp/main-dds-0139-before-deployment
+      - name: Deploy ONLY orders-app production Worker, preserving secrets (NO D1 writes)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '53e93f5fde12b1208f30775ae0a0ec3d1ce127d6'
+          test -s /tmp/main-dds-0139-restore-bookmark
+          test -s /tmp/main-dds-0139-before-deployment
+          npx --no-install wrangler deploy --config .main-dds-0139-release.jsonc --name orders-app --keep-vars --strict
+      - name: Verify production bindings and DDS schema after Worker deploy (READ ONLY)
+        run: python3 scripts/main-dds-0139-prod-guard-20261117.py worker-after
+      - name: Confirm new production deployment and anonymous access guards
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          url=f'https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/orders-app/deployments'
+          headers={'Authorization':'Bearer '+token,'Accept':'application/json'}
+          before=open('/tmp/main-dds-0139-before-deployment').read().strip()
+          changed=False
+          for i in range(10):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=30) as response:data=json.load(response)
+              ids=data['result']['deployments']
+              current=max(ids,key=lambda v:v['created_on'])['id']
+              if current!=before:changed=True;break
+              time.sleep(3)
+          if not changed:raise SystemExit('ABORT production deployment version unchanged')
+          base='https://orders-app.orders-clothes.workers.dev'
+          def status(path,method='GET'):
+              request=urllib.request.Request(base+path,method=method,headers={
+                  'User-Agent':'OrdersDdsMainReleaseReadOnlySmoke/1.0',
+                  'Accept':'application/json,*/*'})
+              try:
+                  with urllib.request.urlopen(request,timeout=25) as response:
+                      return response.status, response.read()
+              except urllib.error.HTTPError as e:
+                  return e.code,b''
+          successful=False
+          for attempt in range(8):
+              try:
+                  auth,_=status('/api/auth/status')
+                  dds,_=status('/api/dds')
+                  history,_=status('/api/dds/entries')
+                  funding,_=status('/api/dds/funds','POST')
+                  health,body=status('/api/health')
+                  healthy=health==200 and json.loads(body).get('ok') is True
+                  if (auth,dds,history,funding)==(200,401,401,401) and healthy:
+                      successful=True;break
+                  print('MAIN_RELEASE_SMOKE_RETRY',attempt+1,auth,dds,history,funding,health)
+              except Exception as exc:
+                  print('MAIN_RELEASE_SMOKE_RETRY',attempt+1,type(exc).__name__)
+              time.sleep(4)
+          if not successful:raise SystemExit('MAIN_DDS_PRODUCTION_SMOKE_FAILED')
+          print('MAIN_DDS_EDITOR_PRODUCTION_RELEASE_VERIFIED_NO_BRANCH2_WRITES')
+          PY
