@@ -17,7 +17,9 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Real SQLite physical barcode operations test
         run: node scripts/test-barcode-operation-unit-20261117.mjs
-      - name: Arrival and stocktake share SKU lookup without implicit quantity writes
+      - name: Atomic shared-SKU fast count and unrestricted manual stocktake correction
+        run: node scripts/test-stocktake-fast-sku-20261118.mjs
+      - name: Arrival SKU finder and stocktake shared-SKU fast count
         run: node scripts/test-arrival-stocktake-shared-sku-20261117.mjs
       - name: Printed Code128 ZXing decode and reliable camera photo mobile layout
         run: node scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs
