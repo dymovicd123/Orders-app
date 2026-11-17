@@ -557,8 +557,9 @@ export default {
 
       if (url.pathname === '/api/reference-values' && request.method === 'POST') {
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || cleanText(proposal.kind) === 'paymentMethods');
-        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseFinanceMethod = authUser?.employeeRole === 'Завсклад' && cleanText(proposal.kind) === 'paymentMethods';
+        const denied = warehouseCharacteristic || warehouseFinanceMethod ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await createReferenceValue(env.DB, request);
       }
@@ -567,8 +568,9 @@ export default {
       if (referenceMatch && request.method === 'PATCH') {
         const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods');
-        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseFinanceMethod = authUser?.employeeRole === 'Завсклад' && dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods';
+        const denied = warehouseCharacteristic || warehouseFinanceMethod ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await updateReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }
@@ -576,8 +578,9 @@ export default {
       if (referenceMatch && request.method === 'DELETE') {
         const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
         const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
-        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && (isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind)) || dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods');
-        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const warehouseFinanceMethod = authUser?.employeeRole === 'Завсклад' && dbKind?.kind === 'paymentMethods' && cleanText(proposal.kind) === 'paymentMethods';
+        const denied = warehouseCharacteristic || warehouseFinanceMethod ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await deleteReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }
