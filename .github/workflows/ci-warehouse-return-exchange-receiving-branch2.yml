@@ -1,0 +1,38 @@
+name: Branch2 warehouse physical receiving UX - returns and exchanges
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/views/WarehouseReceivingWorkspace.tsx'
+      - 'src/features/inventory/views/warehouseReceivingModel.ts'
+      - 'src/features/inventory/views/warehouseReceiving.css'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrderExchangeSection.tsx'
+      - 'src/app/types.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'src/App.tsx'
+      - 'scripts/test-warehouse-return-exchange-receiving-20261117.mjs'
+      - '.github/workflows/ci-warehouse-return-exchange-receiving-branch2.yml'
+permissions:
+  contents: read
+jobs:
+  safe-receiving-ux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Unified warehouse receiving queue and badge regression
+        run: |
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+          node scripts/test-return-exchange-physical-receipt-r1.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-stage02-post-review-resolver-return-ux.mjs
+          node scripts/test-work733-smart-exchange-inbox-20261101.mjs
+      - name: Full TypeScript and build
+        run: npm run build

@@ -105,26 +105,28 @@ assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prom
 
 const returnSection = read('src/features/sections/OrderReturnsSection.tsx')
 const exchangeSection = read('src/features/sections/OrderExchangeSection.tsx')
-const returnIntakeDefault = returnSection.split('const defaultReturnDestination')[1]?.split('const selectedReturnLines')[0] || ''
-assert.ok(returnIntakeDefault.includes("item.sourceType === 'workshop' || item.isWorkshop")
-  && returnIntakeDefault.includes("'no_stock'")
-  && returnSection.includes('value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}')
-  && returnSection.includes('destination: receiptDestinations[receiptKey] || defaultReturnDestination(item)'),
-  'Return intake must use the Workshop no-stock default for both displayed value and saved destination')
+const warehouseModel = read('src/features/inventory/views/warehouseReceivingModel.ts')
+const warehouseUi = read('src/features/inventory/views/WarehouseReceivingWorkspace.tsx')
+assert.ok(warehouseModel.includes("sourceType === 'workshop' || isWorkshop")
+  && warehouseModel.includes("return 'no_stock'")
+  && warehouseUi.includes('value={destination}')
+  && warehouseUi.includes('destination: destinations[item.key] || item.defaultDestination'),
+  'Return intake must use the Workshop no-stock default in the Warehouse display and receive handler')
 const returnV2Flow = read('src/features/sections/OrderReturnV2Flow.tsx')
 assert.ok(returnV2Flow.includes('onSaved(saved)') && returnSection.includes('closeReturnForm(false)')
-  && returnSection.includes("setActiveView(posted.receipt?.receiptPending?'intake':'history')"),
-  'Return V2 must close its form and route to intake or history after a confirmed posting')
+  && returnSection.includes("setActiveView('history')")
+  && returnSection.includes("openWarehouseReceiving('return')"),
+  'Return V2 must close its form and keep the warehouse physical receipt handoff after posting')
 assert.ok(app.includes('refreshOrdersAfterReturn: () => loadDashboard(false, filters, orderPageOffset)')
   && returnSection.includes('void refreshOrdersAfterReturn()'),
   'Confirmed Return V2 posting or cancellation must refresh the existing filtered order list without a page reload')
 assert.ok(returnSection.includes("target.scrollIntoView({behavior:'smooth',block:'start'})")
   && !app.includes('returnFormRef.current?.scrollIntoView'),
   'Return form focus must wait until the visible section is mounted')
-assert.ok(exchangeSection.includes("receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')"),
-  'Active Exchange intake queue must default Workshop returns to no_stock')
-assert.ok(exchangeSection.includes("receiptDestinations[\`exchange:\${entry.id}:\${entry.oldOperationItemId}\`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')"),
-  'Legacy Exchange history fallback must also preserve the no_stock Workshop default')
+assert.ok(warehouseModel.includes("entry.oldIsWorkshop") && warehouseModel.includes("oldItem.isWorkshop"),
+  'Both Set V2 and legacy Exchange intake must preserve the Workshop no-stock default')
+assert.ok(exchangeSection.includes("openWarehouseReceiving('exchange')"),
+  'Exchange physical receipt must be reachable at Warehouse')
 
 const historyPanel = read('src/features/inventory/views/renderInventoryHistoryPanel.tsx')
 assert.ok(historyPanel.includes('Физическая операция') && historyPanel.includes('transferLineQuantity'), 'Inventory history still hides physical operation quantity behind stock delta')
