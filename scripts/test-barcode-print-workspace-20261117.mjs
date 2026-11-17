@@ -44,8 +44,12 @@ assert(page.includes('const target = window.open(') &&
   'Print popup should open synchronously before network validation')
 assert(page.includes('record.physicalUnit !== false') &&
   page.includes('record.barcode !== skuBarcodeForVariantId(item.variant.id)') &&
-  page.includes('record.size !== item.variant.sizeLabel'),
+  page.includes('textOf(record.size) !== textOf(item.variant.sizeLabel)'),
   'Selected barcode identities require a fresh server preflight')
+assert(page.includes('const current = await onReload()') &&
+  page.includes("const matches = current[source].items.filter(row => row.variantId === item.variant.id)") &&
+  page.includes('if (item.quantity > physical)'),
+  'Print must revalidate actual quantities at both sources before generating labels')
 assert(page.includes('MAX_LABELS = 300') && page.includes('totalLabels <= MAX_LABELS'),
   'Mass-print action lacks a bounded cap')
 assert(page.includes('Каждый вариант') || page.includes('Один вариант имеет один общий код'),
