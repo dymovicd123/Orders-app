@@ -25,7 +25,8 @@ assert(labels.includes('Проверить без сканера и принте
 assert(labels.includes('renderBatch(windowToPrint') && labels.includes('window.print()'),
   'Users must be able to preview label artwork and save as PDF without a printer')
 assert(labels.includes('Не подтверждайте списание, перемещение') &&
-  labels.includes('или ревизию реальных вещей только ради теста'),
+  labels.includes('или ревизию реальных вещей только ради теста') &&
+  labels.includes('аннулируйте партию после проверки'),
   'Software-only check must not invite fictitious inventory writes')
 assert(lookup.includes("onSubmit={event => { event.preventDefault(); void lookup() }}") &&
   lookup.includes("method: 'GET'"), 'Read-only lookup must accept keyboard Enter')
