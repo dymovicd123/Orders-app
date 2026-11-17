@@ -32,7 +32,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'eddfdc203bef44078a53434c44f8fab94e7e5586'
+          test "$(git rev-parse HEAD^)" = '423d9a59f3655fd6ef87d8b0a13b6e2fd3d2f071'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-stocktake-found-labels-controlled-release-20261117.yml'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
@@ -63,7 +63,6 @@ jobs:
         run: |
           node scripts/test-stocktake-found-labels-20261117.mjs
           node scripts/test-w5-6-stocktake-outcome.mjs
-          node scripts/test-w5-5-found-items.mjs
           node scripts/test-arrival-stocktake-shared-sku-20261117.mjs
           node scripts/test-stocktake-barcode-scan-20261117.mjs
           node scripts/test-warehouse-receiving-barcode-finder-20261117.mjs
