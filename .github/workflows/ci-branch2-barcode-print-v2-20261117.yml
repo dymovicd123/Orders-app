@@ -1,0 +1,33 @@
+name: Branch2 barcode print V2 compact UX and page layout
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - src/features/inventory/views/BarcodePrintWorkspace.tsx
+      - src/features/inventory/views/barcodePrintWorkspace.css
+      - src/features/inventory/views/barcodePrintPages.ts
+      - scripts/test-barcode-print-v2-20261117.mjs
+      - scripts/test-barcode-print-workspace-20261117.mjs
+      - .github/workflows/ci-branch2-barcode-print-v2-20261117.yml
+permissions:
+  contents: read
+jobs:
+  barcode-print-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Compact variant selection and real A4/thermal layout
+        run: |
+          node scripts/test-barcode-print-v2-20261117.mjs
+          node scripts/test-barcode-print-workspace-20261117.mjs
+          node scripts/test-barcode-sku-workflow-ux-20261116.mjs
+          node scripts/test-barcode-no-hardware-20261117.mjs
+          node scripts/test-barcode-sku-foundation.mjs
+      - name: TypeScript and Vite
+        run: npm run build
