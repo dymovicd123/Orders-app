@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BarcodeFormat, DecodeHintType } from '@zxing/library'
 import { StocktakeCameraScanGate } from '../stocktakeCameraScanGate'
 import './stocktakeBarcodeScanner.css'
 
@@ -168,7 +169,13 @@ export function StocktakeBarcodeScanner({
         }
         const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
         if (cancelled || !videoRef.current) return
-        const reader = new BrowserMultiFormatOneDReader()
+        const hints = new Map<DecodeHintType, unknown>([
+          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]],
+        ])
+        const reader = new BrowserMultiFormatOneDReader(hints, {
+          delayBetweenScanAttempts: 120,
+          delayBetweenScanSuccess: 160,
+        })
         const controls = await reader.decodeFromConstraints(
           { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
           videoRef.current,
@@ -221,7 +228,10 @@ export function StocktakeBarcodeScanner({
     const url = URL.createObjectURL(file)
     try {
       const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
-      const result = await new BrowserMultiFormatOneDReader().decodeFromImageUrl(url)
+      const hints = new Map<DecodeHintType, unknown>([
+        [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]],
+      ])
+      const result = await new BrowserMultiFormatOneDReader(hints).decodeFromImageUrl(url)
       processRef.current(result.getText(), 'photo')
     } catch {
       setError('Не удалось распознать штрихкод на фотографии. Можно отсканировать заново или ввести код вручную.')
