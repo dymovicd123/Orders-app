@@ -1,0 +1,36 @@
+name: Branch2 stocktake individual barcode counting CI
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/stocktake-barcode-scan.ts'
+      - 'worker/index.ts'
+      - 'migrations/0140_barcode_stocktake_unit_scans.sql'
+      - 'src/features/inventory/views/StocktakeBarcodeScanner.tsx'
+      - 'src/features/inventory/views/stocktakeBarcodeScanner.css'
+      - 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'scripts/test-stocktake-barcode-scan-20261117.mjs'
+      - '.github/workflows/ci-branch2-stocktake-unit-scan-20261117.yml'
+permissions:
+  contents: read
+jobs:
+  stocktake-barcode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Atomic scanned-unit stocktake SQLite acceptance
+        run: node scripts/test-stocktake-barcode-scan-20261117.mjs
+      - name: Existing stocktake and barcode regressions
+        run: |
+          node scripts/test-stocktake-functional-acceptance.mjs
+          node scripts/test-barcode-unit-label-preparation-20261116.mjs
+          node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+      - name: TypeScript and client build
+        run: npm run build
