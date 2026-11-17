@@ -73,3 +73,11 @@ FOR EACH ROW BEGIN SELECT RAISE(ABORT,'STOCKTAKE_SCAN_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS trg_stocktake_unit_scan_no_delete
 BEFORE DELETE ON inventory_stocktake_unit_scans
 FOR EACH ROW BEGIN SELECT RAISE(ABORT,'STOCKTAKE_SCAN_IMMUTABLE'); END;
+
+-- A counted physical label must not later be cancelled as an unused blank label.
+CREATE TRIGGER IF NOT EXISTS trg_stocktake_scan_label_revocation_guard
+BEFORE UPDATE OF state ON inventory_unit_labels
+FOR EACH ROW
+WHEN OLD.state='active' AND NEW.state='revoked'
+ AND EXISTS (SELECT 1 FROM inventory_stocktake_unit_scans WHERE token=OLD.token)
+BEGIN SELECT RAISE(ABORT,'STOCKTAKE_SCAN_LABEL_ALREADY_USED'); END;
