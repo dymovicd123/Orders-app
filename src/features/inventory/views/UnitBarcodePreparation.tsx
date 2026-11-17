@@ -99,6 +99,8 @@ export function UnitBarcodePreparation({
   const [cancelling, setCancelling] = useState(false)
   const [confirmCancelId, setConfirmCancelId] = useState('')
   const [error, setError] = useState('')
+  const [copiedCode, setCopiedCode] = useState('')
+  const [copyError, setCopyError] = useState('')
   const requestIdRef = useRef('')
   const requestRef = useRef(0)
 
@@ -143,6 +145,16 @@ export function UnitBarcodePreparation({
   const available = location?.available ?? 0
   const canPrepare = Boolean(preview && available >= quantity && quantity > 0 &&
     quantity <= (preview?.maximumPerBatch || 20) && !location?.discrepancy)
+
+  const copyTestCode = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopiedCode(token)
+      setCopyError('')
+    } catch {
+      setCopyError('Не удалось скопировать автоматически. Выделите код и скопируйте его вручную.')
+    }
+  }
 
   const create = async () => {
     if (!canPrepare || saving || cancelling) return
@@ -250,7 +262,7 @@ export function UnitBarcodePreparation({
         </div>
         <p className="unit-barcode-note">Для каждой физической вещи создаётся отдельный код.
           Это подготовка этикеток, а не новый приход. Количество на складе не изменится.
-          До подключения выдачи и перемещения сканирование не подтверждает наличие.</p>
+          Сами этикетки не подтверждают физическое наличие или выполнение складской операции.</p>
         <div className="unit-barcode-fields">
           <label>
             <span>Где находятся вещи</span>
@@ -293,6 +305,24 @@ export function UnitBarcodePreparation({
           <span>Коды сохранены. Повторно печатайте только для тех же самых вещей, если первая этикетка испорчена. Не наклеивайте одинаковый код на разные изделия.</span>
           <button type="button" className="primary compact" disabled={printing}
             onClick={() => void print()}>{printing ? 'Проверяю…' : 'Печать этикеток · 58 × 35 мм'}</button>
+          <details className="unit-barcode-test">
+            <summary>Проверить без сканера и принтера</summary>
+            <p>Скопируйте индивидуальный код и вставьте его в поле «Найти по штрихкоду».
+              Нажмите Enter — это имитирует ввод USB-сканера. Для проверки печатного макета
+              нажмите «Печать этикеток» и выберите в браузере «Сохранить в PDF».</p>
+            <p>Это проверка поиска и макета. Не подтверждайте списание, перемещение
+              или ревизию реальных вещей только ради теста.</p>
+            <div className="unit-barcode-test-codes">
+              {batch.labels.map(entry => <div className="unit-barcode-test-code" key={entry.unitId}>
+                <code>{entry.token}</code>
+                <button type="button" className="secondary compact"
+                  onClick={() => void copyTestCode(entry.token)}>
+                  {copiedCode === entry.token ? 'Скопировано' : 'Копировать'}
+                </button>
+              </div>)}
+            </div>
+            {copyError ? <p className="unit-barcode-error" role="alert">{copyError}</p> : null}
+          </details>
         </div> : null}
         {preview?.recentBatches.length ? <div className="unit-barcode-recent">
           <strong>Недавние партии · повторная печать</strong>
