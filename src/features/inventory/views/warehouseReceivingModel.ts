@@ -16,6 +16,7 @@ export type ReceivePhysicalItem = (input: {
   destination: ReceivingDestination
   productName: string
   externalId: string
+  onBarcodePreparationReady?: (details: { variantId: number; source: 'warehouse' | 'boutique'; quantity: number }) => void
 }) => Promise<boolean>
 
 export type PendingPhysicalItem = {
