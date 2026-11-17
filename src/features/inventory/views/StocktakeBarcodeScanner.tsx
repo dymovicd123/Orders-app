@@ -81,7 +81,7 @@ export function StocktakeBarcodeScanner({
     onPendingRef.current?.(true)
     if (activeRef.current) setBusy(true)
     try {
-      while (queueRef.current.length && !disabledRef.current) {
+      while (queueRef.current.length && !disabledRef.current && activeRef.current) {
         const attempt = queueRef.current.shift()!
         try {
           const send = async () => {
