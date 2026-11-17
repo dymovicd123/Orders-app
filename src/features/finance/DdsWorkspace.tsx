@@ -47,8 +47,9 @@ function DdsDialog({title,description,children,onClose}:{
   </div>
 }
 
-function DdsTransactions({entries,isAdmin,saving,onReverse,short=false}:{
-  entries:DdsEntry[];isAdmin:boolean;saving:boolean;onReverse:(id:number)=>void;short?:boolean
+function DdsTransactions({entries,isAdmin,saving,onReverse,onEdit,short=false}:{
+  entries:DdsEntry[];isAdmin:boolean;saving:boolean;onReverse:(id:number)=>void;
+  onEdit:(entry:DdsEntry)=>void;short?:boolean
 }) {
   if(entries.length===0) return <div className="dds-empty">
     <strong>Пока нет операций</strong><span>После первой записи история появится здесь.</span>
@@ -72,11 +73,14 @@ function DdsTransactions({entries,isAdmin,saving,onReverse,short=false}:{
               <strong>{entry.comment}</strong>
             </div>}
             {Boolean(entry.reversed)&&<small className="dds-reversed">Исходная запись отменена</small>}
+            {Boolean(entry.editedAt)&&<small className="dds-edited">Исправлено · версия {entry.editVersion}</small>}
           </div>
           <div className="dds-transaction-side">
             <strong className={signed>=0?'is-plus':'is-minus'}>{signed>=0?'+':'−'}{ddsMoney(Math.abs(signed))}</strong>
-            {isAdmin&&(entry.kind==='funding'||entry.kind==='expense')&&!entry.reversed&&
-              <button type="button" className="dds-text-button" disabled={saving} onClick={()=>onReverse(entry.id)}>Отменить</button>}
+            {isAdmin&&(entry.kind==='funding'||entry.kind==='expense')&&!entry.reversed&&<div className="dds-transaction-controls">
+              <button type="button" className="dds-text-button" disabled={saving} onClick={()=>onEdit(entry)}>Изменить</button>
+              <button type="button" className="dds-text-button" disabled={saving} onClick={()=>onReverse(entry.id)}>Отменить</button>
+            </div>}
           </div>
         </div>
       })}
@@ -97,6 +101,16 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   const [funds,setFunds]=useState(freshFunds)
   const [reverseId,setReverseId]=useState<number|null>(null)
   const [reverseReason,setReverseReason]=useState('')
+  const [editEntry,setEditEntry]=useState<DdsEntry|null>(null)
+  const [editDraft,setEditDraft]=useState({date:'',amount:'',category:'',article:'',comment:'',reason:''})
+  const [historyEntries,setHistoryEntries]=useState<DdsEntry[]>([])
+  const [historyCursor,setHistoryCursor]=useState<{beforeDate:string;beforeId:number}|null>(null)
+  const [historyHasMore,setHistoryHasMore]=useState(false)
+  const [historyBusy,setHistoryBusy]=useState(false)
+  const [historyThroughDate,setHistoryThroughDate]=useState('')
+  const historyToken=useRef(0)
+  const historyLoadingRef=useRef(false)
+  const editRequestRef=useRef<{fingerprint:string;id:string}|null>(null)
   const readToken=useRef(0)
   const requestRef=useRef<{fingerprint:string;id:string}|null>(null)
   const savingRef=useRef(false)
@@ -116,7 +130,66 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   },[apiFetch])
   useEffect(()=>{void refresh(month);return()=>{readToken.current++}},[month,refresh])
 
+  const loadHistory=useCallback(async(reset:boolean,throughDate:string,cursor?:{beforeDate:string;beforeId:number}|null)=>{
+    if(historyLoadingRef.current&&!reset)return
+    const token=++historyToken.current
+    historyLoadingRef.current=true
+    setHistoryBusy(true)
+    try{
+      const q=new URLSearchParams()
+      if(throughDate)q.set('throughDate',throughDate)
+      if(!reset&&cursor){q.set('beforeDate',cursor.beforeDate);q.set('beforeId',String(cursor.beforeId))}
+      const response=await apiFetch('/api/dds/entries?'+q.toString())
+      const body=await response.json() as {ok:boolean;entries:DdsEntry[];hasMore:boolean;
+        nextCursor:{beforeDate:string;beforeId:number}|null;message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Не удалось загрузить историю ДДС.')
+      if(token===historyToken.current){
+        setHistoryEntries(previous=>reset?body.entries:[...previous,...body.entries.filter(row=>!previous.some(old=>old.id===row.id))])
+        setHistoryCursor(body.nextCursor)
+        setHistoryHasMore(body.hasMore)
+      }
+    }catch(cause){
+      if(token===historyToken.current)setError(cause instanceof Error?cause.message:'Не удалось загрузить историю ДДС.')
+    }finally{
+      if(token===historyToken.current){setHistoryBusy(false);historyLoadingRef.current=false}
+    }
+  },[apiFetch])
+  useEffect(()=>{void loadHistory(true,'');return()=>{historyToken.current++}},[loadHistory])
+  const startEdit=(entry:DdsEntry)=>{
+    setEditEntry(entry)
+    editRequestRef.current=null
+    setEditDraft({date:entry.businessDate,amount:String(entry.amount),category:entry.category,
+      article:entry.article,comment:entry.comment,reason:''})
+    setError('')
+  }
+  const closeEdit=()=>{if(!saving){setEditEntry(null);editRequestRef.current=null}}
+  const saveEdit=async(event:FormEvent)=>{
+    event.preventDefault()
+    if(!editEntry||savingRef.current||!canManage||!integerAmount(editDraft.amount)||editDraft.reason.trim().length<3)return
+    const payload={businessDate:editDraft.date,amount:Number(editDraft.amount),category:editDraft.category,
+      article:editDraft.article,comment:editDraft.comment.trim(),reason:editDraft.reason.trim(),
+      expectedVersion:editEntry.editVersion||0}
+    const fingerprint=editEntry.id+JSON.stringify(payload)
+    if(!editRequestRef.current||editRequestRef.current.fingerprint!==fingerprint)
+      editRequestRef.current={fingerprint,id:crypto.randomUUID()}
+    savingRef.current=true;setSaving(true);setError('');setNotice('')
+    try{
+      const response=await apiFetch('/api/dds/entries/'+editEntry.id,{method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...payload,requestId:editRequestRef.current.id})})
+      const body=await response.json() as {ok:boolean;message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Не удалось исправить запись.')
+      editRequestRef.current=null
+      setEditEntry(null)
+      await Promise.all([refresh(month),loadHistory(true,historyThroughDate)])
+      setNotice('Запись исправлена. Предыдущие значения сохранены в истории изменений.')
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось исправить запись.')}
+    finally{savingRef.current=false;setSaving(false)}
+  }
+
   const accurate=data?.month===month?data:null
+  const canManage=isAdmin||Boolean(accurate?.permissions?.canEdit)
+  const editCategory=accurate?.directory.find(group=>group.name===editDraft.category)
   const category=accurate?.directory.find(group=>group.name===expense.category&&group.active)
   const needsComment=expense.category.startsWith('Зарплата')||expense.article==='Прочее'
   const canSaveExpense=Boolean(expense.date&&integerAmount(expense.amount)&&category&&
@@ -136,7 +209,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
       const result=await response.json() as {ok:boolean;message?:string}
       if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось сохранить операцию.')
       requestRef.current=null
-      await refresh(month)
+      await Promise.all([refresh(month),loadHistory(true,historyThroughDate)])
       return true
     }catch(failure){
       setError(failure instanceof Error?failure.message:'Не удалось сохранить. Повторите действие.')
@@ -159,7 +232,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
   }
   async function saveFunds(event:FormEvent){
     event.preventDefault()
-    if(!isAdmin||!integerAmount(funds.amount)||!funds.date)return
+    if(!canManage||!integerAmount(funds.amount)||!funds.date)return
     const result=await post('/api/dds/funds',{
       businessDate:funds.date,amount:Number(funds.amount),comment:funds.comment.trim()
     })
@@ -170,7 +243,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     }
   }
   async function reverseEntry(){
-    if(!isAdmin||!reverseId||reverseReason.trim().length<3)return
+    if(!canManage||!reverseId||reverseReason.trim().length<3)return
     if(await post('/api/dds/entries/'+reverseId+'/reverse',{comment:reverseReason.trim()})){
       setReverseId(null);setReverseReason('');setNotice('Исправление сохранено в истории.')
     }
@@ -221,7 +294,7 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     <div className="dds-wallet">
       <div><span>Доступный остаток</span><strong>{data?ddsMoney(data.currentBalance):'—'}</strong>
         <small>Общие средства для расходов</small></div>
-      {isAdmin&&<button type="button" className="secondary dds-add-funds" onClick={()=>setView('funds')}>+ Пополнить баланс</button>}
+      {canManage&&<button type="button" className="secondary dds-add-funds" onClick={()=>setView('funds')}>+ Пополнить баланс</button>}
     </div>
 
     {error&&<div className="dds-alert is-error" role="alert">{error}</div>}
@@ -230,11 +303,11 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
     <div className="dds-switch" role="tablist" aria-label="Разделы ДДС">
       <button type="button" role="tab" aria-selected={view==='expenses'} className={view==='expenses'?'is-active':''}
         onClick={()=>setView('expenses')}>Расходы</button>
-      {isAdmin&&<button type="button" role="tab" aria-selected={view==='funds'} className={view==='funds'?'is-active':''}
+      {canManage&&<button type="button" role="tab" aria-selected={view==='funds'} className={view==='funds'?'is-active':''}
         onClick={()=>setView('funds')}>Пополнения</button>}
       <button type="button" role="tab" aria-selected={view==='report'} className={view==='report'?'is-active':''}
         onClick={()=>setView('report')}>Отчёт за месяц</button>
-      {isAdmin&&<button type="button" role="tab" aria-selected={view==='directory'} className={view==='directory'?'is-active':''}
+      {canManage&&<button type="button" role="tab" aria-selected={view==='directory'} className={view==='directory'?'is-active':''}
         onClick={()=>setView('directory')}>Справочник</button>}
     </div>
 
@@ -268,20 +341,24 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
 
       <section className="dds-section">
         <div className="dds-section-title">
-          <div><h3>Недавние операции</h3><p>Расходы и пополнения за выбранный месяц.</p></div>
+          <div><h3>История операций</h3><p>Последние записи по датам. Загружайте более ранние без ограничения одним месяцем.</p></div>
           <div className="dds-section-tools">
-            <input type="month" aria-label="Месяц операций" max={currentDay().slice(0,7)} value={month}
-              onChange={e=>{if(validMonth(e.target.value))setMonth(e.target.value)}}/>
+            <label className="dds-history-jump">Показать до даты<input type="date" aria-label="История до даты" max={currentDay()} value={historyThroughDate}
+              onChange={e=>{setHistoryThroughDate(e.target.value);void loadHistory(true,e.target.value)}}/></label>
             <button className="secondary compact" type="button" onClick={()=>setView('report')}>Весь отчёт</button>
           </div>
         </div>
-        {loading&&!accurate?<p className="dds-muted" role="status">Загружаю операции…</p>:
-          <DdsTransactions entries={transactions} isAdmin={isAdmin} saving={saving}
-            onReverse={id=>{setReverseId(id);setReverseReason('')}} short/>}
+        {historyBusy&&!historyEntries.length?<p className="dds-muted" role="status">Загружаю операции…</p>:
+          <DdsTransactions entries={historyEntries} isAdmin={canManage} saving={saving}
+            onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>}
+        {historyHasMore&&<button type="button" className="secondary compact dds-load-more" disabled={historyBusy||saving}
+          onClick={()=>void loadHistory(false,historyThroughDate,historyCursor)}>
+          {historyBusy?'Загружаю…':'Загрузить более ранние записи'}
+        </button>}
       </section>
     </>}
 
-    {isAdmin&&view==='funds'&&<div className="dds-funding-page">
+    {canManage&&view==='funds'&&<div className="dds-funding-page">
       <form className="dds-primary-form dds-funding-form" onSubmit={event=>void saveFunds(event)}>
         <div className="dds-section-title"><div>
           <h3>Пополнить баланс</h3>
@@ -312,11 +389,11 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
             onChange={e=>{if(validMonth(e.target.value))setMonth(e.target.value)}}/>
         </div>
         <DdsTransactions entries={transactions.filter(entry=>entry.kind==='funding'||entry.kind==='reversal_funding')}
-          isAdmin={isAdmin} saving={saving} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
+          isAdmin={canManage} saving={saving} onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
       </section>
     </div>}
 
-    {isAdmin&&view==='directory'&&
+    {canManage&&view==='directory'&&
       <DdsDirectoryPanel categories={accurate?.directory||[]} busy={saving||loading}
         onAddCategory={addDirectoryCategory} onAddArticle={addDirectoryArticle}
         onSetCategoryActive={changeDirectoryCategory} onSetArticleActive={changeDirectoryArticle}/>}
@@ -364,14 +441,47 @@ export function DdsWorkspace({apiFetch,isAdmin}:Props) {
         <section className="dds-section">
           <div className="dds-section-title"><div><h3>История операций</h3><p>Расходы, пополнения и исправления за {ddsMonthLabel(month)}.</p></div>
             <span className="dds-counter">{transactions.length} записей</span></div>
-          <DdsTransactions entries={transactions} isAdmin={isAdmin} saving={saving}
-            onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
+          <DdsTransactions entries={transactions} isAdmin={canManage} saving={saving}
+            onEdit={startEdit} onReverse={id=>{setReverseId(id);setReverseReason('')}}/>
           {transactions.length>=2000&&<p className="dds-warning">Отчёт содержит более 2000 записей. Выгрузка отключена, чтобы не выдать неполные данные.</p>}
         </section>
       </>}
     </div>}
 
-    {isAdmin&&reverseId!==null&&<DdsDialog title="Отменить запись?" description="Исходная запись останется в истории, остаток пересчитается автоматически." onClose={closeReversal}>
+    {canManage&&editEntry!==null&&<DdsDialog title="Изменить запись ДДС"
+      description="Сумма, дата и категория будут исправлены в учёте. Старые значения сохранятся в журнале."
+      onClose={closeEdit}>
+      <form className="dds-modal-form" onSubmit={event=>void saveEdit(event)}>
+        <div className="dds-modal-preview"><span>Запись №{editEntry.id} · {ddsKindLabel[editEntry.kind]}</span>
+          <strong>{ddsMoney(editEntry.amount)}</strong></div>
+        <label>Дата операции<input type="date" max={currentDay()} required value={editDraft.date}
+          onChange={e=>setEditDraft(v=>({...v,date:e.target.value}))}/></label>
+        <label>Сумма, ₸<input type="number" min="1" max="1000000000" step="1" required
+          value={editDraft.amount} onChange={e=>setEditDraft(v=>({...v,amount:e.target.value}))}/></label>
+        {editEntry.kind==='expense'&&<>
+          <label>Категория<select required value={editDraft.category}
+            onChange={e=>setEditDraft(v=>({...v,category:e.target.value,article:''}))}>
+            {accurate?.directory.filter(group=>group.active||group.name===editDraft.category).map(group=>
+              <option key={group.id} value={group.name}>{group.name}</option>)}</select></label>
+          <label>Статья<select required value={editDraft.article}
+            onChange={e=>setEditDraft(v=>({...v,article:e.target.value}))}>
+            <option value="">Выберите статью</option>
+            {editCategory?.articles.filter(article=>article.active||article.name===editDraft.article).map(article=>
+              <option key={article.id} value={article.name}>{article.name}</option>)}</select></label>
+        </>}
+        <label>Комментарий<input maxLength={500} value={editDraft.comment}
+          onChange={e=>setEditDraft(v=>({...v,comment:e.target.value}))}/></label>
+        <label>Причина исправления *<input required minLength={3} maxLength={500}
+          placeholder="Например: неверно указана сумма" value={editDraft.reason}
+          onChange={e=>setEditDraft(v=>({...v,reason:e.target.value}))}/></label>
+        <p className="dds-muted">Изменение даты переносит запись в соответствующий месяц отчёта. Исправление суммы пересчитывает баланс.</p>
+        <div className="dds-modal-actions"><button type="button" className="secondary" onClick={closeEdit}>Назад</button>
+          <button type="submit" className="primary" disabled={saving||!integerAmount(editDraft.amount)||editDraft.reason.trim().length<3}>
+            {saving?'Сохраняю…':'Сохранить исправление'}</button></div>
+      </form>
+    </DdsDialog>}
+
+    {canManage&&reverseId!==null&&<DdsDialog title="Отменить запись?" description="Исходная запись останется в истории, остаток пересчитается автоматически." onClose={closeReversal}>
       <div className="dds-modal-form">
         <label>Причина отмены<input autoFocus required minLength={3} maxLength={500} value={reverseReason}
           placeholder="Почему запись ошибочна?" onChange={e=>setReverseReason(e.target.value)}/></label>
