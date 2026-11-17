@@ -31,6 +31,8 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openStocktakeInlineColor'
   | 'openStocktakeInlineSize'
   | 'onStocktakeBarcodeScan'
+  | 'stocktakeScannerBusy'
+  | 'setStocktakeScannerBusy'
   | 'openStocktakeOrders'
   | 'openStocktakeReview'
   | 'persistStocktakeFact'
@@ -137,6 +139,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     openStocktakeInlineColor,
     openStocktakeInlineSize,
     onStocktakeBarcodeScan,
+    stocktakeScannerBusy,
+    setStocktakeScannerBusy,
     openStocktakeOrders,
     openStocktakeReview,
     persistStocktakeFact,
@@ -422,12 +426,13 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           source={stocktakeSession.source}
                           disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0}
                           onScanned={onStocktakeBarcodeScan}
+                          onPendingChange={setStocktakeScannerBusy}
                         /> : null}
 
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>
                           <div className="stocktake-sticky-progress-main"><strong>Посчитано {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled} — при завершении они сохранят системный остаток` : 'Все позиции заполнены. Следующий шаг — проверить результат.'}</span></div>
                           <div className="stocktake-sticky-progress-bar"><i style={{ width: `${stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0}%` }} /></div>
-                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? (stocktakeProgress.recount ? 'Сначала повторно пересчитайте конфликтные строки.' : 'Введите факт хотя бы для одной позиции.') : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
+                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeScannerBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? (stocktakeProgress.recount ? 'Сначала повторно пересчитайте конфликтные строки.' : 'Введите факт хотя бы для одной позиции.') : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
                         </div> : null}
     
                         {!stocktakeReviewMode ? (
