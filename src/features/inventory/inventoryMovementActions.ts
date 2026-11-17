@@ -154,7 +154,14 @@ export function createInventoryMovementActions({
   }
 
 
-  async function saveInventoryMovement(unitBarcodes: string[] = []) {
+  async function saveInventoryMovement(
+    unitBarcodes: string[] = [],
+    onArrivalBarcodeReady?: (receipt: {
+      operationId: string
+      source: 'warehouse' | 'boutique'
+      items: Array<{ variantId: number; productName: string; variantLabel: string; quantity: number }>
+    }) => void,
+  ) {
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
     setInventoryMovementError('')
@@ -310,6 +317,22 @@ export function createInventoryMovementActions({
         const arrivalLabel = arrivalReceipt?.items?.length
           ? [...new Set(arrivalReceipt.items.map((item) => item.productName).filter(Boolean))].join(', ')
           : ''
+        if (inventoryDraft.movementType === 'arrival' && verifiedInStockList && arrivalReceipt
+          && (arrivalReceipt.source === 'warehouse' || arrivalReceipt.source === 'boutique')
+          && onArrivalBarcodeReady && !result.warnings?.length) {
+          const labelItems = arrivalReceipt.items
+            .filter(item => Number.isSafeInteger(item.variantId) && item.variantId > 0
+              && Number.isSafeInteger(item.received) && item.received > 0)
+            .map(item => ({
+              variantId: item.variantId,
+              productName: item.productName,
+              variantLabel: [item.color, item.size].filter(Boolean).join(' · ') || 'Стандартный вариант',
+              quantity: item.received,
+            }))
+          if (labelItems.length === arrivalReceipt.items.length && labelItems.length) {
+            onArrivalBarcodeReady({ operationId: result.operationId || '', source: arrivalReceipt.source, items: labelItems })
+          }
+        }
         const arrivalVerificationWarning = inventoryDraft.movementType === 'arrival'
           && !verifiedInStockList
           ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
