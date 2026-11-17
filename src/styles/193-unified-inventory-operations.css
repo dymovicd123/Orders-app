@@ -215,3 +215,18 @@
 .stocktake-reused-operations .stocktake-counting-rule{
   border-inline-start:3px solid var(--w12-accent);
 }
+
+.operation-barcode-area{display:grid;gap:10px;padding:13px 15px;margin:12px 0;border:1px solid var(--line,#dce3ea);border-radius:12px;background:var(--card-bg,#fff)}
+.operation-barcode-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.operation-barcode-head strong{font-size:15px}
+.operation-barcode-head span,.operation-barcode-area small{font-size:12px;color:var(--muted,#677386);line-height:1.45}
+.operation-barcode-form{display:flex;gap:8px;align-items:center}
+.operation-barcode-form input{flex:1;min-width:0;min-height:40px}
+.operation-barcode-form button{flex:0 0 auto}
+.operation-barcode-selected{display:grid;gap:5px;max-height:184px;overflow:auto}
+.operation-barcode-item{display:flex;align-items:center;gap:9px;justify-content:space-between;padding:6px 9px;border:1px solid var(--line,#dce3ea);border-radius:7px}
+.operation-barcode-item span{display:grid;gap:3px;min-width:0}
+.operation-barcode-item span strong{font-size:12px}
+.operation-barcode-item small{font-family:monospace;font-size:11px;overflow-wrap:anywhere}
+.operation-barcode-review{padding:10px 13px;margin:10px 0;border-radius:9px;border:1px solid var(--line,#dce3ea);font-size:13px}
+@media(max-width:540px){.operation-barcode-head{align-items:start}.operation-barcode-form{display:grid}.operation-barcode-form button{width:100%}}

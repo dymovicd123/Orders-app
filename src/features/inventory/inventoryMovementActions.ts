@@ -154,7 +154,7 @@ export function createInventoryMovementActions({
   }
 
 
-  async function saveInventoryMovement() {
+  async function saveInventoryMovement(unitBarcodes: string[] = []) {
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
     setInventoryMovementError('')
@@ -218,6 +218,9 @@ export function createInventoryMovementActions({
         }
       }
 
+      if (unitBarcodes.length && !['transfer','writeoff'].includes(inventoryDraft.movementType)) {
+        throw new Error('Сканирование вещей поддерживается только для перемещения и списания.')
+      }
       const isTransfer = inventoryDraft.movementType === 'transfer'
       const isWriteoff = inventoryDraft.movementType === 'writeoff'
       type InventoryMovementSaveResponse = {
@@ -261,6 +264,7 @@ export function createInventoryMovementActions({
             comment: inventoryDraft.comment,
             items: itemsOverride,
             stockConfirmations,
+            unitBarcodes,
           } : {
             requestId: inventoryManualRequestId,
             inventorySource: inventoryDraft.source,
@@ -268,6 +272,7 @@ export function createInventoryMovementActions({
             comment: inventoryDraft.comment,
             items: itemsOverride,
             stockConfirmations,
+            unitBarcodes,
           }),
         })
         const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
@@ -396,6 +401,7 @@ export function createInventoryMovementActions({
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
       await finishMovement(result)
+      return true
     } catch (err) {
       // Keep the original draft and review visible so users can inspect the same
       // variants instead of starting over. A failed response is not proof that

@@ -1253,7 +1253,7 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
+        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown; unitBarcodes?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
         // Temporary warehouse access for authenticated managers. Only these named
         // operations are opened; system-only movement types remain admin-only.
@@ -1309,7 +1309,7 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
+        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown; unitBarcodes?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         let result;
         try {

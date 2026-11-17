@@ -8,6 +8,7 @@ import type { InventoryItemInput, InventoryMovementKind, SourceType } from '../c
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { normalizeCatalogProductIdentityKey } from './catalog.ts'
 import { findInventoryMovementMatch, listInventory } from './inventory-read.ts'
+import { normalizeOutboundUnitBarcodes, prepareOutboundBarcodeStatements } from './inventory-outbound-barcode.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 import type { InventoryResolvedItem } from './order-core.ts'
 import { inventoryMergeKey, inventoryWhereKey, mergeInventoryItems, normalizeInventoryItem, normalizeOrderItems } from './order-core.ts'
@@ -26,12 +27,16 @@ export * from './inventory-arrival-materialization.ts';
 
 export async function applyInventoryMovement(
   db: D1Database,
-  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
+  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown; unitBarcodes?: unknown },
   returnInventory = true,
   actor = '',
 ) {
   const inventorySource = normalizeSourceType(input.inventorySource);
   const movementType = cleanText(input.movementType).toLowerCase() as InventoryMovementKind;
+  const scannedBarcodes = normalizeOutboundUnitBarcodes(input.unitBarcodes);
+  if (scannedBarcodes.length && movementType !== 'writeoff') {
+    throw new Error('Индивидуальное сканирование поддерживается только для списания или перемещения.');
+  }
   const comment = cleanText(input.comment);
   const requestId = cleanText(input.requestId) || `manual-${crypto.randomUUID()}`;
   const normalizedItems = Array.isArray(input.items) ? input.items.map(raw => ({
@@ -56,7 +61,8 @@ export async function applyInventoryMovement(
   if (!allowed.has(movementType)) throw new Error('Unsupported movement type.');
   if (items.length > 100) throw new Error('За одну ручную операцию можно сохранить не больше 100 позиций. Разделите слишком большую партию.');
 
-  const requestFingerprint = inventoryManualRequestFingerprint(inventorySource, movementType, comment, items);
+  const requestFingerprint = inventoryManualRequestFingerprint(inventorySource, movementType, comment, items)
+    + (scannedBarcodes.length ? '|barcode:' + JSON.stringify(scannedBarcodes) : '');
   const existingOperation = await db.prepare(
     `SELECT o.operation_id, o.operation_type, o.source_type, o.status, o.item_count, o.total_quantity,
             f.request_fingerprint
@@ -810,6 +816,16 @@ export async function applyInventoryMovement(
     }
   }
 
+  if (scannedBarcodes.length) {
+    const selectedByVariant = new Map(prepared.map(row => [Math.max(0, toInt(row.item.variantId, 0)), Math.max(0, -row.delta)]));
+    const scans = await prepareOutboundBarcodeStatements(db, {
+      tokens: scannedBarcodes, mode: 'writeoff', fromSource: inventorySource,
+      toSource: 'none', operationId: requestId, maximumByVariant: selectedByVariant,
+      actor, at: now,
+    });
+    statements.push(...scans);
+  }
+
   try {
     await db.batch(statements);
     arrivalMutationCommitted = movementType === 'arrival' || movementType === 'manual_set';
@@ -920,7 +936,7 @@ export async function assertNoActiveStocktakeForTransfer(db: D1Database, fromSou
 
 export async function applyInventoryTransfer(
   db: D1Database,
-  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
+  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown; unitBarcodes?: unknown },
   actor = '',
   returnInventory = true,
 ) {
@@ -928,13 +944,15 @@ export async function applyInventoryTransfer(
   const toSource = normalizeSourceType(input.toSource || (fromSource === 'warehouse' ? 'boutique' : 'warehouse'));
   const comment = cleanText(input.comment);
   const requestId = cleanText(input.requestId) || `transfer-client-${crypto.randomUUID()}`;
+  const scannedBarcodes = normalizeOutboundUnitBarcodes(input.unitBarcodes);
   const rawItems = Array.isArray(input.items) ? input.items : [];
 
   if (fromSource === toSource) throw new Error('Точка отправления и назначения должны отличаться.');
   if (!rawItems.length) throw new Error('Добавьте хотя бы одну позицию в перемещение.');
   if (rawItems.length > 60) throw new Error('За одно перемещение можно перенести не больше 60 строк. Разделите слишком большую партию на две операции.');
 
-  const requestFingerprint = inventoryTransferRequestFingerprint(fromSource, toSource, comment, rawItems);
+  const requestFingerprint = inventoryTransferRequestFingerprint(fromSource, toSource, comment, rawItems)
+    + (scannedBarcodes.length ? '|barcode:' + JSON.stringify(scannedBarcodes) : '');
   const duplicateResponse = async (document: Record<string, unknown>) => {
     if (normalizeSourceType(document.from_source) !== fromSource || normalizeSourceType(document.to_source) !== toSource) {
       throw new Error('Этот идентификатор перемещения уже использован для другого направления. Обновите страницу и повторите действие.');
@@ -1333,6 +1351,13 @@ export async function applyInventoryTransfer(
      WHERE x.move_qty > x.source_current`
   ).bind(...transferRowBindings, requestId, fromSource, fromSource, externalId, cleanText(actor) || null, now, now);
 
+  const transferBarcodeStatements = scannedBarcodes.length
+    ? await prepareOutboundBarcodeStatements(db, {
+      tokens: scannedBarcodes, mode: 'transfer', fromSource, toSource,
+      operationId: requestId,
+      maximumByVariant: new Map(prepared.map(row => [row.variantId, row.quantity])),
+      actor, at: now,
+    }) : [];
   try {
     await db.batch([
       ensureSourceStock,
@@ -1346,6 +1371,7 @@ export async function applyInventoryTransfer(
       transferOutMovements,
       transferInMovements,
       insertItems,
+      ...transferBarcodeStatements,
     ]);
   } catch (error) {
     // Two identical retries may race before either request sees the document. The UNIQUE request_id

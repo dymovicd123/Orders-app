@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
@@ -26,7 +26,7 @@ type Props = {
   onSource: (source: 'warehouse' | 'boutique') => void
   onReason: (value: string) => void
   onQuantity: (row: Row, value: string) => void
-  onSave: () => Promise<unknown>; onClear: () => void; onRefresh: () => void
+  onSave: (unitBarcodes?: string[]) => Promise<unknown>; onClear: () => void; onRefresh: () => void
 }
 const names = {
   arrival: { title: 'Приход', action: 'Оформить приход', input: 'Пришло', detail: 'Введите количество поступивших вещей: оно прибавится к остатку.' },
@@ -93,6 +93,16 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }, [current, source, mode])
   const [inline, setInline] = useState<{ positionKey:string; color:string; kind:'size'|'color'; size:string; quantity:string } | null>(null)
   const [notice, setNotice] = useState('')
+  const [scanCode, setScanCode] = useState('')
+  type ScannedUnit = { code: string; unitId: string; variantId: number; name: string }
+  const [scannedUnits, setScannedUnits] = useState<ScannedUnit[]>([])
+  const [scanBusy, setScanBusy] = useState(false)
+  const [scanError, setScanError] = useState('')
+  const [scanNotice, setScanNotice] = useState('')
+  const scanRunningRef = useRef(false)
+  const scansRef = useRef<ScannedUnit[]>([])
+  const clearScans = () => { scansRef.current=[];setScannedUnits([]);setScanCode('');setScanNotice('');setScanError('') }
+  useEffect(() => { clearScans() }, [mode, source, targetSource])
   const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
     .filter((g): g is Group => Boolean(g)), [selected, groups])
   const activeGroup = chosen.find(g => g.key === current) || chosen[0] || null
@@ -135,7 +145,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }
   async function reset() {
     if(changed && !(await p.askActionConfirmation('Очистить все несохранённые количества?')))return
-    p.onClear();setStage('select');setSelected([]);setCurrent('');setProductSearch('');setStartSearch('');setNewVariant(false);setNotice('')
+    p.onClear();setStage('select');setSelected([]);setCurrent('');setProductSearch('');setStartSearch('');setNewVariant(false);setNotice('');clearScans()
   }
   function addInlineVariant(sample:Row) {
     if(!inline)return
@@ -187,7 +197,48 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     setFirstVariant(old => ({ ...old, color: '', size: '', quantity: '' }))
     setNotice('')
   }
+  async function scanOperationUnit() {
+    const code = scanCode.trim().toUpperCase()
+    if (!code || scanRunningRef.current || busy || loading || error || stage==='review') return
+    scanRunningRef.current=true;setScanBusy(true);setScanError('');setScanNotice('')
+    try {
+      if (!code.startsWith('OCU1-')) throw new Error('Для операции нужен индивидуальный код физической вещи, не общий SKU.')
+      const response=await fetch('/api/barcodes/lookup?code='+encodeURIComponent(code),{
+        method:'GET',credentials:'same-origin',cache:'no-store',
+      })
+      const data=await response.json() as {
+        ok?:boolean;message?:string;barcodeType?:string;unitId?:string;variantId?:number;
+        productName?:string;source?:string;status?:string;active?:boolean;
+      }
+      if (!response.ok||!data.ok||data.barcodeType!=='unit'||!data.active||!data.unitId) {
+        throw new Error(data.message||'Индивидуальный код недействителен.')
+      }
+      if (data.source!==source||!['prepared','on_hand'].includes(data.status||'')) {
+        throw new Error('Вещь не числится в исходной точке или уже выбыла.')
+      }
+      if (scansRef.current.some(unit=>unit.unitId===data.unitId||unit.code===code)) {
+        setScanNotice('Эта вещь уже отсканирована. Повторный код не добавлен.');return
+      }
+      if (scansRef.current.length>=60) throw new Error('Не больше 60 сканированных вещей за операцию.')
+      const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===Number(data.variantId)))
+      const row=group?.rows.find(row=>Number(row.variantId)===Number(data.variantId))
+      if (!group||!row) throw new Error('Комбинации нет в остатках выбранной точки. Обновите список.')
+      const scannedQty=scansRef.current.filter(unit=>unit.variantId===Number(data.variantId)).length
+      const desired=Math.max(int(draftMap.get(String(data.variantId))?.quantity),scannedQty)+1
+      p.onQuantity(row,String(desired))
+      const next=[...scansRef.current,{code,unitId:data.unitId,variantId:Number(data.variantId),name:data.productName||row.productName}]
+      scansRef.current=next;setScannedUnits(next)
+      setSelected(current=>current.includes(group.key)?current:[...current,group.key])
+      setCurrent(group.key);setStage('quantities')
+      setScanNotice('Вещь добавлена в количество. Подтвердите операцию для проведения.')
+    } catch(cause) { setScanError(cause instanceof Error?cause.message:'Не удалось прочитать код.') }
+    finally { setScanCode('');setScanBusy(false);scanRunningRef.current=false }
+  }
+
   function review() {
+    const mismatch=scannedUnits.find(unit=>int(draftMap.get(String(unit.variantId))?.quantity) <
+      scannedUnits.filter(row=>row.variantId===unit.variantId).length)
+    if(mismatch){setNotice('Количество меньше числа отсканированных вещей. Исправьте количество или уберите лишнюю метку.');return}
     if(!changed){setNotice('Введите количество хотя бы в одной ячейке.');return}
     const limit=mode==='transfer'?60:100
     if(changed>limit){setNotice('В одну '+(mode==='transfer'?'перемещение':'операцию')+' допускается не более '+limit+' вариантов. Разделите список.');return}
@@ -210,6 +261,30 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       </div>
     </div>
 
+    {(mode==='transfer'||mode==='writeoff') && stage!=='review' && <section className="operation-barcode-area" aria-label="Сканирование индивидуальных вещей">
+      <div className="operation-barcode-head"><strong>Сканировать вещи</strong><span>Индивидуальные этикетки · {scannedUnits.length} шт.</span></div>
+      <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
+        <input aria-label="Индивидуальный штрихкод" value={scanCode} onChange={event=>setScanCode(event.target.value)}
+          autoComplete="off" spellCheck={false} placeholder="Сканируйте этикетку" disabled={scanBusy||busy||loading}/>
+        <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||!scanCode.trim()}>
+          {scanBusy?'Ищу…':'Добавить вещь'}
+        </button>
+      </form>
+      {scannedUnits.length>0 && <div className="operation-barcode-selected">{scannedUnits.map(unit=>
+        <div key={unit.unitId} className="operation-barcode-item">
+          <span><strong>{unit.name}</strong><small>{unit.code}</small></span>
+          <button type="button" className="ghost compact" disabled={busy} onClick={()=>{
+            const next=scansRef.current.filter(item=>item.unitId!==unit.unitId)
+            scansRef.current=next;setScannedUnits(next)
+            const row=groups.flatMap(g=>g.rows).find(row=>Number(row.variantId)===unit.variantId)
+            if(row)p.onQuantity(row,String(Math.max(0,int(draftMap.get(String(unit.variantId))?.quantity)-1)))
+            setScanNotice('Код убран из операции.')
+          }}>Убрать</button>
+        </div>)}</div>}
+      <small>Сканированные вещи входят в указанное количество. Остальные можно указать вручную. Никаких изменений остатков до подтверждения.</small>
+      {scanError&&<div className="stocktake-barcode-error" role="alert">{scanError}</div>}
+      {scanNotice&&<div className="stocktake-barcode-notice" role="status">{scanNotice}</div>}
+    </section>}
     <div className="w7-operation-location">
       <div><strong>{mode==='transfer'?'Откуда → куда':'Точка операции'}</strong>
         <small>{mode==='transfer'?'Числа будут вычтены из первой точки и добавлены во вторую.':'Можно вернуться к другой точке без потери уже введённых чисел.'}</small></div>
@@ -504,7 +579,10 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         <button className="secondary compact stocktake-review-back" type="button" disabled={busy}
           onClick={()=>setStage(chosen.length?'quantities':'select')}>← Исправить</button>
       </section>
-      <div className="stocktake-e-review-list">
+      {scannedUnits.length>0&&<div className="operation-barcode-review">
+         Индивидуальных вещей: {scannedUnits.length}. Они входят в указанное количество и не списываются дважды.
+       </div>}
+       <div className="stocktake-e-review-list">
         {entries.map(({row,quantity})=>{
           const before=int(row.quantity),after=mode==='transfer'?Math.max(0,before-quantity):previewQuantity(mode,before,quantity)
           const reserved=int(row.reservedQuantity)
@@ -538,7 +616,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         </button>
       </div>}
       <div className="stocktake-e-review-actions"><button className="primary stocktake-finish-button" type="button"
-        disabled={busy||!ready||(mode==='transfer'&&Boolean(blockedTransferSource))} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button>
+        disabled={busy||!ready||(mode==='transfer'&&Boolean(blockedTransferSource))}
+         onClick={()=>void (async()=>{
+           const saved=await p.onSave(scannedUnits.map(unit=>unit.code))
+           if(saved===true){clearScans();setStage('select');setSelected([]);setCurrent('')}
+         })()}>{busy?'Сохраняю…':names[mode].action}</button>
         <button className="secondary" type="button" disabled={busy} onClick={()=>setStage(chosen.length?'quantities':'select')}>Вернуться к вводу</button></div>
     </>)}
   </div>
