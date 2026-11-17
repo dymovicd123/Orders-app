@@ -14,6 +14,11 @@ export type ReturnV2LineAction =
 export type ReturnV2LineEvidence = {
   orderItemId: number
   productName: string
+  gender: string
+  color: string
+  material: string
+  length: string
+  size: string
   sourceType: string
   status: string
   proposedAction: ReturnV2LineAction
@@ -42,7 +47,9 @@ type OrderRow = {
   archived_at:string|null
 }
 type ItemRow = {
-  id:number;product_name_snapshot:string;quantity:number;unit_price:number
+  id:number;product_name_snapshot:string;gender_snapshot:string|null;color_snapshot:string|null
+  material_snapshot:string|null;length_snapshot:string|null;size_snapshot:string|null
+  quantity:number;unit_price:number
   line_total:number;stock_writeoff_status:string|null;source_type:string
   is_workshop:number;variant_id:number|null;prior_issued_evidence:number
   old_returned_quantity:number;exchanged_old_qty:number;
@@ -86,7 +93,9 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
   ).bind(rawOrderId).first<OrderRow>()
   if(!order)throw new ReturnV2LineEvidenceConflict('Заказ не найден.')
   const [itemResults,reservationResults,dispatchResults,workshopTaskResults,unsafeExchange]=await Promise.all([
-    db.prepare(`SELECT oi.id,oi.product_name_snapshot,oi.quantity,oi.unit_price,oi.line_total,
+    db.prepare(`SELECT oi.id,oi.product_name_snapshot,
+       oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+       oi.quantity,oi.unit_price,oi.line_total,
        oi.stock_writeoff_status,oi.source_type,oi.is_workshop,oi.variant_id,
        EXISTS(
         SELECT 1 FROM inventory_reservations r
@@ -348,6 +357,9 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     const requiresReview=action==='needs_review'
     lines.push({
       orderItemId:id,productName:String(item.product_name_snapshot||'Товар'),
+      gender:String(item.gender_snapshot||''),color:String(item.color_snapshot||''),
+      material:String(item.material_snapshot||''),length:String(item.length_snapshot||''),
+      size:String(item.size_snapshot||''),
       sourceType:isWorkshop?'workshop':source,status:labelFor(action),
       proposedAction:action,reasonCode,message,
       contractQuantity,alreadyReturnedWithoutContractReduction:oldReturned,
