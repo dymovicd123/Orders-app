@@ -81,3 +81,10 @@
 .stocktake-outcome-details{border-top:1px solid var(--border-color,#e4e7ec);padding-top:12px}.stocktake-outcome-details summary{cursor:pointer;font-weight:700}.stocktake-outcome-change-list{display:grid;gap:8px;margin-top:10px}.stocktake-outcome-change-list>div{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-color,#eef0f2)}.stocktake-outcome-change-list span{display:grid;gap:2px}.stocktake-outcome-change-list small{color:var(--text-muted,#667085)}.stocktake-outcome-change-list b{white-space:nowrap}.stocktake-outcome-change-list p{margin:4px 0 0;color:var(--text-muted,#667085)}
 .stocktake-outcome-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:600px){.stocktake-outcome-card{padding:14px}.stocktake-outcome-metrics{grid-template-columns:1fr}.stocktake-outcome-actions{display:grid;grid-template-columns:1fr}.stocktake-outcome-actions button{width:100%}.stocktake-outcome-change-list>div{align-items:flex-start}}
+
+.stocktake-outcome-label-offer{display:grid;gap:7px;padding:16px;border:1px solid var(--border-color,#dfe3e8);border-radius:12px;background:var(--surface-soft,#f7f8fa)}
+.stocktake-outcome-label-offer h4{margin:0;font-size:1rem}
+.stocktake-outcome-label-offer p{margin:0;color:var(--text-muted,#667085);line-height:1.5}
+.stocktake-outcome-label-offer small{color:var(--text-muted,#667085)}
+.stocktake-outcome-label-print{min-width:0;display:grid;gap:12px;border-top:1px solid var(--border-color,#e4e7ec);padding-top:14px}
+.stocktake-outcome-label-print .barcode-workspace{min-width:0}
