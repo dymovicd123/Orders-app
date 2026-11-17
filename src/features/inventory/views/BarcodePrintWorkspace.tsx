@@ -9,7 +9,7 @@ type StockSnapshots = Record<Source, InventoryResponse | null>
 type Props = {
   catalog: CatalogResponse | null
   stock: StockSnapshots
-  onReload: () => Promise<boolean>
+  onReload: () => Promise<{ catalog: CatalogResponse; warehouse: InventoryResponse; boutique: InventoryResponse } | null>
 }
 
 type PrintItem = { variant: CatalogVariantRecord; quantity: number }
@@ -203,8 +203,24 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
     setError('')
     setNotice('')
     try {
+      const current = await onReload()
+      if (!current) throw new Error('Не удалось обновить остатки перед печатью. Попробуйте ещё раз.')
       const verified: VerifiedPrintItem[] = []
       for (const item of selectedPrint) {
+        const latestVariant = current.catalog.variants.find(variant => variant.id === item.variant.id)
+        const latestProduct = current.catalog.products.find(product => product.id === item.variant.productId)
+        if (!latestVariant?.isActive || !latestProduct?.isActive ||
+          displayLabel(latestVariant) !== displayLabel(item.variant)) {
+          throw new Error('Характеристики товара изменились. Список обновлён — проверьте выбор перед печатью.')
+        }
+        const physical = (['warehouse', 'boutique'] as const).reduce((sum, source) => {
+          const matches = current[source].items.filter(row => row.variantId === item.variant.id)
+          if (matches.length > 1) throw new Error('Для варианта обнаружены повторные строки остатка. Печать остановлена.')
+          return sum + stockNumber(matches[0]?.quantity)
+        }, 0)
+        if (item.quantity > physical) {
+          throw new Error('Остаток изменился. Для одного из вариантов нужно уменьшить количество этикеток.')
+        }
         const result = await fetch('/api/barcodes/sku/' + encodeURIComponent(String(item.variant.id)), {
           method: 'GET', credentials: 'same-origin', cache: 'no-store',
         })
@@ -216,9 +232,9 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
         if (!result.ok || !record.ok || !record.active || record.physicalUnit !== false ||
           record.variantId !== item.variant.id ||
           !record.barcode || record.barcode !== skuBarcodeForVariantId(item.variant.id) ||
-          record.color !== item.variant.color || record.gender !== item.variant.gender ||
-          record.material !== item.variant.material || record.length !== item.variant.length ||
-          record.size !== item.variant.sizeLabel) {
+          textOf(record.color) !== textOf(item.variant.color) || textOf(record.gender) !== textOf(item.variant.gender) ||
+          textOf(record.material) !== textOf(item.variant.material) || textOf(record.length) !== textOf(item.variant.length) ||
+          textOf(record.size) !== textOf(item.variant.sizeLabel)) {
           throw new Error('Один из вариантов изменён или удалён. Обновите список перед печатью.')
         }
         verified.push({ ...item, barcode: record.barcode, productName: record.productName || item.variant.productName })
@@ -318,7 +334,7 @@ export function BarcodePrintWorkspace({ catalog, stock, onReload }: Props) {
                     <span className="sr-only">Этикеток для {selected.product.name} · {displayLabel(variant)}</span>
                     <input type="number" min="0" max={MAX_LABELS} step="1"
                       inputMode="numeric" value={counts[variant.id] || 0}
-                      onChange={event => updateCount(variant.id, event.target.value)}
+                      onChange={event => updateCount(variant.id, event.target.value)} disabled={printing}
                       aria-label={'Количество этикеток: ' + selected.product.name + ' · ' + displayLabel(variant)}/>
                     <small>копий</small>
                   </label>
