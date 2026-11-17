@@ -37,6 +37,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     saveReturn,
     sectorStyle,
     setOrderPanel,
+    canManageWarehouse,
+    openWarehouseReceiving,
     setReturnDraft,
     setReturnHistoryFilters,
     SmartPickerInput,
@@ -63,10 +65,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
       ? 'Бутик'
       : 'Без возврата в остатки'
 
-  const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
   const [v2Navigation,setV2Navigation]=useState<{orderId:number;mode:ReturnV2UiMode}>({orderId:0,mode:'checking'})
   const selectedId=Number(returnSelectedOrder?.id||0)
-  const [activeView,setActiveView]=useState<'form'|'intake'|'history'>(selectedId?'form':'intake')
+  const [activeView,setActiveView]=useState<'form'|'history'>('form')
   const [savedReturn,setSavedReturn]=useState<{returnId:number;cashRefund:number;remainingSale:number;intakePending:boolean}|null>(null)
   useEffect(()=>{
     if(!selectedId)return
@@ -122,15 +123,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
     return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
   }
-  const pendingReturnIntake = returnPendingInbox.rows.flatMap((entry: any) => (
-    entry.operationType === 'order_return' && entry.status !== 'cancelled'
-      ? (entry.items || [])
-          .filter((item: any) => item.physicalTracking && !item.physicalReceivedAt)
-          .map((item: any) => ({ entry, item }))
-      : []
-  ))
-  const loadedPendingReturnQuantity = pendingReturnIntake.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.item.quantity || 0)), 0)
-
   const returnSourceLabel = (item: any) => item.sourceType === 'workshop'
     ? 'Цех'
     : item.sourceType === 'boutique'
@@ -183,16 +175,13 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     <article className="card wide sector-orders" id="order-returns" style={{ ...sectorStyle('orders'), ...orderPanelStyle('returns') }}>
               
               <div className="card-label">Возвраты</div>
-              <div className="card-meta">Оформление возврата, получение товаров и журнал операций доступны отдельно.</div>
+              <div className="card-meta">Оформление возврата и история операций остаются здесь. Физическая приёмка — в разделе «Склад → Приёмка товаров».</div>
               <div className="return-workspace-tabs" role="tablist" aria-label="Разделы возвратов">
                 <button type="button" role="tab" aria-selected={activeView==='form'}
                   aria-controls="return-workspace-form" className={activeView==='form'?'is-active':''}
                   onClick={()=>{setActiveView('form');setSavedReturn(null)}}>
                   Оформление {selectedId?<>· заказ №{returnSelectedOrder?.external_id||selectedId}</>:null}
                 </button>
-                <button type="button" role="tab" aria-selected={activeView==='intake'}
-                  aria-controls="return-workspace-intake" className={activeView==='intake'?'is-active':''}
-                  onClick={()=>setActiveView('intake')}>Приёмка товаров <span>{returnPendingInbox.pendingQuantity||0}</span></button>
                 <button type="button" role="tab" aria-selected={activeView==='history'}
                   aria-controls="return-workspace-history" className={activeView==='history'?'is-active':''}
                   onClick={()=>setActiveView('history')}>История возвратов</button>
@@ -200,91 +189,14 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
               {savedReturn?<div className="return-workspace-success" role="status">
                 <strong>Возврат №{savedReturn.returnId} проведён. Форма закрыта.</strong>
                 <span>Клиенту выплачено {formatMoney(savedReturn.cashRefund)} ₸. В покупке осталось {formatMoney(savedReturn.remainingSale)} ₸.</span>
-                {savedReturn.intakePending?<span>Товары, которые ещё не получили, находятся во вкладке «Приёмка товаров».</span>:null}
+                {savedReturn.intakePending?<span>Ожидающие получения товары находятся в разделе «Склад → Приёмка товаров → Возвраты».</span>:null}
               </div>:null}
-              {activeView==='intake'?<section id="return-workspace-intake" role="tabpanel" className="return-workspace-panel">
-                <div className="return-workspace-panel-head"><h3>Ожидают приёмки</h3>
-                  <p>Подтверждайте получение только после фактического поступления вещи. До приёмки остаток не увеличивается.</p>
-                </div>
-              {returnPendingInbox.error ? <p className="history-load-state is-error" role="alert">{returnPendingInbox.error} <button type="button" className="secondary compact" onClick={() => void loadReturnPendingInbox()}>Повторить</button></p> : null}
-              {returnPendingInbox.busy && !returnPendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
-              {Number(returnPendingInbox.pendingQuantity || 0) > 0 ? (
-                <section className="intake-queue" aria-label="Товары, ожидающие приёмки по возвратам">
-                  <div className="intake-queue-head">
-                    <div>
-                      <span className="intake-queue-kicker">Нужно принять</span>
-                      <h3>Товары едут обратно</h3>
-                      <p>Здесь только товары, которые ещё ожидают получения. После фактического поступления выберите место хранения и подтвердите приёмку.</p>
-                    </div>
-                    <strong className="intake-queue-count">{returnPendingInbox.pendingQuantity} шт.</strong>
-                  </div>
-                  {pendingReturnIntake.length ? (
-                    <div className="intake-queue-list">
-                      {pendingReturnIntake.map(({ entry, item }: any) => {
-                        const receiptKey = `return:${entry.id}:${item.id}`
-                        return (
-                          <div className="intake-queue-row" key={receiptKey}>
-                            <div className="intake-queue-item">
-                              <div className="intake-queue-product-head">
-                                <strong>{item.productName} × {item.quantity}</strong>
-                                <span className="intake-queue-operation">Возврат #{entry.id}</span>
-                              </div>
-                              <div className="intake-queue-context">
-                                <div><span>Заказ</span><strong>{entry.externalId}</strong></div>
-                                <div><span>Клиент</span><strong>{entry.customer || 'Не указан'}</strong></div>
-                                <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
-                                <div><span>Дата возврата</span><strong>{entry.returnDate || 'Не указана'}</strong></div>
-                                {entry.city ? <div><span>Город</span><strong>{entry.city}</strong></div> : null}
-                              </div>
-                              <small className="intake-queue-characteristics">{formatReturnItemCharacteristics(item)}</small>
-                            </div>
-                            <label className="intake-queue-destination">
-                              <span>Куда принять</span>
-                              <select
-                                value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}
-                                onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
-                                disabled={returnBusy}
-                              >
-                                <option value="warehouse">Склад</option>
-                                <option value="boutique">Бутик</option>
-                                <option value="no_stock">Не добавлять в остаток</option>
-                              </select>
-                            </label>
-                            <button
-                              className="primary intake-queue-action"
-                              type="button"
-                              disabled={returnBusy}
-                              onClick={() => void receiveReturnedItemAction({
-                                operationType: 'return',
-                                operationId: entry.id,
-                                operationItemId: item.id,
-                                destination: receiptDestinations[receiptKey] || defaultReturnDestination(item),
-                                productName: item.productName,
-                                externalId: entry.externalId,
-                              })}
-                            >
-                              Принять товар
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="intake-queue-missing">
-                      <span>Если нужного товара нет в списке, загрузите следующую страницу.</span>
-                      <button className="secondary compact" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
-                    </div>
-                  )}
-                  {returnPendingInbox.hasMore && loadedPendingReturnQuantity < Number(returnPendingInbox.pendingQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Показать ещё ожидающие</button>
-                  ) : null}
-                </section>
-              ) : null}
-              {!returnPendingInbox.busy && !returnPendingInbox.error && !Number(returnPendingInbox.pendingQuantity||0) ? (
-                <div className="return-workspace-empty">Нет вещей, ожидающих физического получения.</div>
-              ) : null}
-              </section>:null}
-    
+              <div className="warehouse-receiving-hint">
+                <p>Физическое получение возвращённых товаров выполняет завсклад. Очередь и подтверждение приёмки перенесены в раздел «Склад».</p>
+                {canManageWarehouse ? <button type="button" className="secondary compact"
+                  onClick={() => openWarehouseReceiving('return')}>Перейти к приёмке возвратов</button> : null}
+              </div>
+
               {activeView==='form'&&!returnSelectedOrder ? (
                 <section className="mini-panel debt-table-panel">
                   <div className="mini-panel-head">
@@ -311,7 +223,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   onSaved={(posted)=>{
                     setSavedReturn({returnId:posted.returnId,cashRefund:posted.cashRefund,remainingSale:posted.remainingSale,intakePending:Boolean(posted.receipt?.receiptPending)})
                     closeReturnForm(false)
-                    setActiveView(posted.receipt?.receiptPending?'intake':'history')
+                    setActiveView('history')
                     void loadReturnHistory()
                     void loadReturnPendingInbox()
                     void refreshOrdersAfterReturn()
@@ -695,7 +607,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
                                   <div className="return-history-intake-hint">
                                     <strong>Товар ещё не принят</strong>
-                                    <button type="button" className="secondary compact" onClick={() => setActiveView('intake')}>Перейти к приёмке</button>
+                                    {canManageWarehouse ? <button type="button" className="secondary compact" onClick={() => openWarehouseReceiving('return')}>К приёмке на складе</button> : <span>Принимает завсклад · Склад → Приёмка товаров</span>}
                                   </div>
                                 ) : null}
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnKnownIntakePending(item) ? (
