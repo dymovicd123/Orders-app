@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
+import { resolveOperationBarcode, type OperationBarcodeLookup } from '../operationBarcodeSelection'
 import '../../../styles/193-unified-inventory-operations.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
@@ -101,6 +102,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const observedArrivalCompletion = useRef<string | null>(null)
   const [scanCode, setScanCode] = useState('')
+  const [matchedSkuId, setMatchedSkuId] = useState<number | null>(null)
+  const [skuQuantityDraft, setSkuQuantityDraft] = useState('')
+  const skuQuantityRef = useRef<HTMLInputElement>(null)
+  const scanInputRef = useRef<HTMLInputElement>(null)
+  const scanContextRef = useRef('')
   type ScannedUnit = { code: string; unitId: string; variantId: number; name: string }
   const [scannedUnits, setScannedUnits] = useState<ScannedUnit[]>([])
   const [scanBusy, setScanBusy] = useState(false)
@@ -108,7 +114,11 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const [scanNotice, setScanNotice] = useState('')
   const scanRunningRef = useRef(false)
   const scansRef = useRef<ScannedUnit[]>([])
-  const clearScans = () => { scansRef.current=[];setScannedUnits([]);setScanCode('');setScanNotice('');setScanError('') }
+  const clearScans = () => {
+    scansRef.current=[];setScannedUnits([]);setScanCode('');setScanNotice('');setScanError('')
+    setMatchedSkuId(null);setSkuQuantityDraft('')
+  }
+  scanContextRef.current = mode + ':' + source + ':' + targetSource
   useEffect(() => { clearScans() }, [mode, source, targetSource])
   const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
     .filter((g): g is Group => Boolean(g)), [selected, groups])
@@ -116,6 +126,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const draftMap = useMemo(() => new Map(draft.filter(item => item.variantId || item.draftKey)
     .map(item => [String(item.draftKey || item.variantId), item])), [draft])
   const allRows = useMemo(() => new Map(groups.flatMap(g => g.rows.map(r => [String(r.variantId), r] as const))), [groups])
+  const matchedSkuRow = matchedSkuId ? allRows.get(String(matchedSkuId)) : undefined
+  const scannedSkuMin = matchedSkuId ? scansRef.current.filter(unit=>unit.variantId===matchedSkuId).length : 0
   const entries = useMemo(() => draft.filter(item => (item.variantId || item.draftKey) &&
     (mode === 'manual_set' ? item.touched : int(item.quantity) > 0))
     .map(item => ({ row: allRows.get(String(item.draftKey || item.variantId)), quantity: int(item.quantity) }))
@@ -225,45 +237,73 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     setFirstVariant(old => ({ ...old, color: '', size: '', quantity: '' }))
     setNotice('')
   }
+
   async function scanOperationUnit() {
     const code = scanCode.trim().toUpperCase()
     if (!code || scanRunningRef.current || busy || loading || error || stage==='review') return
+    if (matchedSkuId !== null) {setScanError('Сначала примените количество найденного варианта или отмените выбор.');return}
+    const context = scanContextRef.current
     scanRunningRef.current=true;setScanBusy(true);setScanError('');setScanNotice('')
     try {
-      if (!code.startsWith('OCU1-')) throw new Error('Для операции нужен индивидуальный код физической вещи, не общий SKU.')
       const response=await fetch('/api/barcodes/lookup?code='+encodeURIComponent(code),{
         method:'GET',credentials:'same-origin',cache:'no-store',
       })
-      const data=await response.json() as {
-        ok?:boolean;message?:string;barcodeType?:string;unitId?:string;variantId?:number;
-        productName?:string;source?:string;status?:string;active?:boolean;
+      const data=await response.json() as OperationBarcodeLookup
+      if (context !== scanContextRef.current) return
+      if (!response.ok) throw new Error(data.message||'Не удалось найти код товара.')
+      const match=resolveOperationBarcode(code,data,source)
+      const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===match.variantId))
+      const row=group?.rows.find(row=>Number(row.variantId)===match.variantId)
+      if (!group||!row) throw new Error('Вариант не найден в списке выбранной точки. Обновите остатки или выберите товар вручную.')
+      if (match.kind==='sku') {
+        setMatchedSkuId(match.variantId)
+        const existing=int(draftMap.get(String(match.variantId))?.quantity)
+        setSkuQuantityDraft(existing>0?String(existing):'')
+        setSelected(current=>current.includes(group.key)?current:[...current,group.key])
+        setCurrent(group.key);setStage('quantities')
+        setScanNotice('Вариант найден. Введите итоговое количество для этой операции — один скан не прибавляет вещь.')
+        window.requestAnimationFrame(()=>skuQuantityRef.current?.focus())
+        return
       }
-      if (!response.ok||!data.ok||data.barcodeType!=='unit'||!data.active||!data.unitId) {
-        throw new Error(data.message||'Индивидуальный код недействителен.')
-      }
-      if (data.source!==source||!['prepared','on_hand'].includes(data.status||'')) {
-        throw new Error('Вещь не числится в исходной точке или уже выбыла.')
-      }
-      if (scansRef.current.some(unit=>unit.unitId===data.unitId||unit.code===code)) {
+      if (scansRef.current.some(unit=>unit.unitId===match.unitId||unit.code===code)) {
         setScanNotice('Эта вещь уже отсканирована. Повторный код не добавлен.');return
       }
       if (scansRef.current.length>=60) throw new Error('Не больше 60 сканированных вещей за операцию.')
-      const group=groups.find(group=>group.rows.some(row=>Number(row.variantId)===Number(data.variantId)))
-      const row=group?.rows.find(row=>Number(row.variantId)===Number(data.variantId))
-      if (!group||!row) throw new Error('Комбинации нет в остатках выбранной точки. Обновите список.')
-      const scannedQty=scansRef.current.filter(unit=>unit.variantId===Number(data.variantId)).length
-      const desired=Math.max(int(draftMap.get(String(data.variantId))?.quantity),scannedQty)+1
+      const scannedQty=scansRef.current.filter(unit=>unit.variantId===match.variantId).length
+      const desired=Math.max(int(draftMap.get(String(match.variantId))?.quantity),scannedQty)+1
       p.onQuantity(row,String(desired))
-      const next=[...scansRef.current,{code,unitId:data.unitId,variantId:Number(data.variantId),name:data.productName||row.productName}]
+      const next=[...scansRef.current,{code,unitId:match.unitId,variantId:match.variantId,name:match.productName||row.productName}]
       scansRef.current=next;setScannedUnits(next)
+      setMatchedSkuId(null);setSkuQuantityDraft('')
       setSelected(current=>current.includes(group.key)?current:[...current,group.key])
       setCurrent(group.key);setStage('quantities')
-      setScanNotice('Вещь добавлена в количество. Подтвердите операцию для проведения.')
+      setScanNotice('Индивидуальная вещь учтена в количестве. Проверьте результат перед подтверждением.')
+      window.requestAnimationFrame(()=>scanInputRef.current?.focus())
     } catch(cause) { setScanError(cause instanceof Error?cause.message:'Не удалось прочитать код.') }
     finally { setScanCode('');setScanBusy(false);scanRunningRef.current=false }
   }
 
+  function applySkuQuantity() {
+    if (!matchedSkuRow || !matchedSkuId || busy || loading) return
+    if (!/^(0|[1-9][0-9]{0,5})$/.test(skuQuantityDraft.trim())) {
+      setScanError('Укажите целое количество от 0 до 999999. Ноль убирает вариант из операции.')
+      return
+    }
+    const quantity=Number(skuQuantityDraft.trim())
+    if (quantity < scannedSkuMin) {
+      setScanError('Нельзя указать меньше '+scannedSkuMin+' шт.: столько индивидуальных вещей уже отсканировано.')
+      return
+    }
+    p.onQuantity(matchedSkuRow,String(quantity))
+    setScanNotice(quantity===0 ? 'Количество очищено. Вещи не перемещены и не списаны.'
+      : 'Для варианта установлено '+quantity+' шт. Можно искать следующий товар или проверить результат.')
+    setScanError('')
+    setMatchedSkuId(null);setSkuQuantityDraft('')
+    window.requestAnimationFrame(()=>scanInputRef.current?.focus())
+  }
+
   function review() {
+    if (matchedSkuId !== null) {setNotice('Сначала примените количество найденного SKU или нажмите «Отмена».');return}
     const mismatch=scannedUnits.find(unit=>int(draftMap.get(String(unit.variantId))?.quantity) <
       scannedUnits.filter(row=>row.variantId===unit.variantId).length)
     if(mismatch){setNotice('Количество меньше числа отсканированных вещей. Исправьте количество или уберите лишнюю метку.');return}
@@ -337,14 +377,41 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     </div>
 
     {(mode==='transfer'||mode==='writeoff') && stage!=='review' && <section className="operation-barcode-area" aria-label="Сканирование индивидуальных вещей">
-      <div className="operation-barcode-head"><strong>Сканировать вещи</strong><span>Индивидуальные этикетки · {scannedUnits.length} шт.</span></div>
+      <div className="operation-barcode-head"><strong>Найти товар по штрихкоду</strong><span>Источник: {sourceName(source)} · индивидуальных вещей: {scannedUnits.length}</span></div>
+      <p className="operation-barcode-explain">Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.</p>
       <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
-        <input aria-label="Индивидуальный штрихкод" value={scanCode} onChange={event=>setScanCode(event.target.value)}
-          autoComplete="off" spellCheck={false} placeholder="Сканируйте этикетку" disabled={scanBusy||busy||loading}/>
-        <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||!scanCode.trim()}>
-          {scanBusy?'Ищу…':'Добавить вещь'}
+        <input ref={scanInputRef} aria-label="Штрихкод товара — общий SKU или индивидуальный" value={scanCode} onChange={event=>setScanCode(event.target.value)}
+          autoComplete="off" spellCheck={false} placeholder="Отсканируйте или введите код и нажмите Enter" disabled={scanBusy||busy||loading||matchedSkuId!==null}/>
+        <button type="submit" className="secondary compact" disabled={scanBusy||busy||loading||matchedSkuId!==null||!scanCode.trim()}>
+          {scanBusy?'Ищу…':'Найти по коду'}
         </button>
       </form>
+      {matchedSkuId !== null && <div className="operation-sku-match" role="group" aria-label="Количество найденного варианта">
+        {matchedSkuRow ? <>
+          <div className="operation-sku-match-info">
+            <span className="operation-sku-match-kicker">Найден вариант по общему коду SKU</span>
+            <strong>{matchedSkuRow.productName}</strong>
+            <span>{[matchedSkuRow.color,matchedSkuRow.size,positionLabel(matchedSkuRow)].filter(Boolean).join(' · ')}</span>
+            <small>По системе в {sourceName(source).toLocaleLowerCase('ru')}: {int(matchedSkuRow.quantity)} шт. · уже введено: {int(draftMap.get(String(matchedSkuId))?.quantity)} шт.</small>
+            {scannedSkuMin>0&&<small>Индивидуальных меток этого варианта: {scannedSkuMin} шт. (входят в количество)</small>}
+          </div>
+          <form className="operation-sku-match-form" onSubmit={event=>{event.preventDefault();applySkuQuantity()}}>
+            <label>{mode==='transfer'?'Всего переместить':'Всего списать'}
+              <input ref={skuQuantityRef} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+                placeholder="0" value={skuQuantityDraft} onFocus={event=>event.currentTarget.select()}
+                onChange={event=>{if(/^[0-9]{0,6}$/.test(event.target.value)){setSkuQuantityDraft(event.target.value);setScanError('')}}}
+                disabled={busy||loading} aria-label="Итоговое количество для найденного варианта"/>
+            </label>
+            <div className="operation-sku-match-buttons">
+              <button type="submit" className="primary compact" disabled={busy||loading}>Применить количество</button>
+              <button type="button" className="secondary compact" disabled={busy||loading} onClick={()=>{
+                setMatchedSkuId(null);setSkuQuantityDraft('');setScanError('')
+                window.requestAnimationFrame(()=>scanInputRef.current?.focus())
+              }}>Отмена</button>
+            </div>
+          </form>
+        </> : <p>Вариант больше не доступен в списке. Обновите остатки и повторите поиск.</p>}
+      </div>}
       {scannedUnits.length>0 && <div className="operation-barcode-selected">{scannedUnits.map(unit=>
         <div key={unit.unitId} className="operation-barcode-item">
           <span><strong>{unit.name}</strong><small>{unit.code}</small></span>
