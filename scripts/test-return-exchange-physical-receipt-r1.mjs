@@ -17,6 +17,7 @@ const legacyRequests = fs.readFileSync('src/app/legacyExchangeCriticalRequests.t
 const returnCreateUi = fs.readFileSync('src/app/returnCreationOperation.ts', 'utf8')
 const readController = fs.readFileSync('src/app/controllers/useReturnExchangeWorkspace.ts', 'utf8')
 const returnSection = fs.readFileSync('src/features/sections/OrderReturnsSection.tsx', 'utf8')
+const warehouseReceiving = fs.readFileSync('src/features/inventory/views/WarehouseReceivingWorkspace.tsx', 'utf8')
 const exchangeSection = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
 
 function expect(condition, message) {
@@ -98,13 +99,13 @@ expect(returnSection.includes('Уже вернули'), 'return form received ch
 expect(returnSection.includes('<option value="warehouse">Склад</option>'), 'return form warehouse receipt option missing')
 expect(returnSection.includes('<option value="no_stock">Не добавлять в остаток</option>'), 'return form no-stock receipt option missing')
 expect(!returnSection.includes('<span>Куда вернуть товар</span>'), 'old ambiguous return destination field still shown')
-expect(returnSection.includes('Принять товар'), 'return history delayed receipt button missing')
+expect(returnSection.includes("openWarehouseReceiving('return')") && warehouseReceiving.includes('Принять товар'), 'return pending receive must be available in warehouse intake')
 expect(returnSection.includes('Старая запись — физическое получение не отслеживалось'), 'return legacy status explanation missing')
 expect(exchangeSection.includes('Старая вещь сейчас'), 'exchange form physical-state field missing')
 expect(exchangeSection.includes('Не выдавали клиенту — остаётся на месте'), 'exchange form not-issued option missing')
 expect(exchangeSection.includes('Клиент ещё не вернул'), 'exchange form waiting option missing')
 expect(!exchangeSection.includes('<span>Куда вернуть старую вещь</span>'), 'old ambiguous exchange destination field still shown')
-expect(exchangeSection.includes('Принять товар'), 'exchange history delayed receipt button missing')
+expect(exchangeSection.includes("openWarehouseReceiving('exchange')") && warehouseReceiving.includes('Принять товар'), 'exchange pending receive must be available in warehouse intake')
 expect(exchangeSection.includes('Старая запись — физическое получение не отслеживалось'), 'exchange legacy status explanation missing')
 
 expect(activity.includes('AS pending_physical_quantity'), 'return history pending physical quantity summary missing')
@@ -115,8 +116,8 @@ expect(app.includes('useReturnExchangeWorkspace({ apiFetch, reportReadFailure })
 expect(readController.includes('pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0)'), 'read controller must consume pending physical quantity')
 expect(readController.includes("pendingOnly: '1'") && readController.includes('++returnPendingInboxToken.current') && readController.includes('++exchangePendingInboxToken.current'),
   'physical receipt inboxes must remain independent of history filters and reject stale responses')
-expect(returnSection.includes('Ожидают приёмки'), 'return summary does not show pending physical quantity')
-expect(exchangeSection.includes('Ожидают приёмки'), 'exchange summary does not show pending physical quantity')
+expect(warehouseReceiving.includes('Приёмка возвратов') && warehouseReceiving.includes('returnInbox.pendingQuantity'), 'return warehouse intake badge missing')
+expect(warehouseReceiving.includes('Приёмка вещей по обменам') && warehouseReceiving.includes('exchangeInbox.pendingQuantity'), 'exchange warehouse intake badge missing')
 
 // Run the actual compiled Return/Exchange frontend controllers, not duplicated
 // request logic. Worker SQL physical and financial tests remain separate.
