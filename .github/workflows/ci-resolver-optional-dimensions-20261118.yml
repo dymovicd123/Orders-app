@@ -27,7 +27,7 @@ jobs:
           node scripts/test-order-send-resolver-prepare-20261118.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
-          node scripts/test-catalog-resolver-r9-final-acceptance.mjs
+          node scripts/test-stage5-client-quantity-replay-20261102.mjs
           node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
           node scripts/test-return-v2-immediate-intake-20261114.mjs
           node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
