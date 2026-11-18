@@ -1,0 +1,43 @@
+name: One-shot production order 2246 owner-confirmed status-only shipping reconciliation
+on:
+  push:
+    branches: [repair/main-order-2246-prior-issued-shipment-20261118]
+    paths:
+      - .github/workflows/reconcile-order-2246-prior-issued-once-20261118.yml
+permissions:
+  contents: read
+concurrency:
+  group: scoped-main-order-2246-reconcile-20261118
+  cancel-in-progress: false
+jobs:
+  single-order-only:
+    if: github.repository == 'dymovicd123/Orders-app' && github.ref == 'refs/heads/repair/main-order-2246-prior-issued-shipment-20261118'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify one-shot code integrity, exact production database and stable parent
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/repair/main-order-2246-prior-issued-shipment-20261118'
+          test "$(git rev-parse HEAD^)" = 'd8116c4ba18c665212149e9444347ef0d6943d2d'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/reconcile-order-2246-prior-issued-once-20261118.yml'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          python3 -m py_compile scripts/reconcile-order-2246-legacy-prior-issued-20261118.py
+          echo 'PRODUCTION_ORDER_2246_SCOPE_VERIFIED'
+      - run: npm ci --no-audit --no-fund
+      - name: Exact order 2246 only, verify proofs, add ledger without movements, mark sent, verify again
+        run: python3 scripts/reconcile-order-2246-legacy-prior-issued-20261118.py
