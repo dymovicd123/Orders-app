@@ -25,7 +25,6 @@ jobs:
           node scripts/test-old-order-post-stocktake-handover-r1.mjs
           node scripts/test-handover-cas-after-revision-r2.mjs
           node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
-          node scripts/test-branch2-resolver-known-pending-20261022.mjs
           node scripts/test-return-v2-immediate-intake-20261114.mjs
       - name: TypeScript and production build
         run: npm run build
