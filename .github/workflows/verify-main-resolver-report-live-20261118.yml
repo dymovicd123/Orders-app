@@ -1,0 +1,67 @@
+name: Read-only verify Main Resolver audit Worker after Cloudflare propagation
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/verify-main-resolver-report-live-20261118.yml]
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    if: github.repository == 'dymovicd123/Orders-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Cloudflare effective 100-percent version and production D1 bindings read-only
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request,urllib.error
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          root='https://api.cloudflare.com/client/v4/accounts/'+account
+          new='8c9f0ab2-1024-4fa4-a17e-e321579569ef'
+          def api(path):
+              req=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+              with urllib.request.urlopen(req,timeout=30) as response:r=json.load(response)
+              assert r['success'] is True,r.get('errors')
+              return r['result']
+          for attempt in range(8):
+              deployments=api('/workers/scripts/orders-app/deployments?per_page=1')['deployments']
+              versions=deployments[0]['versions'] if deployments else []
+              if len(versions)==1 and versions[0]['percentage']==100 and versions[0]['version_id']==new:break
+              time.sleep(3)
+          else:raise RuntimeError('New production Worker version is not 100-percent active')
+          info=api('/workers/scripts/orders-app/versions/'+new)
+          bindings=info['resources']['bindings']
+          def has(name,typ,id=None):
+              return any(b.get('name')==name and b.get('type')==typ
+                and (id is None or b.get('database_id',b.get('id'))==id) for b in bindings)
+          assert has('DB','d1','17e68a41-1d58-4a36-8a63-47c3e32443c4'),'Wrong Main D1'
+          assert has('ADMIN_MODE_SESSION_SECRET','secret_text'),'Missing admin session secret'
+          assert has('ADMIN_MODE_PASSWORD','secret_text'),'Missing admin mode secret'
+          assert any(b.get('name')=='RETURN_V2_ENABLED' and b.get('type')=='plain_text' and b.get('text')=='true' for b in bindings)
+          print('MAIN_RESOLVER_REPORT_ACTIVE_D1_SECRETS_VERIFIED',new)
+          PY
+      - name: Public Main read-only health and assets smoke
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request
+          base='https://orders-app.orders-clothes.workers.dev'
+          def get(path):
+              for _ in range(7):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(base+path,headers={'User-Agent':'OrdersMainResolverReportVerifier/1.0'}),timeout=20) as res:
+                          if res.status==200:return res.read()
+                  except Exception: time.sleep(2)
+              raise RuntimeError('Public Main smoke failed '+path)
+          assert json.loads(get('/api/health')).get('ok') is True
+          html=get('/')
+          assert b'<html' in html.lower()
+          scripts=re.findall(rb'<script[^>]+src="(/assets/[^"]+)"',html)
+          assert scripts,'Missing entry JS asset'
+          js=get(scripts[0].decode())
+          assert len(js)>1000 and not js.lstrip().lower().startswith(b'<!doctype html')
+          print('MAIN_RESOLVER_REPORT_PUBLIC_HEALTH_ASSETS_PASS',len(js))
+          PY
