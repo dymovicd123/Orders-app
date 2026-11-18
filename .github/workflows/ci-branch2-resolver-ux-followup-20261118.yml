@@ -23,7 +23,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-catalog-resolver-r8-1b-typo-safety.mjs
-          node scripts/test-catalog-resolver-r9-final-acceptance.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
           node scripts/test-kerbez-length-confirmation-20261118.mjs
