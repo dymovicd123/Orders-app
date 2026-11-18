@@ -260,6 +260,48 @@ export async function inferUnambiguousCatalogReviewGender(
   return gender === 'ЖЕН' || gender === 'МУЖ' ? gender : '';
 }
 
+export async function catalogReviewAlternativeLengths(
+  db: D1Database, productId: number,
+  facts: {category:string;gender:string;material:string;length:string;color:string;size:string},
+): Promise<string[]> {
+  if (!productId || canonicalStockPositionValue(facts.length) !== 'СТАНДАРТ'
+    || !['ЖЕН','МУЖ'].includes(normalizeCatalogCombinationGender(facts.gender))) return [];
+  const rows = await db.prepare(
+    `SELECT DISTINCT UPPER(TRIM(sp.length)) AS value
+     FROM catalog_stock_positions sp
+     JOIN catalog_variants v ON v.stock_position_id=sp.id AND v.is_active=1
+     WHERE sp.product_id=? AND sp.is_active=1
+       AND UPPER(TRIM(sp.material))=?
+       AND COALESCE(v.category,'adult')=?
+       AND CASE WHEN UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+         WHEN UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
+         ELSE UPPER(TRIM(COALESCE(v.gender,''))) END=?
+       AND COALESCE(NULLIF(UPPER(TRIM(v.color)),''),'БЕЗ ЦВЕТА')=?
+       AND CASE WHEN UPPER(TRIM(COALESCE(v.size_label,''))) IN ('','БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р') THEN ''
+         ELSE UPPER(TRIM(v.size_label)) END=?
+       AND UPPER(TRIM(sp.length)) <> 'СТАНДАРТ'
+     ORDER BY value LIMIT 8`
+  ).bind(productId,canonicalStockPositionValue(facts.material),
+    normalizeAudienceCategory(facts.category,facts.size),
+    normalizeCatalogCombinationGender(facts.gender),normalizeCatalogCombinationColor(facts.color),
+    normalizeCatalogCombinationSize(facts.size)).all<{value:string}>();
+  return (rows.results||[]).map(row=>cleanText(row.value)).filter(Boolean);
+}
+
+async function catalogReviewReferenceExists(db:D1Database, kind:string, value:string) {
+  if (await catalogReferenceDbValueExists(db,kind,value)) return true;
+  const queries: Record<string,string> = {
+    material: 'SELECT id FROM catalog_stock_positions WHERE is_active=1 AND UPPER(TRIM(material))=? LIMIT 1',
+    length: 'SELECT id FROM catalog_stock_positions WHERE is_active=1 AND UPPER(TRIM(length))=? LIMIT 1',
+    color: 'SELECT id FROM catalog_variants WHERE is_active=1 AND UPPER(TRIM(color))=? LIMIT 1',
+    size: "SELECT id FROM catalog_variants WHERE is_active=1 AND COALESCE(category,'adult') <> 'child' AND UPPER(TRIM(size_label))=? LIMIT 1",
+    child_age: "SELECT id FROM catalog_variants WHERE is_active=1 AND COALESCE(category,'adult') = 'child' AND UPPER(TRIM(size_label))=? LIMIT 1",
+  };
+  const query = queries[kind];
+  if (!query) return false;
+  return Boolean((await db.prepare(query).bind(upperText(value)).first<{id:number}>())?.id);
+}
+
 export async function getCatalogReviewContext(db: D1Database, orderItemId: number, preview: CatalogReviewFactsInput = {}): Promise<CatalogResolutionContext> {
   let anchor = await db.prepare(
     `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
@@ -387,6 +429,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
 
   let execution: { id: number; product_id: number; material: string; length: string; is_active: number } | null = null;
   let existingVariant: { id: number } | null = null;
+  let lengthAlternatives: string[] = [];
   const unknownFields: string[] = [];
   let issueType = 'unknown_product';
 
@@ -400,6 +443,9 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       }
     }
 
+    if (!existingVariant?.id && product?.id) {
+      lengthAlternatives = await catalogReviewAlternativeLengths(db, product.id, facts);
+    }
     if (!existingVariant?.id) {
       // Resolver is an anomaly guard, not a compatibility questionnaire.
       // Human-entered facts are accepted independently once the system recognizes them
@@ -407,6 +453,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       // combination is allowed to proceed without asking the manager to reconfirm facts.
       if (!knownMaterial) unknownFields.push('material');
       if (!knownLength) unknownFields.push('length');
+      else if (lengthAlternatives.length > 0) unknownFields.push('length');
       if (!facts.gender || (facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
       if (!knownColor) unknownFields.push('color');
       if (!knownSize) unknownFields.push('size');
@@ -426,6 +473,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       ? (existingVariant?.id ? 'retired_demand_ready' : 'retired_demand_waiting_restore')
       : issueType,
     unknownFields,
+    lengthAlternatives,
     retiredRecovery: cleanText(anchor.stock_writeoff_status) === 'catalog_retired',
     historicalVariantId: cleanText(anchor.stock_writeoff_status) === 'catalog_retired' ? (toInt(anchor.variant_id, 0) || null) : null,
     isWorkshop: Boolean(toInt(anchor.is_workshop, 0)),
@@ -542,6 +590,17 @@ export async function resolveCatalogReviewFacts(
   }
   if (!legacyGenderException && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Укажите пол конкретной вещи: Женский или Мужской. Пол базового товара не заменяет эту характеристику.');
 
+  // A default length in a legacy order is not sufficient proof of a new execution.
+  // Require a human choice when another active SKU matches all other characteristics.
+  const alternativeLengths = !legacyGenderException && product?.id
+    ? await catalogReviewAlternativeLengths(db, product.id, {category,gender,material,length,color,size}) : [];
+  if (alternativeLengths.length) {
+    throw Object.assign(new Error(
+      'В каталоге уже есть подходящий вариант с длиной: ' + alternativeLengths.join(', ')
+      + '. Уточните длину перед сохранением. Значение «СТАНДАРТ» из заказа не подтверждает создание новой складской комбинации.'
+    ), {status:409,code:'catalog_length_confirmation_required'});
+  }
+
   // Read-only preflight first. A missing checkbox must fail before creating a product,
   // reference value, execution, alias or touching any order/workshop row.
   const referencePlan: Array<{ field: string; dbKind: string; apiKind: ReferenceKind; value: string }> = [
@@ -555,7 +614,7 @@ export async function resolveCatalogReviewFacts(
     if (!entry.value
       || (entry.dbKind === 'color' && entry.value === 'БЕЗ ЦВЕТА')
       || ((entry.dbKind === 'material' || entry.dbKind === 'length') && entry.value === 'СТАНДАРТ')) continue;
-    if (!await catalogReferenceDbValueExists(db, entry.dbKind, entry.value)) missingReferences.push(entry);
+    if (!await catalogReviewReferenceExists(db, entry.dbKind, entry.value)) missingReferences.push(entry);
   }
   const unconfirmed = missingReferences.find((entry) => !createFields.has(entry.field));
   if (unconfirmed) throw new Error(`Значение «${unconfirmed.value}» ещё не существует. Выберите существующее или явно добавьте его как новое.`);
