@@ -534,7 +534,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, askActio
         </div></>
     }
     if (question.kind === 'combined') return <><h4 ref={questionHeading} tabIndex={-1}>Цвет и {draft.category === 'child' ? 'возраст' : 'размер'} не указаны</h4><p>Они действительно не нужны для этого товара?</p><div className="resolution-choices">
-      <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice(`Без цвета и без ${draft.category === 'child' ? 'возраста' : 'размера'} ✓`); void finish(exactDraftVariant?.id, next) }}>Да, не нужны</button>
+      <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setConfirmed(current => ({ ...current, color: true, size: true })); setNotice(`Без цвета и без ${draft.category === 'child' ? 'возраста' : 'размера'} ✓`); void preview(next) }}>Да, не нужны</button>
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Указать</button>
     </div></>
     if (question.kind === 'reference') {
@@ -582,17 +582,24 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, askActio
         {needsCorrection ? <p className="resolution-current-value">В заказе: <strong>{displayFact(field, draft[field])}</strong></p> : null}
         {small.length ? <div className="resolution-choices">{small.map(([value, text]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{text}</button>)}</div> : <>
           {!editing && needsCorrection && (field === 'color' || field === 'size') ? <>
+            <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Действительно без цвета' : draft.category === 'child' ? 'Действительно без возраста' : 'Действительно без размера'}</button></div>
             {correctionValues.length ? <div className="resolution-suggestion"><small>Есть в каталоге</small><div className="resolution-choices">{correctionValues.map(entry => <button type="button" key={entry.value} onClick={() => answerField(field, entry.value)}>{entry.value}</button>)}</div></div> : null}
             <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Другой вариант</button>
           </> : !editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : draft.category === 'child' ? 'Без возраста' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : `Выбрать ${label.toLowerCase()}`}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}>
             <label>{label}<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} placeholder={`Введите или выберите ${label.toLowerCase()}`} /></label>
             {values.length ? <div className="resolution-combobox" role="listbox" aria-label={`Справочник: ${label}`}><small>{clean(answer) && matched.length ? 'Подходящие варианты' : 'Все варианты'}</small><div className="resolution-combobox-list">{visibleValues.map(value => <button type="button" key={value} onClick={() => answerField(field, value)}>{value}</button>)}</div></div> : null}
+            {field === 'color' || field === 'size' ? <button type="button" className="secondary-button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Действительно без цвета' : draft.category === 'child' ? 'Действительно без возраста' : 'Действительно без размера'}</button> : null}
             <button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить</button>
           </form>}
         </>}
         {field === 'gender' && canLegacy ? <button type="button" className="resolution-link" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>
     }
-    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
+    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>
+      {question.kind === 'ready' ? <div className="resolution-inline-actions">
+        <button type="button" className="resolution-link" disabled={disabled} onClick={() => { setEditing('color'); setAnswer('') }}>Изменить цвет / без цвета</button>
+        <button type="button" className="resolution-link" disabled={disabled} onClick={() => { setEditing('size'); setAnswer('') }}>Изменить {draft.category === 'child' ? 'возраст' : 'размер'} / без {draft.category === 'child' ? 'возраста' : 'размера'}</button>
+      </div> : null}
+      {finalAction()}</>
   }
   return <div className="modal-backdrop order-catalog-resolution-backdrop"><div ref={dialog} className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title" onKeyDown={event => {
     if (event.key === 'Escape' && !resolving) onClose()
