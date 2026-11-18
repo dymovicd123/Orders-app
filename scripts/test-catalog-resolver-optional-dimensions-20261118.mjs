@@ -42,7 +42,7 @@ INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Resolver QA');
 INSERT INTO catalog_products(id,name,category,is_active) VALUES
  (98101,'КОСМЕТИЧКА','adult',1),
  (98201,'ЭТНО БОМБЕР','adult',1);
-INSERT INTO reference_values(kind,value,is_active) VALUES
+INSERT OR IGNORE INTO reference_values(kind,value,is_active) VALUES
  ('material','ЗАМША ВЕЛЮР',1),('color','ВЕРБЛЮЖКА',1),('size','56',1);
 INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES
  (98110,'ORD-20261113133917-E84920D3','2026-11-13',1,'active','boutique','ready','not_sent','2026-11-13T00:00:00Z','2026-11-13T00:00:00Z'),

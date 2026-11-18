@@ -371,13 +371,15 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   };
   const knownMaterial = canonicalKnownValue(references.materials, facts.material);
   const knownLength = canonicalKnownValue(references.lengths, facts.length);
-  const knownColor = canonicalKnownValue(references.colors, facts.color);
-  const knownSize = canonicalKnownValue(facts.category === 'child' ? references.childAges : references.sizes, facts.size);
-  // These are valid ABSENT dimensions, not reference values. Only the actual
-  // order snapshot or an explicit preview choice can confirm their absence.
+  // Only an explicit chosen value (or an existing order snapshot) proves that a
+  // dimension truly does not apply. A blank snapshot is not such confirmation.
   const confirmedNoColor = upperText(preview.color ?? anchor.color_snapshot) === 'БЕЗ ЦВЕТА';
   const confirmedNoSize = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р']
     .includes(upperText(preview.size ?? anchor.size_snapshot));
+  const knownColor = canonicalKnownValue(references.colors, facts.color)
+    || (confirmedNoColor ? 'БЕЗ ЦВЕТА' : '');
+  const knownSize = canonicalKnownValue(facts.category === 'child' ? references.childAges : references.sizes, facts.size)
+    || (confirmedNoSize ? 'БЕЗ РАЗМЕРА' : '');
   if (knownMaterial) facts.material = canonicalStockPositionValue(knownMaterial);
   if (knownLength) facts.length = canonicalStockPositionValue(knownLength);
   if (knownColor) facts.color = normalizeCatalogCombinationColor(knownColor);
@@ -406,8 +408,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       if (!knownMaterial) unknownFields.push('material');
       if (!knownLength) unknownFields.push('length');
       if (!facts.gender || (facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
-      if (!knownColor && !confirmedNoColor) unknownFields.push('color');
-      if (!knownSize && !confirmedNoSize) unknownFields.push('size');
+      if (!knownColor) unknownFields.push('color');
+      if (!knownSize) unknownFields.push('size');
     }
 
     if (!product?.id) issueType = 'unknown_product';
