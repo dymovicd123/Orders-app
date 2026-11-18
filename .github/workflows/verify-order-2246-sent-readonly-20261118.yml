@@ -1,0 +1,55 @@
+name: Verify exact Main order 2246 reconciliation read-only
+on:
+  push:
+    branches: [repair/main-order-2246-prior-issued-shipment-20261118]
+    paths: [.github/workflows/verify-order-2246-sent-readonly-20261118.yml]
+permissions:
+  contents: read
+jobs:
+  verify-only:
+    if: github.repository == 'dymovicd123/Orders-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Confirm exact order fully sent, all ledger rows, unchanged issued reservation and audit
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'dbe6c00fbd97e6c64be0fdea7f8621a4bf20f400'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/verify-order-2246-sent-readonly-20261118.yml'
+          test "$GITHUB_REF" = 'refs/heads/repair/main-order-2246-prior-issued-shipment-20261118'
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          python3 - <<'PY'
+          import json,subprocess
+          def one(q):
+              p=subprocess.run(['npx','--no-install','wrangler','d1','execute','orders_db_prod','--remote','--config','wrangler.jsonc','--json','--command',q],capture_output=True,text=True,timeout=70)
+              if p.returncode: raise RuntimeError('Read-only D1 query failed: '+p.stdout[-1400:]+p.stderr[-300:])
+              result=json.loads(p.stdout)
+              assert len(result)==1 and result[0]['success'] is True
+              return result[0]['results']
+          order=one("SELECT id,external_id,shipping_status,shipping_date FROM orders WHERE id=2246")
+          assert len(order)==1 and order[0]['external_id']=='ORD-20261101092157-EB6EA8C4' and order[0]['shipping_status']=='sent'
+          rows=one("SELECT di.order_item_id,di.quantity,di.cancelled_quantity,di.movement_id,di.reservation_id,d.status dispatch_status,d.request_id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=2246 ORDER BY di.order_item_id")
+          assert [r['order_item_id'] for r in rows]==[5325,5326,5327],rows
+          assert all(r['quantity']==1 and r['cancelled_quantity']==0 and r['dispatch_status']=='sent' for r in rows)
+          assert rows[1]['movement_id'] is None and rows[1]['reservation_id']==2289
+          assert rows[1]['request_id']=='legacy-prior-issue-owner-confirmed:2246:5326:20261118'
+          reserve=one("SELECT id,status,quantity,inventory_source,variant_id FROM inventory_reservations WHERE order_item_id=5326")
+          assert len(reserve)==1 and reserve[0]['id']==2289 and reserve[0]['status']=='fulfilled' and reserve[0]['quantity']==1 and reserve[0]['inventory_source']=='warehouse' and reserve[0]['variant_id']==189
+          marker=one("SELECT COUNT(*) AS n FROM activity_log WHERE order_id=2246 AND event_type='order_legacy_mixed_prior_issue_reconciled'")
+          assert marker[0]['n']==1
+          stock=one("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=189")
+          assert len(stock)==1
+          print('READ_ONLY_ORDER_2246_VERIFIED: all 3 shipped; previously issued item has no extra movement, fulfilled reserve retained, audit present; warehouse stock state',stock[0])
+          PY
