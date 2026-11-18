@@ -107,7 +107,7 @@ assert(modal.includes('Уточнить проблемные товары')&&
 assert(route.includes("role!=='admin' && role!=='manager'")&&
   route.includes('prepareOrderShippingReservations(db,toInt(shippingPrepareMatch[1],0))'))
 assert(domain.includes('assertLegacyMutationAllowedAfterReturnV2')&&
-  domain.includes("stock_writeoff_status='pending_reservation'")&&
+  domain.includes("stock_writeoff_status IN ('pending_reservation','reserved')")&&
   domain.includes('NOT EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.order_item_id=oi.id)')&&
   domain.includes('order_dispatch_items')&&domain.includes('return_items')&&domain.includes('exchanges'),
   'No shipping preflight may revive a previously issued/returned/exchanged item')
