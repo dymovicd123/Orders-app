@@ -1,0 +1,40 @@
+name: Scoped Main legacy shipment read-only order diagnostic
+on:
+  push:
+    branches: [diag/nov18-legacy-shipping-contradiction-readonly]
+    paths: [.github/workflows/diag-nov18-legacy-shipping-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  scoped-select-only:
+    if: github.repository == 'dymovicd123/Orders-app' && github.ref == 'refs/heads/diag/nov18-legacy-shipping-contradiction-readonly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production read-only exact order forensic (SELECT only)
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          echo 'DIAG_1'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT o.id,o.external_id,o.order_date,o.created_at,o.shipping_status,o.shipping_date,o.order_status,o.updated_at FROM orders o WHERE o.external_id='ORD-20261101092157-EB6EA8C4'"
+          echo 'DIAG_2'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT oi.id,oi.order_id,oi.product_name_snapshot,oi.quantity,oi.is_workshop,oi.source_type,oi.stock_writeoff_status,oi.product_id,oi.variant_id,oi.created_at,oi.updated_at,oi.stock_quantity_before,oi.stock_quantity_after FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.external_id='ORD-20261101092157-EB6EA8C4' ORDER BY oi.id"
+          echo 'DIAG_3'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT r.id,r.order_item_id,r.inventory_source,r.product_id,r.variant_id,r.quantity,r.status,r.unresolved_reason,r.created_at,r.updated_at,r.fulfilled_at FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE o.external_id='ORD-20261101092157-EB6EA8C4' ORDER BY r.order_item_id,r.id"
+          echo 'DIAG_4'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT di.id,di.order_item_id,di.dispatch_id,di.source_type,di.variant_id,di.quantity,di.cancelled_quantity,di.created_at,d.dispatch_date,d.created_at AS dispatched_at,d.status AS dispatch_status FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id JOIN orders o ON o.id=d.order_id WHERE o.external_id='ORD-20261101092157-EB6EA8C4' ORDER BY di.order_item_id,di.id"
+          echo 'DIAG_5'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT a.id,a.entity_type,a.entity_id,a.event_type,a.created_at FROM activity_log a JOIN orders o ON o.id=a.order_id WHERE o.external_id='ORD-20261101092157-EB6EA8C4' AND (a.event_type LIKE '%stock%' OR a.event_type LIKE '%dispatch%' OR a.event_type LIKE '%shipping%' OR a.event_type LIKE '%handover%') ORDER BY a.id LIMIT 80"
+          echo 'DIAG_6'
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "SELECT hr.order_item_id,hr.reservation_id,hr.decision,hr.created_at FROM inventory_handover_reviews hr JOIN orders o ON o.id=hr.order_id WHERE o.external_id='ORD-20261101092157-EB6EA8C4' ORDER BY hr.order_item_id,hr.created_at"
