@@ -64,6 +64,10 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     const current = activeById.get(orderItemId)
     const stockState = cleanText(item.stockWriteoffStatus).toLowerCase()
     const workshopState = cleanText(item.workshopTaskStatus).toLowerCase()
+    // An archived SKU remains in the historical order, but is NOT a valid
+    // new physical shipment. Keep it visible with an actionable reason.
+    const retiredCatalogSku = !isWorkshop && toInt(item.variantId,0)>0
+      && cleanText(item.catalogIdentity) === 'snapshot'
     const recordedSent = item.shipmentSentQuantity == null ? null : Math.max(0,toInt(item.shipmentSentQuantity,0))
     const alreadyIssued = ['fulfilled','written_off','negative','retired_physically_issued'].includes(stockState)
       || (recordedSent !== null && recordedSent >= quantity)
@@ -91,13 +95,16 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       ? ['done', 'ready'].includes(workshopState)
       : physicalReservationReady || pendingStockResolution
     const alreadyClosed = closed || (historicallySent && !pendingReplacement)
-    const readyQuantity = alreadyClosed || (alreadyIssued && !dispatchPriorIssued) || (!physicallyReady && !dispatchPriorIssued) ? 0
+    const readyQuantity = alreadyClosed || (retiredCatalogSku && !dispatchPriorIssued)
+      || (alreadyIssued && !dispatchPriorIssued) || (!physicallyReady && !dispatchPriorIssued) ? 0
       : dispatchPriorIssued || isWorkshop || pendingStockResolution ? quantity
         : Math.min(quantity, current?.quantity || 0)
     const reason = readyQuantity ? ''
       : closed ? 'Заказ закрыт'
         : historicallySent && !pendingReplacement ? 'Уже отмечено как отправленное'
           : recordedSent !== null && recordedSent >= quantity ? 'Уже отправлен'
+          : retiredCatalogSku && !dispatchPriorIssued
+            ? 'Этот вариант архивирован. Для отправки выберите действующий вариант через редактирование заказа.'
           : alreadyIssued ? 'Уже выдан'
           : isWorkshop ? 'Ещё не готов'
           : !current && toInt(item.variantId, 0) > 0
