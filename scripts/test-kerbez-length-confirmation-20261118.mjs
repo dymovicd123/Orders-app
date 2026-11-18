@@ -42,7 +42,7 @@ sql.exec(`
 INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Kerbez QA');
 INSERT INTO catalog_products(id,name,category,gender_scope,is_active) VALUES
  (60,'КЕРБЕЗ АБАЙКА','adult','female',1),
- (70,'АМИР БОМБЕР','adult','male',1),
+ (70,'АМИР БОМБЕР QA','adult','male',1),
  (120,'НОВАЯ АБАЙКА','adult','female',1);
 INSERT OR IGNORE INTO reference_values(kind,value,is_active) VALUES
  ('material','ДАК',1),('color','ОРАНЖЕВЫЙ',1);
