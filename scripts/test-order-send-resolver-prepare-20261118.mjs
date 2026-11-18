@@ -46,7 +46,7 @@ sql.exec(`
   INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at)
     VALUES(9410,9412,'boutique',9401,9402,1,'fulfilled','2026-11-15T00:00:00Z','2026-11-15T00:00:00Z');
   INSERT INTO order_dispatches(id,order_id,request_id,dispatch_date,created_at,actor,status)
-    VALUES(9420,9410,'prior-shipment-existing','2026-11-15','2026-11-15T00:00:00Z','manager','committed');
+    VALUES(9420,9410,'prior-shipment-existing','2026-11-15','2026-11-15T00:00:00Z','manager','sent');
   INSERT INTO order_dispatch_items(dispatch_id,order_item_id,quantity,cancelled_quantity,source_type,variant_id,created_at)
     VALUES(9420,9412,1,0,'boutique',9402,'2026-11-15T00:00:00Z');
 `)
