@@ -1,0 +1,36 @@
+name: Legacy mixed prior-issued shipment compatibility acceptance
+on:
+  pull_request:
+    branches: [branch2, main]
+  push:
+    branches:
+      - fix/branch2-legacy-mixed-prior-issued-20261118
+      - fix/main-legacy-mixed-prior-issued-20261118
+permissions:
+  contents: read
+jobs:
+  legacy-mixed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Previously issued legacy mixed order must complete without stock movement
+        run: node scripts/test-legacy-mixed-prior-issued-shipping-20261118.mjs
+      - name: Existing complete handover, partial dispatch, stocktake and return regressions
+        run: |
+          set -euo pipefail
+          node scripts/test-main-prior-issued-shipping-20261105.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-main-confirmed-shipping-state-20261108.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+      - name: Production build
+        run: npm run build
