@@ -373,6 +373,11 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   const knownLength = canonicalKnownValue(references.lengths, facts.length);
   const knownColor = canonicalKnownValue(references.colors, facts.color);
   const knownSize = canonicalKnownValue(facts.category === 'child' ? references.childAges : references.sizes, facts.size);
+  // These are valid ABSENT dimensions, not reference values. Only the actual
+  // order snapshot or an explicit preview choice can confirm their absence.
+  const confirmedNoColor = upperText(preview.color ?? anchor.color_snapshot) === 'БЕЗ ЦВЕТА';
+  const confirmedNoSize = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р']
+    .includes(upperText(preview.size ?? anchor.size_snapshot));
   if (knownMaterial) facts.material = canonicalStockPositionValue(knownMaterial);
   if (knownLength) facts.length = canonicalStockPositionValue(knownLength);
   if (knownColor) facts.color = normalizeCatalogCombinationColor(knownColor);
@@ -401,8 +406,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       if (!knownMaterial) unknownFields.push('material');
       if (!knownLength) unknownFields.push('length');
       if (!facts.gender || (facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
-      if (!knownColor) unknownFields.push('color');
-      if (!knownSize) unknownFields.push('size');
+      if (!knownColor && !confirmedNoColor) unknownFields.push('color');
+      if (!knownSize && !confirmedNoSize) unknownFields.push('size');
     }
 
     if (!product?.id) issueType = 'unknown_product';
@@ -545,7 +550,9 @@ export async function resolveCatalogReviewFacts(
   ];
   const missingReferences: typeof referencePlan = [];
   for (const entry of referencePlan) {
-    if (!entry.value || ((entry.dbKind === 'material' || entry.dbKind === 'length') && entry.value === 'СТАНДАРТ')) continue;
+    if (!entry.value
+      || (entry.dbKind === 'color' && entry.value === 'БЕЗ ЦВЕТА')
+      || ((entry.dbKind === 'material' || entry.dbKind === 'length') && entry.value === 'СТАНДАРТ')) continue;
     if (!await catalogReferenceDbValueExists(db, entry.dbKind, entry.value)) missingReferences.push(entry);
   }
   const unconfirmed = missingReferences.find((entry) => !createFields.has(entry.field));
@@ -886,12 +893,18 @@ export async function resolveCatalogReviewRows(
     // the committed reservation now matches the Resolver decision before exposing that decision
     // as current order truth. This also closes a concurrent conflicting Resolver race safely.
     const committedReservation = await db.prepare(
-      `SELECT id, status, quantity, inventory_source, product_id, variant_id
+      `SELECT id, status, quantity, inventory_source, product_id, variant_id, unresolved_reason
        FROM inventory_reservations
        WHERE order_item_id = ?
        LIMIT 1`
     ).bind(id).first<Record<string, unknown>>();
-    const committedMatchesTarget = cleanText(committedReservation?.status) === 'active'
+    // A proven SKU with no free stock is still a resolved catalog identity.
+    // Atomic admission records an unresolved concurrent_shortage and a
+    // pending_reservation order line; do not turn that legitimate outcome into
+    // a false resolver failure or demand a second SKU selection.
+    const committedStatus = cleanText(committedReservation?.status);
+    const committedMatchesTarget = (committedStatus === 'active'
+      || (committedStatus === 'unresolved' && cleanText(committedReservation?.unresolved_reason) === 'concurrent_shortage'))
       && normalizeSourceType(committedReservation?.inventory_source) === targetSource
       && toInt(committedReservation?.variant_id, 0) === variantId
       && toInt(committedReservation?.product_id, 0) === productId

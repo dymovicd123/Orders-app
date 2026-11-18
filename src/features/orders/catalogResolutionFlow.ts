@@ -193,6 +193,7 @@ export function segmentCompoundRemainder(remainder: string, context: CatalogReso
 export function needsReference(context: CatalogResolutionContext, draft: Draft, field: Field) {
   if (field === 'category' || field === 'gender' || !clean(draft[field])) return false
   if ((field === 'material' || field === 'length') && normalize(draft[field]) === 'СТАНДАРТ') return false
+  if (field === 'color' && normalize(draft[field]) === 'БЕЗ ЦВЕТА') return false
   if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalize(draft[field]))) return false
   return !referenceValues(context, draft, field).some(v => sameReferenceValue(v, draft[field]))
 }
