@@ -452,7 +452,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       // in the reference lists or anywhere in the active Catalog. A missing exact SKU
       // combination is allowed to proceed without asking the manager to reconfirm facts.
       if (!knownMaterial) unknownFields.push('material');
-      if (!knownLength || lengthAlternatives.length > 0) unknownFields.push('length');
+      if (!knownLength) unknownFields.push('length');
+      else if (lengthAlternatives.length > 0) unknownFields.push('length');
       if (!facts.gender || (facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
       if (!knownColor) unknownFields.push('color');
       if (!knownSize) unknownFields.push('size');
