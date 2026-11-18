@@ -64,6 +64,13 @@ export function rankedProducts(products: CatalogResolutionProduct[], source: str
     const prefixTokenOverlap = rawTokens.filter(query => query.length > 0 && nameTokens.some(token => token.startsWith(query))).length
     const allQueryTokensMatch = rawTokens.length > 0 && prefixTokenOverlap === rawTokens.length
     const fuzzyLimit = Math.max(raw.length, name.length) >= 8 ? 2 : 1
+    // Full-name near-matches must outrank unrelated models sharing one token:
+    // "ЭТНО БОМБР" should rank "ЭТНО БОМБЕР" before other "ЭТНО ..." items.
+    // Suggestions still require a manager's explicit selection.
+    const fullTypoLimit = Math.max(raw.length, name.length) >= 12 ? 3 : 2
+    const fullDistance = raw.length >= 5 && name.length >= 5
+      ? typoDistance(raw, name, fullTypoLimit) : fullTypoLimit + 1
+    const nearFullName = exactTokenOverlap > 0 && fullDistance > 0 && fullDistance <= fullTypoLimit
     const distances = [
       typoDistance(raw, name, fuzzyLimit),
       ...rawTokens.map(query => Math.min(...nameTokens.map(token => typoDistance(query, token, fuzzyLimit)))),
@@ -76,7 +83,8 @@ export function rankedProducts(products: CatalogResolutionProduct[], source: str
           : allQueryTokensMatch ? 7600 + prefixTokenOverlap * 100
             : compactContains ? 6800 + Math.min(compactRaw.length, 500)
               : embedded ? 5600 + name.length
-                : exactTokenOverlap ? 3000 + exactTokenOverlap * 200
+                : nearFullName ? 7100 - fullDistance * 300 + exactTokenOverlap * 30
+                  : exactTokenOverlap ? 3000 + exactTokenOverlap * 200
                   : prefixTokenOverlap ? 2200 + prefixTokenOverlap * 120
                     : fuzzy ? 1200 - distance * 100
                       : 0
