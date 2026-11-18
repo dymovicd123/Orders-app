@@ -128,6 +128,8 @@ const shortageItems=[{
 const fakeApi=async (url,init) => {
   const method=init?.method || 'GET'
   calls.push({url,method,init})
+  if (method==='POST' && url.endsWith('/shipping/prepare')) return response({ok:true,recovered:0,pending:0})
+  if (method==='GET' && url.endsWith('/catalog-review')) return response({ok:true,count:0,items:[]})
   if (method==='GET' && url.endsWith('/shipping/plan')) return response({
     ok:true,lines:planLines,canConfirmIssuedOnly,
     selectedCount:canConfirmIssuedOnly?0:planLines.filter(row=>row.selectable).length,
@@ -159,6 +161,7 @@ const actions = () => createOrderTableDispatchActions({
   askActionConfirmation:async()=>approveCorrection,
   setMessage:value=>{message=typeof value==='function'?value(message):value},
   onShipmentChange:async()=>{refresh++;return refreshOk},
+  onOpenCatalogResolution:()=>{throw Error('Unexpected resolver for ready shipment')},
 })
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
 const order={id:55,external_id:'ORD-55'}
@@ -167,9 +170,12 @@ await flush()
 assert.deepEqual(modal.selected,{44:1,45:2},'all ready units selected by default')
 const firstId=modal.requestId
 assert.match(firstId,/^order-dispatch:/)
-assert.deepEqual(calls.slice(0,2).map(c=>c.url),[
+assert.deepEqual(calls.slice(0,4).map(c=>c.url),[
+  '/api/orders/55/shipping/prepare',
   '/api/orders/55/shipping/plan','/api/orders/55/shipping/dispatches',
+  '/api/orders/55/catalog-review',
 ])
+assert.equal(calls[0].method,'POST','Preparation may reserve a known SKU but must never send stock')
 // Block an invalid quantity before any HTTP write.
 modal={...modal,selected:{44:2,45:2}}
 const beforeInvalid=calls.length
@@ -309,7 +315,7 @@ const baseModalDraft={
   requestId:'order-dispatch:test-id',correctionKey:'',correctionItemId:0,
 }
 const modalProps = draft => ({
-  draft,setDraft:()=>{},submitSelectedDispatch:()=>{},
+  draft,setDraft:()=>{},submitSelectedDispatch:()=>{},openBlockedItemsInResolver:()=>{},
   confirmIssuedOnlyDispatch:()=>{},cancelDispatchedLine:()=>{},
 })
 const rendered = draft => renderToStaticMarkup(createElement(OrderTableDispatchModal,modalProps(draft)))

@@ -9,6 +9,7 @@ import { readPriorIssuedItemIds } from '../domains/order-prior-issued-origin.ts'
 import { dispatchSelectedCompleteOrderLines } from '../domains/order-dispatch.ts'
 import { DispatchStockConfirmationRequired } from '../domains/order-dispatch-confirmation.ts'
 import { cancelExactOrderDispatchItem } from '../domains/order-dispatch-cancel.ts'
+import { prepareOrderShippingReservations } from '../domains/order-shipping-prepare.ts'
 
 /**
  * Return null only when this request does not match one of the modern
@@ -89,6 +90,20 @@ export async function handleOrderSelectiveShippingRoute(
         }catch(error){
           const e=publicApiError(error);
           return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
+        }
+      }
+
+      const shippingPrepareMatch = pathname.match(/^\/api\/orders\/(\d+)\/shipping\/prepare$/);
+      if (shippingPrepareMatch && request.method==='POST') {
+        const role=cleanText(request.headers.get('X-Access-Role')).toLowerCase()
+        if (role!=='admin' && role!=='manager') {
+          return json({ok:false,message:'Подготовка отправки доступна только менеджеру или администратору.'},{status:403})
+        }
+        try {
+          return json(await prepareOrderShippingReservations(db,toInt(shippingPrepareMatch[1],0)))
+        } catch(error) {
+          const safe=publicApiError(error)
+          return json({ok:false,...(safe.code?{code:safe.code}:{}),message:safe.message},{status:safe.status})
         }
       }
 

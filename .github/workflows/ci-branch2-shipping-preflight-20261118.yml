@@ -1,0 +1,30 @@
+name: Branch2 safe shipping preflight and resolver acceptance
+on:
+  pull_request:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  shipping-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Reproduce sent and known-reserve-missing orders with real SQLite
+        run: node scripts/test-order-send-resolver-prepare-20261118.mjs
+      - name: Existing atomic partial dispatch and corrected shipping
+        run: |
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-main-confirmed-shipping-state-20261108.mjs
+          node scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+      - name: TypeScript and production build
+        run: npm run build

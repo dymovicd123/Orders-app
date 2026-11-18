@@ -6,6 +6,7 @@ type Props = {
   draft: OrderTableDispatchDraft
   setDraft: Dispatch<SetStateAction<OrderTableDispatchDraft | null>>
   submitSelectedDispatch: () => void
+  openBlockedItemsInResolver: () => void
   confirmIssuedOnlyDispatch: () => void
   cancelDispatchedLine: (line: OrderTableDispatchHistoryLine) => void
 }
@@ -16,6 +17,7 @@ export function OrderTableDispatchModal({
   draft,
   setDraft,
   submitSelectedDispatch,
+  openBlockedItemsInResolver,
   confirmIssuedOnlyDispatch,
   cancelDispatchedLine,
 }: Props) {
@@ -70,6 +72,12 @@ export function OrderTableDispatchModal({
                           </div>
                         })}
                         {(dispatchDraft.plan?.lines||[]).length===0 ? <p>В заказе нет товаров для отправки.</p> : null}
+                        {dispatchDraft.needsCatalogResolution ? <div className="order-dispatch-resolver-prompt" role="status" style={{
+                          padding:'12px 14px',marginTop:12,border:'1px solid var(--border-color,#dfe3e8)',borderRadius:12}}>
+                          <p style={{margin:'0 0 10px'}}>Для части товаров требуется уточнить привязку к каталогу или резерву. Уже отправленные позиции не будут списаны повторно.</p>
+                          <button className="secondary" type="button" disabled={dispatchDraft.submitting}
+                            onClick={openBlockedItemsInResolver}>Уточнить проблемные товары</button>
+                        </div> : null}
                         {dispatchDraft.plan?.canConfirmIssuedOnly ? (
                           <div style={{marginTop:16}}>
                             <p>По учётным записям товары ранее выдали со склада или отметили выданными при ревизии. Это само по себе не подтверждает отправку клиенту. Если товары действительно отправлены, отметьте отправку здесь; повторного списания не будет.</p>
@@ -83,9 +91,10 @@ export function OrderTableDispatchModal({
                         {dispatchDraft.plan && !dispatchDraft.plan.canConfirmIssuedOnly
                           && !dispatchDraft.plan.selectedCount && dispatchDraft.plan.lines?.length ? (
                             <p role="status" aria-live="polite">
-                              {dispatchDraft.history.some((sent)=>Number(sent.cancelledQuantity)<Number(sent.quantity))
-                                ? 'По учёту отправка уже проведена. Повторно списывать эту вещь нельзя. Если отметка об отправке ошибочна и товар остался у вас, воспользуйтесь «Исправить ошибочную отправку» ниже. Если вещь действительно передали клиенту, ничего повторно делать не нужно.'
-                                : 'Сейчас нет товаров, готовых к отправке. Посмотрите причину у каждой позиции. Система не позволит повторно списать уже выданную вещь.'}
+                              {(dispatchDraft.plan.lines||[]).some((row)=>!row.selectable && !dispatchDraft.history.some(sent=>
+                                Number(sent.orderItemId)===Number(row.orderItemId)&&Number(sent.cancelledQuantity)<Number(sent.quantity)))
+                                ? 'Оставшиеся товары ещё не готовы к отправке по учёту. Проверьте конкретную причину у каждой позиции. Ранее отправленные вещи повторно списываться не будут.'
+                                : 'По учёту все позиции уже отправлены либо закрыты. Повторно списывать их нельзя. Если была ошибочная отметка и товар остался у вас, воспользуйтесь исправлением отправки ниже.'}
                             </p>
                           ) : null}
                         {dispatchDraft.plan?.selectedCount ? (

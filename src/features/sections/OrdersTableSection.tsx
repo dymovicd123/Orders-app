@@ -74,6 +74,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     askStockResolution,
     onShipmentChange,
     setMessage,
+    setOrderCatalogResolutionOrder,
     openOrderStockHandover,
     normalizeSuggestion,
     ordinaryOrdersSeparated = false,
@@ -100,6 +101,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
 
   const {
     openDispatchDraft,
+    openBlockedItemsInResolver,
     submitSelectedDispatch,
     confirmIssuedOnlyDispatch,
     cancelDispatchedLine,
@@ -111,6 +113,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     askActionConfirmation,
     setMessage,
     onShipmentChange,
+    onOpenCatalogResolution: (lookup) => {
+      const current=orders.find(row => row.id===lookup.id)
+      if(current) setOrderCatalogResolutionOrder(current)
+      else setMessage('Заказ обновился. Перезагрузите список и откройте уточнение ещё раз.')
+    },
   })
 
   const priceItems = priceDraft ? (priceDraft.order.items || []).filter(
@@ -1416,6 +1423,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   draft={dispatchDraft}
                   setDraft={setDispatchDraft}
                   submitSelectedDispatch={submitSelectedDispatch}
+                  openBlockedItemsInResolver={openBlockedItemsInResolver}
                   confirmIssuedOnlyDispatch={confirmIssuedOnlyDispatch}
                   cancelDispatchedLine={cancelDispatchedLine}
                 />
