@@ -1,0 +1,35 @@
+name: Resolver real no-color/no-size and zero-stock shipping acceptance 20261118
+on:
+  pull_request:
+    branches: [main, branch2]
+  push:
+    branches:
+      - fix/main-resolver-no-dimensions-shortage-20261118
+      - fix/branch2-resolver-no-dimensions-shortage-20261118
+permissions:
+  contents: read
+jobs:
+  resolver-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Reproduce both reported resolver orders on disposable SQLite
+        run: node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
+      - name: Guard previous shipping, catalog and Return V2 behavior
+        run: |
+          set -euo pipefail
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
+          node scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+      - name: Production build
+        run: npm run build
