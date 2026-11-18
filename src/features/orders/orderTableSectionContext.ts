@@ -123,6 +123,7 @@ export type OrderTableSectionContext = Corrections & Cancellations & Shipping & 
   askActionConfirmation: (text:string)=>Promise<boolean>
   askStockResolution: (prompt:StockResolutionPrompt)=>Promise<boolean>
   onShipmentChange: ()=>Promise<unknown>
+  setOrderCatalogResolutionOrder: Dispatch<SetStateAction<OrderRecord|null>>
   setMessage: Dispatch<SetStateAction<string|null>>
   normalizeSuggestion: typeof normalizeSuggestion
   ordinaryOrdersSeparated?:boolean

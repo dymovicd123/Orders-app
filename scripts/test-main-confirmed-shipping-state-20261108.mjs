@@ -134,7 +134,9 @@ assert(ui.includes('extraActionsOrderId === order.id && fullyShipped'),'Recorded
 assert(ui.includes('История отправок / исправить ошибку'))
 
 assert(dispatchModal.includes('Уже отправлено — повторная отправка не нужна'))
-assert(dispatchModal.includes('По учёту отправка уже проведена'))
+assert(dispatchModal.includes('По учёту все позиции уже отправлены либо закрыты'))
+assert(dispatchModal.includes('Оставшиеся товары ещё не готовы к отправке'),
+  'Mixed partial shipment must not claim every original item was sent')
 assert(dispatchModal.includes('Исправить ошибочную отправку'))
 assert(dispatchModal.includes('Отправлено: {x.dispatchedAt'))
 assert(dispatchModal.includes("String(part).trim().toUpperCase()!=='СТАНДАРТ'"))
