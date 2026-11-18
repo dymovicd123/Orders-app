@@ -1,0 +1,39 @@
+name: Read-only live Branch2 Worker binding reconciliation
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/diag-branch2-worker-d1-binding-20261118.yml]
+permissions:
+  contents: read
+jobs:
+  inspect-only:
+    if: github.ref == 'refs/heads/branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read effective binding metadata and compare with intended test D1, no writes
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          cfg=json.load(open('wrangler.jsonc'))
+          assert cfg['name']=='orders-app-branch2'
+          expected='0904a573-21ff-44d8-93b0-c9200f771702'
+          assert cfg['d1_databases'][0]['database_id']==expected
+          url='https://api.cloudflare.com/client/v4/accounts/'+os.environ['CLOUDFLARE_ACCOUNT_ID']+'/workers/scripts/orders-app-branch2/settings'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['CLOUDFLARE_API_TOKEN'],'Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as response: r=json.load(response)
+          assert r.get('success'),r.get('errors')
+          bindings=r['result'].get('bindings',[])
+          for b in bindings:
+              if b.get('name')=='DB':
+                  print('D1_BINDING_READONLY', {k:b.get(k) for k in ('name','type','database_name','database_id','id','namespace_id','environment') if k in b})
+              else: print('OTHER_BINDING_NAME_TYPE',b.get('name'),b.get('type'))
+          assert sum(1 for b in bindings if b.get('name')=='DB')==1,'Binding missing'
+          db=next(b for b in bindings if b.get('name')=='DB')
+          assert db.get('database_id',db.get('id'))==expected,'Live Worker DB does not match test UUID'
+          print('LIVE_BRANCH2_D1_BINDING_READONLY_MATCH')
+          PY
