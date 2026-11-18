@@ -94,7 +94,15 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
           : recordedSent !== null && recordedSent >= quantity ? 'Уже отправлен'
           : alreadyIssued ? 'Уже выдан'
           : isWorkshop ? 'Ещё не готов'
-            : 'Проверьте наличие товара'
+          : !current && toInt(item.variantId, 0) > 0
+            ? 'Нет действующего резерва для известного SKU. Проверьте складскую привязку.'
+          : !current
+            ? 'Не определён вариант товара. Требуется уточнение в резолвере.'
+          : current.status === 'conflict' || current.variantId <= 0
+            ? 'Противоречивая привязка резерва. Требуется проверка учёта.'
+          : current.status === 'unresolved'
+            ? 'Резерв ожидает проверки наличия и корректного статуса позиции.'
+          : 'Статус позиции и действующий резерв не совпадают. Требуется проверка учёта.'
     return {
       orderItemId, productName: cleanText(item.productName) || 'Товар',
       color:cleanText(item.color),size:cleanText(item.size),
