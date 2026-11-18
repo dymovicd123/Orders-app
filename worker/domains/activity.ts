@@ -186,10 +186,21 @@ export async function listReturnHistory(db: D1Database, url: URL) {
             COALESCE(m.color_key, '#475569') AS manager_color, COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
             COALESCE(o.city, '') AS city, linked_exchange.id AS exchange_id,
             ri.id AS return_item_id, ri.order_item_id AS return_item_order_item_id,
-            ri.product_name_snapshot AS return_item_product_name, ri.quantity AS return_item_quantity,
-            ri.gender_snapshot AS return_item_gender, ri.color_snapshot AS return_item_color,
-            ri.material_snapshot AS return_item_material, ri.length_snapshot AS return_item_length,
-            ri.size_snapshot AS return_item_size, ri.inventory_source AS return_item_inventory_source,
+            COALESCE(NULLIF(ri.product_name_snapshot,''),NULLIF(active_product.name,''),oi.product_name_snapshot)
+              AS return_item_product_name, ri.quantity AS return_item_quantity,
+            COALESCE(NULLIF(ri.gender_snapshot,''),NULLIF(active_variant.gender,''),oi.gender_snapshot)
+              AS return_item_gender,
+            COALESCE(NULLIF(ri.color_snapshot,''),
+              CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.color,''),'БЕЗ ЦВЕТА') END,
+              oi.color_snapshot) AS return_item_color,
+            COALESCE(NULLIF(ri.material_snapshot,''),NULLIF(active_variant.material,''),oi.material_snapshot)
+              AS return_item_material,
+            COALESCE(NULLIF(ri.length_snapshot,''),NULLIF(active_variant.length,''),oi.length_snapshot)
+              AS return_item_length,
+            COALESCE(NULLIF(ri.size_snapshot,''),
+              CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.size_label,''),'БЕЗ РАЗМЕРА') END,
+              oi.size_snapshot) AS return_item_size,
+            ri.inventory_source AS return_item_inventory_source,
             ri.restocked AS return_item_restocked,
             ri.physical_tracking AS return_item_physical_tracking,
             ri.physical_received_at AS return_item_physical_received_at,
@@ -206,6 +217,10 @@ export async function listReturnHistory(db: D1Database, url: URL) {
      LEFT JOIN customers c ON c.id = o.customer_id
      LEFT JOIN exchanges linked_exchange ON linked_exchange.id = (SELECT e.id FROM exchanges e WHERE e.refund_return_id = r.id ORDER BY e.id DESC LIMIT 1)
      LEFT JOIN return_items ri ON ri.return_id = r.id
+     LEFT JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=r.order_id
+     LEFT JOIN catalog_products active_product ON active_product.id=oi.product_id AND active_product.is_active=1
+     LEFT JOIN catalog_variants active_variant ON active_variant.id=oi.variant_id
+       AND active_variant.product_id=active_product.id AND active_variant.is_active=1
      LEFT JOIN inventory_lifecycle_events lifecycle ON lifecycle.id = (
        SELECT e.id FROM inventory_lifecycle_events e WHERE e.operation_type = 'return' AND e.operation_id = r.id AND e.operation_item_id = ri.id ORDER BY e.id DESC LIMIT 1
      )

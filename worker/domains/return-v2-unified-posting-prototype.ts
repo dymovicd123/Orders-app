@@ -557,10 +557,29 @@ export async function postUnifiedReturnV2Prototype(db:D1Database,input:Input){
       statements.push(db.prepare(
         `INSERT INTO return_items(return_id,order_item_id,product_name_snapshot,quantity,
          amount,inventory_source,restocked,physical_tracking,physical_received_at,
+         gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
          created_at,contract_quantity_applied)
-        SELECT up.return_id,oi.id,oi.product_name_snapshot,?,?,NULL,0,1,NULL,?,1
+        SELECT up.return_id,oi.id,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_product.name,''),oi.product_name_snapshot)
+            ELSE oi.product_name_snapshot END,
+          ?,?,NULL,0,1,NULL,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.gender,''),oi.gender_snapshot)
+            ELSE oi.gender_snapshot END,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.color,''),'БЕЗ ЦВЕТА')
+            ELSE oi.color_snapshot END,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.material,''),oi.material_snapshot)
+            ELSE oi.material_snapshot END,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.length,''),oi.length_snapshot)
+            ELSE oi.length_snapshot END,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.size_label,''),'БЕЗ РАЗМЕРА')
+            ELSE oi.size_snapshot END,
+          ?,1
         FROM return_v2_unified_postings up JOIN order_items oi
           ON oi.order_id=up.order_id
+        LEFT JOIN catalog_products linked_product
+          ON linked_product.id=oi.product_id AND linked_product.is_active=1
+        LEFT JOIN catalog_variants linked_variant
+          ON linked_variant.id=oi.variant_id AND linked_variant.product_id=linked_product.id AND linked_variant.is_active=1
         WHERE up.request_id=? AND oi.id=?`
       ).bind(line.quantity,line.value,stamp,wanted.requestId,line.orderItemId))
       statements.push(changed(db,'pending_physical_receipt'))
