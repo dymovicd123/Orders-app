@@ -49,6 +49,8 @@ type OrderRow = {
 type ItemRow = {
   id:number;product_name_snapshot:string;gender_snapshot:string|null;color_snapshot:string|null
   material_snapshot:string|null;length_snapshot:string|null;size_snapshot:string|null
+  effective_product_name:string|null;effective_gender:string|null;effective_color:string|null
+  effective_material:string|null;effective_length:string|null;effective_size:string|null
   quantity:number;unit_price:number
   line_total:number;stock_writeoff_status:string|null;source_type:string
   is_workshop:number;variant_id:number|null;prior_issued_evidence:number
@@ -95,6 +97,18 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
   const [itemResults,reservationResults,dispatchResults,workshopTaskResults,unsafeExchange]=await Promise.all([
     db.prepare(`SELECT oi.id,oi.product_name_snapshot,
        oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_product.name,''),oi.product_name_snapshot)
+         ELSE oi.product_name_snapshot END AS effective_product_name,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.gender,''),oi.gender_snapshot)
+         ELSE oi.gender_snapshot END AS effective_gender,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.color,''),'БЕЗ ЦВЕТА')
+         ELSE oi.color_snapshot END AS effective_color,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.material,''),oi.material_snapshot)
+         ELSE oi.material_snapshot END AS effective_material,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.length,''),oi.length_snapshot)
+         ELSE oi.length_snapshot END AS effective_length,
+       CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.size_label,''),'БЕЗ РАЗМЕРА')
+         ELSE oi.size_snapshot END AS effective_size,
        oi.quantity,oi.unit_price,oi.line_total,
        oi.stock_writeoff_status,oi.source_type,oi.is_workshop,oi.variant_id,
        EXISTS(
@@ -129,7 +143,11 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
            AND ret.status='completed'),0) AS posted_physical_v2_qty,
        COALESCE((SELECT SUM(lb.quantity) FROM return_v2_legacy_baseline_items lb
          WHERE lb.order_item_id=oi.id),0) AS baselined_old_qty
-      FROM order_items oi WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`
+      FROM order_items oi
+      LEFT JOIN catalog_products active_product ON active_product.id=oi.product_id AND active_product.is_active=1
+      LEFT JOIN catalog_variants active_variant ON active_variant.id=oi.variant_id
+        AND active_variant.product_id=active_product.id AND active_variant.is_active=1
+      WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`
     ).bind(rawOrderId).all<ItemRow>(),
     db.prepare(`SELECT order_item_id,quantity,status,inventory_source,variant_id
       FROM inventory_reservations WHERE order_id=? ORDER BY order_item_id,id`
@@ -356,10 +374,12 @@ export async function previewUnifiedReturnV2LineEvidence(db:D1Database,rawOrderI
     if(oldReturned>contractQuantity)reasonCode='overreturned_legacy_quantity'
     const requiresReview=action==='needs_review'
     lines.push({
-      orderItemId:id,productName:String(item.product_name_snapshot||'Товар'),
-      gender:String(item.gender_snapshot||''),color:String(item.color_snapshot||''),
-      material:String(item.material_snapshot||''),length:String(item.length_snapshot||''),
-      size:String(item.size_snapshot||''),
+      // The return must display the physical SKU approved by Resolver, not the
+      // original manager-entered values retained for historical evidence.
+      orderItemId:id,productName:String(item.effective_product_name||item.product_name_snapshot||'Товар'),
+      gender:String(item.effective_gender||''),color:String(item.effective_color||''),
+      material:String(item.effective_material||''),length:String(item.effective_length||''),
+      size:String(item.effective_size||''),
       sourceType:isWorkshop?'workshop':source,status:labelFor(action),
       proposedAction:action,reasonCode,message,
       contractQuantity,alreadyReturnedWithoutContractReduction:oldReturned,

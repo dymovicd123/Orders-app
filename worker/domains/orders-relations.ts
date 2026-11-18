@@ -188,14 +188,27 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
       ).bind(...chunk).all<Record<string, unknown>>(),
       db.prepare(`SELECT up.order_id,ul.order_item_id,ul.contracted_quantity,
           COALESCE(ao.semantic_action,ul.action) AS action,
-          oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,
-          oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_product.name,''),oi.product_name_snapshot)
+            ELSE oi.product_name_snapshot END AS product_name_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.gender,''),oi.gender_snapshot)
+            ELSE oi.gender_snapshot END AS gender_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.color,''),'БЕЗ ЦВЕТА')
+            ELSE oi.color_snapshot END AS color_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.material,''),oi.material_snapshot)
+            ELSE oi.material_snapshot END AS material_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.length,''),oi.length_snapshot)
+            ELSE oi.length_snapshot END AS length_snapshot,
+          CASE WHEN linked_variant.id IS NOT NULL THEN COALESCE(NULLIF(linked_variant.size_label,''),'БЕЗ РАЗМЕРА')
+            ELSE oi.size_snapshot END AS size_snapshot,
           oi.source_type,oi.is_workshop,
           ri.physical_received_at,ri.restocked,ri.inventory_source
         FROM return_v2_unified_postings up
         JOIN returns ret ON ret.id=up.return_id AND ret.status='completed'
         JOIN return_v2_unified_lines ul ON ul.posting_id=up.id
         JOIN order_items oi ON oi.id=ul.order_item_id AND oi.order_id=up.order_id
+        LEFT JOIN catalog_products linked_product ON linked_product.id=oi.product_id AND linked_product.is_active=1
+        LEFT JOIN catalog_variants linked_variant ON linked_variant.id=oi.variant_id
+          AND linked_variant.product_id=linked_product.id AND linked_variant.is_active=1
         LEFT JOIN return_v2_unified_action_overrides ao
           ON ao.posting_id=up.id AND ao.order_item_id=ul.order_item_id
         LEFT JOIN return_items ri ON ri.return_id=up.return_id
