@@ -578,6 +578,15 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, askActio
         .filter(entry => !sameReferenceValue(entry.value, draft[field]))
         .slice(0, 8)
       const visibleValues = (clean(answer) && matched.length ? matched.map(entry => entry.value) : [...values].sort((a, b) => a.localeCompare(b, 'ru'))).slice(0, 12)
+      if (field === 'length' && !editing && context.lengthAlternatives?.length) {
+        return <><h4 ref={questionHeading} tabIndex={-1}>Уточните длину товара</h4>
+          <p>В заказе указано «СТАНДАРТ», но в каталоге есть совпадающий товар с другой длиной. Проверьте, какое исполнение фактически отправляется.</p>
+          <div className="resolution-choices">{context.lengthAlternatives.map(value =>
+            <button type="button" key={value} onClick={() => answerField('length', value)}>{value}</button>)}</div>
+          <button type="button" className="secondary-button" onClick={() => { setEditing('length'); setAnswer('') }}>Другая длина</button>
+          <p className="resolution-admin-note">Если это действительно новое исполнение «СТАНДАРТ», сначала добавьте его через каталог. Не создавайте новую складскую комбинацию вместо найденного товара.</p>
+        </>
+      }
       return <>{minimalFieldQuestion && context.product ? <strong>{context.product.name}</strong> : null}<h4 ref={questionHeading} tabIndex={-1}>{heading}</h4>
         {needsCorrection ? <p className="resolution-current-value">В заказе: <strong>{displayFact(field, draft[field])}</strong></p> : null}
         {small.length ? <div className="resolution-choices">{small.map(([value, text]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{text}</button>)}</div> : <>

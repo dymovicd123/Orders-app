@@ -177,6 +177,7 @@ export type CatalogResolutionContext = {
   ok: boolean
   issueType?: string
   unknownFields?: string[]
+  lengthAlternatives?: string[]
   facts?: CatalogResolutionFacts
   product?: CatalogResolutionProduct | null
   execution?: CatalogResolutionExecution | null
