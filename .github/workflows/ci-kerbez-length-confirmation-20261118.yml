@@ -1,0 +1,35 @@
+name: Kerbez single-order resolver and catalog regression 20261118
+on:
+  pull_request:
+    branches: [main, branch2]
+  push:
+    branches:
+      - fix/main-kerbez-length-validation-20261118
+      - fix/branch2-kerbez-length-validation-20261118
+permissions:
+  contents: read
+jobs:
+  kerbez-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Production-shaped Kerbez exact SKU and legacy length discrepancy
+        run: node scripts/test-kerbez-length-confirmation-20261118.mjs
+      - name: Regression of existing resolver, shipping, Return V2 and other dimension cases
+        run: |
+          set -euo pipefail
+          node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+      - name: Production TypeScript and assets build
+        run: npm run build
