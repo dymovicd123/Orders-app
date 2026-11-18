@@ -212,6 +212,11 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
   }
   for (const field of fields) {
     if (field === 'gender' && options.legacy) continue
+    // A default length must not dismiss the active-catalog length discrepancy,
+    // even if the user reconfirms the placeholder itself.
+    if (field === 'length' && context.lengthAlternatives?.length && normalize(draft.length) === 'СТАНДАРТ') {
+      return { kind: 'field', field: 'length' }
+    }
     const needsCorrection = (context.unknownFields || []).includes(field) && !options.confirmed[field]
     const missing = field === 'gender' ? !['ЖЕН', 'МУЖ'].includes(normalize(draft.gender))
       : field === 'category' ? needsCorrection
