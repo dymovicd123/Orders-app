@@ -67,6 +67,7 @@ const noDimDraft = { productId: 98101, productName:'КОСМЕТИЧКА', creat
 assert.equal(needsReference(noDimContext, noDimDraft, 'color'),false)
 assert.equal(needsReference(noDimContext, noDimDraft, 'size'),false)
 assert.equal(nextQuestion(noDimContext,noDimDraft,{remainder:'',classified:true,confirmed:{},legacy:false}).kind,'ready')
+const placeholderReferencesBefore = sql.prepare("SELECT COUNT(*) AS n FROM reference_values WHERE kind='color' AND value='БЕЗ ЦВЕТА'").get().n
 const cosmetic = await resolveCatalogReviewFacts(db, 98111, noDimDraft, {singleItem:true})
 assert.equal(cosmetic.ok,true)
 const cosmeticItem = sql.prepare('SELECT product_id,variant_id,stock_writeoff_status FROM order_items WHERE id=98111').get()
@@ -77,7 +78,7 @@ const cosmeticReservation = sql.prepare('SELECT status,unresolved_reason,variant
 assert.equal(cosmeticReservation.status,'unresolved')
 assert.equal(cosmeticReservation.unresolved_reason,'concurrent_shortage')
 assert.equal(cosmeticReservation.variant_id,cosmeticItem.variant_id)
-assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM reference_values WHERE kind='color' AND value='БЕЗ ЦВЕТА'").get().n,0)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM reference_values WHERE kind='color' AND value='БЕЗ ЦВЕТА'").get().n,placeholderReferencesBefore, 'Never add a fake color reference')
 const cosmeticStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=?').get(cosmeticItem.variant_id)
 assert.deepEqual(cosmeticStock,{quantity:0,reserved_quantity:0})
 const scopedReview = await listCatalogReviewQueue(db,new URL('https://qa.local/api/catalog/review?orderId=98110'))
