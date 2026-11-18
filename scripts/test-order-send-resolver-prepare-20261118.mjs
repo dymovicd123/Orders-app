@@ -93,6 +93,46 @@ const duplicate=await dispatchSelectedCompleteOrderLines(db,9410,{
 assert.equal(duplicate.alreadyCommitted,true)
 assert.equal(stock().quantity,before.quantity-1)
 
+// A previously flagged reserved SKU is equally recoverable when its entire
+// reservation vanished, without guessing another SKU or sending anything.
+sql.exec(`
+  INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at)
+  VALUES (9450,'ORD-TEST-MISSING-RESERVED','2026-11-15',1,'active','boutique','ready','not_sent','2026-11-15T00:00:00Z','2026-11-15T00:00:00Z');
+  INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,
+  gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,
+  unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at)
+  VALUES (9451,9450,9401,9402,'КЕРБЕЗ АБАЙКА','ЖЕН','ОРАНЖЕВЫЙ','ДАК','СТАНДАРТ','СТАНДАРТ',1,20000,20000,0,'boutique','reserved','2026-11-15T00:00:00Z');
+`)
+const beforeReserved=stock()
+assert.equal((await prepareOrderShippingReservations(db,9450)).recovered,1)
+assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9451").get().status,'active')
+assert.equal(stock().quantity,beforeReserved.quantity,'Recovering a reserved marker cannot mint physical stock')
+assert.equal((await prepareOrderShippingReservations(db,9450)).recovered,0)
+assert.equal(stock().reserved_quantity,beforeReserved.reserved_quantity+1)
+
+// A proven SKU with insufficient free stock is not a catalog error. Preserve
+// a genuine unresolved reservation so the dispatch engine can request a
+// one-operation physical possession confirmation, never change total counts.
+sql.exec(`
+  INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at)
+  VALUES (9460,'ORD-TEST-SHORTAGE','2026-11-15',1,'active','boutique','ready','not_sent','2026-11-15T00:00:00Z','2026-11-15T00:00:00Z');
+  INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,
+  gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,
+  unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at)
+  VALUES (9461,9460,9401,9402,'КЕРБЕЗ АБАЙКА','ЖЕН','ОРАНЖЕВЫЙ','ДАК','СТАНДАРТ','СТАНДАРТ',10,20000,200000,0,'boutique','pending_reservation','2026-11-15T00:00:00Z');
+`)
+const beforeShortage=stock()
+const shortagePrepared=await prepareOrderShippingReservations(db,9460)
+assert.equal(shortagePrepared.pending,1,'Known SKU short stock becomes explicit unresolved, not invisible')
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9461').get().status,'unresolved')
+assert.deepEqual(stock(),beforeShortage,'Shortage preflight never invents physical or reserved units')
+const shortOrder=await getOrder(db,9460)
+const shortReservation=sql.prepare('SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=9460').all()
+const shortPlan=buildOrderShipmentPlan(shortOrder,shortReservation)
+assert.equal(shortPlan.lines[0].needsStockConfirmation,true)
+assert.equal(shortPlan.lines[0].selectable,true,'Known shortage must reach safe confirm-specific-items route')
+assert.equal((await prepareOrderShippingReservations(db,9460)).pending,0,'Retry cannot duplicate unresolved reservation')
+
 const actions=fs.readFileSync('src/features/orders/orderTableDispatchActions.ts','utf8')
 const modal=fs.readFileSync('src/features/orders/OrderTableDispatchModal.tsx','utf8')
 const route=fs.readFileSync('worker/routes/order-selective-shipping.ts','utf8')
