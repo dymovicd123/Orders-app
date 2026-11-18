@@ -1,0 +1,33 @@
+name: Main Resolver November 18 follow-up category search archived SKU
+on:
+  push:
+    branches: [fix/main-resolver-report-followup-20261118]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  resolver-report-followup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Real report M2, numeric names, retired SKU safety and handover
+        run: node scripts/test-resolver-report-followup-20261118.mjs
+      - name: Existing resolver, dispatch, catalog and return suites
+        run: |
+          set -euo pipefail
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
+          node scripts/test-kerbez-length-confirmation-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-main-prior-issued-shipping-20261105.mjs
+          node scripts/test-resolver-return-identity-20261118.mjs
+          node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
+      - name: Build production bundles
+        run: npm run build
