@@ -23,7 +23,7 @@ export async function prepareOrderShippingReservations(db:D1Database, orderId:nu
        AND COALESCE(o.shipping_status,'not_sent')<>'sent'
        AND COALESCE(oi.is_workshop,0)=0
        AND oi.quantity>0
-       AND oi.stock_writeoff_status='pending_reservation'
+       AND oi.stock_writeoff_status IN ('pending_reservation','reserved')
        AND oi.product_id IS NOT NULL AND oi.variant_id IS NOT NULL
        AND v.is_active=1 AND p.is_active=1 AND v.product_id=oi.product_id
        AND oi.source_type IN ('warehouse','boutique')
@@ -56,7 +56,7 @@ export async function prepareOrderShippingReservations(db:D1Database, orderId:nu
       `SELECT oi.id FROM order_items oi JOIN orders o ON o.id=oi.order_id
        JOIN catalog_variants v ON v.id=oi.variant_id AND v.is_active=1 AND v.product_id=oi.product_id
        JOIN catalog_products p ON p.id=v.product_id AND p.is_active=1
-       WHERE oi.id=? AND oi.order_id=? AND oi.stock_writeoff_status='pending_reservation'
+       WHERE oi.id=? AND oi.order_id=? AND oi.stock_writeoff_status IN ('pending_reservation','reserved')
          AND oi.quantity=? AND oi.product_id=? AND oi.variant_id=? AND oi.source_type=?
          AND o.order_status='active' AND COALESCE(o.archived_at,'')=''
          AND COALESCE(o.shipping_status,'not_sent')<>'sent'
