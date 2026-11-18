@@ -50,7 +50,7 @@ sql.exec(`
   INSERT INTO order_dispatch_items(dispatch_id,order_item_id,quantity,cancelled_quantity,source_type,variant_id,created_at)
     VALUES(9420,9412,1,0,'boutique',9402,'2026-11-15T00:00:00Z');
 `)
-const stock=()=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9403').get()
+const stock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9403').get()})
 const current=()=>sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9411').get()
 const readPlan=async()=>{
   const o=await getOrder(db,9410)
