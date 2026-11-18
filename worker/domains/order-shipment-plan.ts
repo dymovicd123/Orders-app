@@ -75,7 +75,13 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       && priorIssuedItemIds.has(orderItemId)
     // Post-Stage-5 orders use the normal per-item dispatch ledger even when an
     // earlier stocktake handover has already physically consumed this item.
-    const dispatchPriorIssued = !legacyOrder && canConfirmPriorIssue
+    // The selective dispatch ledger must be able to record a confirmed prior
+    // warehouse handover even for pre-Stage-5 orders. Previously legacyOrder
+    // suppressed this and stranded *mixed* orders: other lines were sent in
+    // order_dispatch_items but the stocktake-issued item was "Уже выдан".
+    // Eligibility still requires an exact fulfilled reservation + handover
+    // evidence; no physical inventory is deducted in the dispatcher.
+    const dispatchPriorIssued = canConfirmPriorIssue
     const physicalReservationReady = stockState==='reserved' && current?.status==='active' && Boolean(current?.variantId)
     // A known SKU with a shortage-related unresolved reservation may be
     // dispatched after confirming that the specific pieces are physically present.
@@ -122,6 +128,21 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       reason,
     }
   })
+  const canConfirmIssuedOnly = legacyOrder && !closed && !historicallySent
+    && !hasCommittedPhysicalChange && lines.length > 0
+    && lines.every(line => line.canConfirmPriorIssue)
+  if (canConfirmIssuedOnly) {
+    // Preserve the existing old-order one-click *status-only* confirmation
+    // when EVERY line was previously handed over. Mixed orders instead use
+    // per-line selective dispatch without reissuing any physical item.
+    for (const line of lines) {
+      line.dispatchPriorIssued = false
+      line.readyQuantity = 0
+      line.selectedQuantity = 0
+      line.selectable = false
+      line.reason = 'Уже выдан'
+    }
+  }
   return {
     ok: true, orderId: order.id, externalId: order.external_id,
     // A snapshot for the future POST compare-and-swap, NOT authorization by itself.
@@ -131,8 +152,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     selectedQuantity: lines.reduce((n, line) => n + line.selectedQuantity, 0),
     // This is not a selective stock dispatch: every original line must have
     // proof of exactly one prior fulfilled reservation.
-    canConfirmIssuedOnly: legacyOrder && !closed && !historicallySent && !hasCommittedPhysicalChange && lines.length > 0
-      && lines.every(line => line.canConfirmPriorIssue),
+    canConfirmIssuedOnly,
     draftOnly: true,
   }
 }
