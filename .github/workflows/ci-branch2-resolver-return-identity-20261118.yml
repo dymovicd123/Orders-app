@@ -19,6 +19,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Resolver Return V2 snapshot-vs-canonical integration, history and idempotency
         run: node scripts/test-resolver-return-identity-20261118.mjs
+      - name: Exchange pending workshop and Resolver queue regression
+        run: node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
       - name: Existing Return V2 and shipping regressions
         run: |
           set -euo pipefail

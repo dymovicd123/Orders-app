@@ -98,6 +98,8 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
             ? 'Нет действующего резерва для известного SKU. Проверьте складскую привязку.'
           : !current
             ? 'Не определён вариант товара. Требуется уточнение в резолвере.'
+          : current.status === 'unresolved' && current.variantId <= 0
+            ? 'Нужно уточнить товар: название или характеристики не распознаны в каталоге.'
           : current.status === 'conflict' || current.variantId <= 0
             ? 'Противоречивая привязка резерва. Требуется проверка учёта.'
           : current.status === 'unresolved'
