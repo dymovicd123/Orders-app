@@ -1,0 +1,30 @@
+name: Read-only Branch2 exchange resolver QA diagnosis
+on:
+  push:
+    branches: [diag/branch2-exchange-resolver-20261118]
+    paths: [.github/workflows/diag-branch2-exchange-resolver-20261118.yml]
+permissions:
+  contents: read
+jobs:
+  read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Only read QA order exchange rows and status
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --json --command "SELECT oi.id,oi.quantity,oi.stock_writeoff_status,oi.product_id,oi.variant_id,oi.is_workshop,oi.source_type,wt.id task_id,wt.status task_status,wt.quantity task_quantity FROM order_items oi LEFT JOIN workshop_tasks wt ON wt.order_item_id=oi.id AND wt.order_id=oi.order_id WHERE oi.order_id=2222 ORDER BY oi.id,wt.id" 
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --json --command "SELECT o.id,o.order_status,o.shipping_status,o.workshop_status,oi.id item_id,oi.quantity,oi.stock_writeoff_status,oi.product_id,oi.variant_id,r.id reservation_id,r.status reservation_status,r.unresolved_reason FROM orders o JOIN order_items oi ON oi.order_id=o.id LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id WHERE o.id=2222 ORDER BY oi.id"
+          npx --no-install wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config wrangler.jsonc --json --command "SELECT id,order_id,old_order_item_id,new_order_item_id,status FROM exchanges WHERE order_id=2222 ORDER BY id"
