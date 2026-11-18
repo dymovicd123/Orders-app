@@ -53,7 +53,7 @@ color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_pri
 source_type,stock_writeoff_status,created_at) VALUES
  (98111,98110,NULL,NULL,'КОСМЕТИЧКА','ЖЕН','БЕЗ ЦВЕТА','СТАНДАРТ','СТАНДАРТ','БЕЗ РАЗМЕРА',1,12000,12000,0,'boutique','catalog_unresolved','2026-11-13T00:00:00Z'),
  (98211,98210,NULL,NULL,'ЭТНО БОМБЕР','МУЖ','ВЕРБЛЮЖКА','ЗАМША ВЕЛЮР','СТАНДАРТ','56',1,65000,65000,0,'boutique','catalog_unresolved','2026-11-15T00:00:00Z'),
- (98221,98220,NULL,NULL,'ЭТНО БОМБЕР','МУЖ','ВЕРБЛЮЖКА','ЗАМША ВЕЛЮР','СТАНДАРТ','56',1,65000,65000,0,'boutique','catalog_unresolved','2026-11-15T00:00:00Z');
+ (98221,98220,NULL,NULL,'ЭТНО БОМБЕР','МУЖ','ВЕРБЛЮЖКА','ЗАМША ВЕЛЮР','СТАНДАРТ','',1,65000,65000,0,'boutique','catalog_unresolved','2026-11-15T00:00:00Z');
 `)
 const noDimContext = await getCatalogReviewContext(db, 98111, {
   productId: 98101, category: 'adult', gender: 'ЖЕН', material: 'СТАНДАРТ',
