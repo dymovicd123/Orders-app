@@ -2,6 +2,7 @@ import {useEffect,useMemo,useState,type FormEvent} from 'react'
 import type {OrderItem} from '../../app/types'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from './MainOrderSourcePicker'
 import {parseSaleSearch,foldSaleName} from './MainSalePicker'
+import {modelNameTokensMatch} from './catalogModelNameSearch'
 import type {ManualOrderPreset} from './MainWorkshopOrderModal'
 import '../../styles/main-clothing-source-picker.css'
 
@@ -179,6 +180,8 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const allColors=useMemo(()=>[...new Set(variants.map(row=>row.color).filter(Boolean))],[variants])
  const search=useMemo(()=>parseClothingSearch(query,allColors),[query,allColors])
  const matchingModels=models.filter(model=>{
+  // Numbers inside a model's full name are identity, not an inferred size.
+  if(modelNameTokensMatch(model.name,query))return true
   const words=foldSaleName(model.name).split(' ')
   return search.modelTokens.every(token=>words.some(word=>word.startsWith(token)))&&
    (!search.size&&search.sizeMode==='regular'&&!search.color||model.rows.some(row=>

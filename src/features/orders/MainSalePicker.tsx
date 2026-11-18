@@ -2,6 +2,7 @@ import {useEffect,useMemo,useState,type FormEvent} from 'react'
 import type {OrderItem} from '../../app/types'
 import type {OrderPickerChoice,SourceKey} from './MainOrderSourcePicker'
 import {pickerKey} from './MainOrderSourcePicker'
+import {foldSaleName,modelNameTokensMatch} from './catalogModelNameSearch'
 import '../../styles/main-sale-picker.css'
 
 type Origin=SourceKey|'workshop'
@@ -22,11 +23,7 @@ type Props={
  onPendingChange?:(pending:boolean)=>void
  initialVariants?:OrderPickerChoice[]
 }
-const text=(value:unknown)=>String(value??'')
-const letters:Record<string,string>={'ё':'е','қ':'к','ө':'о','ұ':'у','ү':'у','ә':'а','і':'и','ң':'н','ғ':'г','һ':'х'}
-export const foldSaleName=(value:string)=>text(value).toLocaleLowerCase('ru-RU')
- .replace(/[ёқөұүәіңғһі]/g,character=>letters[character]||character)
- .replace(/[^\p{L}\p{N}]+/gu,' ').trim()
+export {foldSaleName} from './catalogModelNameSearch'
 const money=(value:number)=>value.toLocaleString('ru-RU')+' ₸'
 const audience=(choice:OrderPickerChoice)=>choice.category==='child'?'Детский':'Взрослый'
 const details=(choice:OrderPickerChoice)=>[
@@ -125,6 +122,9 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
  },[editing?.index,editing?.item?.catalogVariantId,variants])
 
  const searchMatches=models.filter(model=>{
+  // A model name can itself contain digits: "QA RESOLVER 1811" is a name,
+  // not a request to filter by size 1811.
+  if(modelNameTokensMatch(model.name,query))return true
   const words=foldSaleName(model.name).split(' ')
   if(!search.modelTokens.every(token=>words.some(word=>word.startsWith(token))))return false
   if(!search.color&&!search.size)return true
