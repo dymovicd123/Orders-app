@@ -1,0 +1,26 @@
+name: Kerbez single-order main D1 read-only diagnostic 20261118
+on:
+  push:
+    branches: [diag/kerbez-main-readonly-20261118]
+    paths:
+      - .github/workflows/diag-kerbez-main-readonly-20261118.yml
+permissions:
+  contents: read
+jobs:
+  readonly-main:
+    if: github.repository == 'dymovicd123/Orders-app' && github.ref == 'refs/heads/diag/kerbez-main-readonly-20261118'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Read only scoped production order and catalog truth
+        run: node scripts/diagnose-kerbez-prod-readonly-20261118.mjs
