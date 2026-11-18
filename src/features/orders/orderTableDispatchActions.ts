@@ -25,6 +25,7 @@ export type OrderTableDispatchPlan = {
   lines: OrderTableDispatchLine[]
   selectedCount?: number
   canConfirmIssuedOnly?: boolean
+  needsCatalogResolution?: boolean
 }
 
 export type OrderTableDispatchHistoryLine = {
@@ -75,6 +76,7 @@ export type OrderTableDispatchDraft = {
   requestId: string
   correctionKey: string
   correctionItemId: number
+  needsCatalogResolution: boolean
 }
 
 type StockResolutionQuestion = {
@@ -93,6 +95,7 @@ type OrderTableDispatchActionsArgs = {
   askActionConfirmation: (question: string) => Promise<boolean>
   setMessage: Dispatch<SetStateAction<string | null>>
   onShipmentChange: () => Promise<unknown>
+  onOpenCatalogResolution: (order: OrderTableDispatchOrder) => void
 }
 
 // This is the existing table-level dispatch workflow, not a new sending policy.
@@ -106,6 +109,7 @@ export function createOrderTableDispatchActions({
   askActionConfirmation,
   setMessage,
   onShipmentChange,
+  onOpenCatalogResolution,
 }: OrderTableDispatchActionsArgs) {
   const newDispatchRequestId=()=>`order-dispatch:${crypto.randomUUID()}`
   // A committed shipment is never a failed shipment merely because its readback fails.
@@ -118,28 +122,52 @@ export function createOrderTableDispatchActions({
   }
   const openDispatchDraft=(order:OrderTableDispatchOrder)=>{
     setDispatchDraft({order,plan:null,history:[],loading:true,submitting:false,
-      error:'',selected:{},requestId:newDispatchRequestId(),correctionKey:'',correctionItemId:0})
+      error:'',selected:{},requestId:newDispatchRequestId(),correctionKey:'',correctionItemId:0,
+      needsCatalogResolution:false})
     void (async()=>{
       try{
-        const [planRes,historyRes]=await Promise.all([
+        // One explicit Send click safely repairs proven, unissued known-SKU
+        // reservations before getting the read-only plan; no physical issue.
+        const prepareRes=await apiFetch(`/api/orders/${order.id}/shipping/prepare`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+        })
+        const prepared=await prepareRes.json() as {ok?:boolean;message?:string}
+        if(!prepareRes.ok||!prepared.ok)throw new Error(prepared.message||'Не удалось проверить резерв заказа.')
+        const [planRes,historyRes,reviewRes]=await Promise.all([
           apiFetch(`/api/orders/${order.id}/shipping/plan`),
           apiFetch(`/api/orders/${order.id}/shipping/dispatches`),
+          apiFetch(`/api/orders/${order.id}/catalog-review`),
         ])
-        const [plan,history]=await Promise.all([
+        const [plan,history,review]=await Promise.all([
           planRes.json() as Promise<OrderTableDispatchPlan>,
           historyRes.json() as Promise<OrderTableDispatchHistoryResponse>,
+          reviewRes.json() as Promise<{ok?:boolean;count?:number;message?:string}>,
         ])
         if(!planRes.ok||!plan.ok)throw new Error(plan.message||'Не удалось загрузить готовые товары.')
         if(!historyRes.ok||!history.ok)throw new Error(history.message||'Не удалось загрузить отправки.')
+        if(!reviewRes.ok||!review.ok)throw new Error(review.message||'Не удалось проверить привязку товаров.')
+        const needsCatalogResolution=Number(review.count||0)>0
+        const ready=(plan.lines||[]).some(row=>row.selectable&&Number(row.readyQuantity)>0)
+        if(needsCatalogResolution&&!ready){
+          setDispatchDraft(d=>d?.order.id===order.id?null:d)
+          onOpenCatalogResolution(order)
+          return
+        }
         const selected=Object.fromEntries((plan.lines||[]).filter((row:OrderTableDispatchLine)=>row.selectable)
           .map((row:OrderTableDispatchLine)=>[Number(row.orderItemId),Number(row.selectedQuantity)]))
         setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,plan,
-          history:history.dispatches||[],selected,error:''}:d)
+          history:history.dispatches||[],selected,error:'',needsCatalogResolution}:d)
       }catch(e){
         setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,
           error:e instanceof Error?e.message:'Не удалось загрузить отправки.'}:d)
       }
     })()
+  }
+  const openBlockedItemsInResolver=()=>{
+    const d=dispatchDraft
+    if(!d?.needsCatalogResolution||d.submitting)return
+    setDispatchDraft(null)
+    onOpenCatalogResolution(d.order)
   }
   const submitSelectedDispatch=()=>{
     const d=dispatchDraft
@@ -247,6 +275,7 @@ export function createOrderTableDispatchActions({
 
   return {
     openDispatchDraft,
+    openBlockedItemsInResolver,
     submitSelectedDispatch,
     confirmIssuedOnlyDispatch,
     cancelDispatchedLine,
