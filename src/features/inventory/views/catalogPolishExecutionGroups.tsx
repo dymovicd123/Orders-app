@@ -375,12 +375,16 @@ export function CatalogPolishExecutionGroups({
               {colorGroups.map((colorGroup: any) => {
                 const colorPhysical = colorGroup.variants.reduce((sum: number, variant: any) => sum + (getStockQuantityForVariant('warehouse', variant.id) || 0) + (getStockQuantityForVariant('boutique', variant.id) || 0), 0)
                 const colorSizeCount = new Set(colorGroup.variants.map((variant: any) => normalizedText(variant.sizeLabel)).filter(Boolean)).size
+                const noSizeDescription = colorGroup.subgroups.every((subgroup: any) => subgroup.category === 'adult')
+                  ? 'Без размера'
+                  : colorGroup.subgroups.every((subgroup: any) => subgroup.category === 'child')
+                    ? 'Без возраста' : 'Без размера / возраста'
                 return (
                   <section key={`color-${group.key}-${colorGroup.key}`} className="catalog-color-group">
                     <div className="catalog-color-head">
                       <div className="catalog-color-title">
                         <strong>{colorGroup.label}</strong>
-                        <span>{colorSizeCount ? `${colorSizeCount} ${pluralRu(colorSizeCount, 'размер/возраст', 'размера/возраста', 'размеров/возрастов')}` : 'Без указанного размера/возраста'}</span>
+                        <span>{colorSizeCount ? `${colorSizeCount} ${pluralRu(colorSizeCount, 'размер/возраст', 'размера/возраста', 'размеров/возрастов')}` : noSizeDescription}</span>
                       </div>
                       <div className="catalog-color-total">
                         <strong>{colorPhysical}</strong>
@@ -433,12 +437,12 @@ export function CatalogPolishExecutionGroups({
                                 const warehouseQty = getStockQuantityForVariant('warehouse', variant.id) || 0
                                 const boutiqueQty = getStockQuantityForVariant('boutique', variant.id) || 0
                                 const totalQty = warehouseQty + boutiqueQty
-                                const sizeLabel = normalizedText(variant.sizeLabel) || (subgroup.category === 'child' ? '— возраст' : '— размер')
+                                const sizeLabel = normalizedText(variant.sizeLabel) || (subgroup.category === 'child' ? 'Без возраста' : 'Без размера')
                                 const selected = Number(variantCard?.variant?.id || 0) === Number(variant.id)
                                   || (catalogVariantDraft.id === variant.id && showVariantEditor)
                                 return (
-                                  <button
-                                    key={`w6-variant-${variant.id}`}
+                                  <div key={`w6-variant-${variant.id}`} className="catalog-size-entry">
+                                    <button
                                     type="button"
                                     className={`catalog-size-tile catalog-variant-commercial-anchor ${totalQty > 0 ? 'has-stock' : 'is-zero'} ${selected ? 'is-selected' : ''}`}
                                     data-variant-id={variant.id}
@@ -449,7 +453,8 @@ export function CatalogPolishExecutionGroups({
                                     <span className="catalog-size-value">{sizeLabel}</span>
                                     <span className="catalog-size-stock">{totalQty} шт</span>
                                     <small>Склад {warehouseQty} · Бутик {boutiqueQty}</small>
-                                  </button>
+                                    </button>
+                                  </div>
                                 )
                               })}
                             </div>
@@ -459,17 +464,19 @@ export function CatalogPolishExecutionGroups({
                                 <div className="catalog-sku-card-head">
                                   <div>
                                     <span className="catalog-detail-eyebrow">Позиция</span>
-                                    <h4>{colorGroup.label} · {normalizedText(cardVariant.sizeLabel) || (subgroup.category === 'child' ? 'возраст не указан' : 'размер не указан')}</h4>
+                                    <h4>{colorGroup.label} · {normalizedText(cardVariant.sizeLabel) || (subgroup.category === 'child' ? 'Без возраста' : 'Без размера')}</h4>
                                     <p>{selectedProduct?.name} · {group.label}</p>
                                   </div>
-                                  <button className="secondary compact" type="button" onClick={closeVariantCard}>Закрыть</button>
+                                  <div className="catalog-sku-head-actions">
+                                    <button className="secondary compact" type="button" onClick={closeVariantCard}>Закрыть</button>
+                                  </div>
                                 </div>
 
                                 <div className="catalog-sku-identity">
                                   <span><small>Тип</small><strong>{productCategoryLabel(subgroup.category)}</strong></span>
                                   <span><small>Пол</small><strong>{subgroup.gender}</strong></span>
                                   <span><small>Цвет</small><strong>{colorGroup.label}</strong></span>
-                                  <span><small>{subgroup.category === 'child' ? 'Возраст' : 'Размер'}</small><strong>{normalizedText(cardVariant.sizeLabel) || 'Не указан'}</strong></span>
+                                  <span><small>{subgroup.category === 'child' ? 'Возраст' : 'Размер'}</small><strong>{normalizedText(cardVariant.sizeLabel) || (subgroup.category === 'child' ? 'Без возраста' : 'Без размера')}</strong></span>
                                   <span><small>Материал</small><strong>{normalizedKey(cardVariant.material) === 'СТАНДАРТ' ? 'Основной' : normalizedText(cardVariant.material)}</strong></span>
                                   <span><small>Длина</small><strong>{normalizedKey(cardVariant.length) === 'СТАНДАРТ' ? 'Основная' : normalizedText(cardVariant.length)}</strong></span>
                                 </div>

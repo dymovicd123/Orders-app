@@ -139,6 +139,8 @@ export function normalizeOrderItemSourceType(value: unknown, fallback: SourceTyp
 export function normalizeAudienceCategory(value: unknown, size: unknown): 'adult' | 'child' {
   const text = cleanText(value).toLowerCase();
   if (text === 'child' || text === 'детский' || text.includes('дет')) return 'child';
+  // Infer age from digits only when the user did not explicitly choose adult.
+  if (text === 'adult' || text.startsWith('взросл') || text === 'взр') return 'adult';
   const sizeText = cleanText(size);
   const sizeNumber = Number(sizeText);
   if (Number.isInteger(sizeNumber) && sizeNumber >= 1 && sizeNumber <= 12) return 'child';
