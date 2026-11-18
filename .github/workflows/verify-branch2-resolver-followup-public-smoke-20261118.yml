@@ -1,0 +1,36 @@
+name: Branch2 Resolver followup public health and bundle smoke
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/verify-branch2-resolver-followup-public-smoke-20261118.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    if: github.repository == 'dymovicd123/Orders-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Read-only public Worker health + JS entry and API type
+        run: |
+          python3 - <<'PY'
+          import json,re,time,urllib.request
+          base='https://orders-app-branch2.orders-clothes.workers.dev'
+          def get(path):
+              for attempt in range(6):
+                  try:
+                      req=urllib.request.Request(base+path,headers={'User-Agent':'OrdersBranch2ResolverFollowupVerifier/1.0'})
+                      with urllib.request.urlopen(req,timeout=20) as res:
+                          if res.status==200:return res.read()
+                  except Exception: time.sleep(2)
+              raise RuntimeError('READ_ONLY_SMOKE_FAILED '+path)
+          health=json.loads(get('/api/health'))
+          assert health.get('ok') is True
+          page=get('/').decode('utf8','replace')
+          assert '<html' in page.lower()
+          match=re.search(r'<script[^>]*src="(/assets/[^"]+)"',page)
+          assert match,'Entry JS not present'
+          data=get(match.group(1))
+          assert len(data)>1000 and not data.lstrip().lower().startswith(b'<!doctype html')
+          print('BRANCH2_RESOLVER_REPORT_PUBLIC_HEALTH_ASSETS_PASS',match.group(1),len(data))
+          PY
