@@ -132,12 +132,15 @@ export function catalogReviewOperationalPredicate(oi = 'oi', o = 'o') {
 
 
 export function catalogReviewOrderScopePredicate(oi = 'oi', o = 'o') {
+  // A pending Workshop replacement has not been produced yet. It must stay
+  // visible as "Ещё не готов" in shipping, not summon a Resolver for an active
+  // workshop task with no stock SKU. Resolver is only relevant once ready.
   return `(
     (COALESCE(${oi}.is_workshop, 0) = 1
       AND ${oi}.product_id IS NULL
       AND EXISTS (
         SELECT 1 FROM workshop_tasks wt
-        WHERE wt.order_item_id = ${oi}.id AND wt.quantity > 0 AND wt.status IN ('active', 'ready')
+        WHERE wt.order_item_id = ${oi}.id AND wt.quantity > 0 AND wt.status IN ('ready', 'done')
       )
     )
     OR (COALESCE(${oi}.is_workshop, 0) = 0 AND COALESCE(${o}.shipping_status, 'not_sent') <> 'sent')
