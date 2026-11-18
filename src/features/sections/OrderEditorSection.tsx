@@ -48,6 +48,12 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
   const [editorPickerRevision,setEditorPickerRevision]=useState(0)
   const projection = selectedOrder ? projectOrderOperationalState(selectedOrder, { isAdmin }) : null
   const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'
+  // The server rejects composition edits after any committed shipment, even
+  // when only one line of a mixed order was sent. Do not offer an editor that
+  // permits hours of input before rejecting the entire draft.
+  const compositionLockedAfterShipping = Boolean(itemizedMode && selectedOrder
+    && (selectedOrder.shipping_status === 'sent' || selectedOrder.items.some(item =>
+      Number(item.shipmentSentQuantity ?? 0) > 0)))
   const editedItemizedTotal = itemizedMode && editorDraft
     ? editorDraft.items.reduce((sum, item) => {
         const price = Number(item.unitPrice)
@@ -84,7 +90,9 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                 <>
                   <div className="card-meta">
                     {itemizedMode
-                      ? 'Здесь можно изменить сведения о клиенте, состав заказа, количество, цены и оплаты. Перед сохранением проверьте выбранные товары и суммы.'
+                      ? compositionLockedAfterShipping
+                        ? 'Часть товаров уже отправлена. Состав напрямую менять нельзя: для замены используйте «Обмен размера», для возврата — «Возврат». Данные клиента и оплаты можно исправлять отдельно.'
+                        : 'Здесь можно изменить сведения о клиенте, состав заказа, количество, цены и оплаты. Перед сохранением проверьте выбранные товары и суммы.'
                       : 'Можно быстро исправить данные выбранного заказа. Оплаты и товары подставляются из базы и сохраняются безопасно; отправка, удаление и статусы Цеха меняются отдельными штатными действиями.'}
                   </div>
     
@@ -242,7 +250,23 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     </label>
                   </div>
     
-                  {itemizedMode&&<ItemizedOrderEditorWorkspace
+                  {compositionLockedAfterShipping && <section className="mini-panel" role="status">
+                    <div className="mini-panel-head"><h3>Состав заказа защищён после отправки</h3></div>
+                    <p className="mini-panel-note">
+                      Нельзя заменить, добавить или удалить товар через общее редактирование:
+                      часть заказа уже передана клиенту. Для замены откройте «Обмен размера»,
+                      для отказа клиента — «Возврат». Неотправленные позиции и отправленные
+                      товары не будут переписаны этой формой.
+                    </p>
+                    <div className="stack">{selectedOrder.items.filter(item => Number(item.quantity || 0) > 0).map(item =>
+                      <div className="mini-item" key={item.id}>
+                        <strong>{item.productName}</strong>
+                        <span className="mini-item-summary"> · {item.quantity} шт. · {item.color || ''} {item.size || ''}
+                          {Number(item.shipmentSentQuantity || 0) > 0 ? ' · отправлено' : ' · не отправлено'}</span>
+                      </div>
+                    )}</div>
+                  </section>}
+                  {itemizedMode&&!compositionLockedAfterShipping&&<ItemizedOrderEditorWorkspace
                     key={selectedOrder.id+'-'+editorPickerRevision}
                     orderId={selectedOrder.id}
                     draft={editorDraft}

@@ -211,14 +211,38 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, askActio
       }, async () => ticket === generation.current ? load() : false, async () => owner === session.current ? await onCompleted(order) : false)
     } catch (value) {
       if (owner === session.current) {
+        let currentIdentity = ''
         if (postStarted) {
-          // A failed response does not prove the server rolled back this POST.
-          // Retrying only GET cannot create duplicate reservations or SKU writes.
+          // A lost response may mean the operation committed. Never repeat this
+          // mutation; independently read the authoritative order before showing
+          // any success checkmarks or suggesting a second save.
           owner.markUncertainWrite()
           setNeedsRecheck(true)
-          setNotice('Проверим, сохранилось ли уточнение, прежде чем продолжить отправку.')
+          try {
+            const fresh = await read<{order?: OrderRecord}>(`/api/orders/${order.id}`)
+            const current = fresh.order?.items?.find(row => Number(row.id) === Number(item.orderItemId))
+            const freshVariantId = Number(current?.variantId || 0)
+            if (freshVariantId > 0 && (
+              freshVariantId !== Number(item.variantId || 0)
+              || normalize(current?.size) !== normalize(item.size)
+              || normalize(current?.length) !== normalize(item.length)
+            )) {
+              const facts = [current?.productName, current?.audienceType, current?.gender,
+                current?.material, current?.color, current?.length, current?.size]
+                .map(clean).filter(Boolean)
+              currentIdentity = `Позиция уже обновлена (возможно, в другой вкладке). Сейчас сохранено: ${facts.join(' · ')}. Повторно сохранять старый ответ не нужно.`
+            }
+          } catch {
+            // Keep the original failure when the independent read also fails.
+          }
+          setConfirmed({})
+          setClassified(false)
+          setNotice('')
+          setItem(null)
+          setDraft(null)
+          setContext(null)
         }
-        setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.')
+        setError(currentIdentity || (value instanceof Error ? value.message : 'Не удалось сохранить товар.'))
       }
     }
     finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }

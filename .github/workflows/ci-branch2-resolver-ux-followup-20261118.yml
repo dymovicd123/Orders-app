@@ -1,0 +1,35 @@
+name: Branch2 Resolver UX follow-up regression 20261118
+on:
+  push:
+    branches: [fix/branch2-resolver-ux-followup-20261118]
+  pull_request:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  resolver-ux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Typos, competing windows and partial shipping UX
+        run: node scripts/test-resolver-ux-followup-20261118.mjs
+      - name: Resolver known facts, concurrent save, and catalog regressions
+        run: |
+          set -euo pipefail
+          node scripts/test-catalog-resolver-r8-1b-typo-safety.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
+          node scripts/test-kerbez-length-confirmation-20261118.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+          node scripts/test-resolver-return-identity-20261118.mjs
+          node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+      - name: Build
+        run: npm run build
