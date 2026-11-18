@@ -24,6 +24,7 @@ type Props={
  initialVariants?:OrderPickerChoice[]
 }
 export {foldSaleName} from './catalogModelNameSearch'
+const text=(value:unknown)=>String(value??'')
 const money=(value:number)=>value.toLocaleString('ru-RU')+' ₸'
 const audience=(choice:OrderPickerChoice)=>choice.category==='child'?'Детский':'Взрослый'
 const details=(choice:OrderPickerChoice)=>[
