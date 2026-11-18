@@ -55,7 +55,7 @@ export function OrderTableDispatchModal({
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
                                 {' · '}{line.dispatchPriorIssued
                                   ? 'По учёту уже выдан · отправка без повторного списания'
-                                  : line.selectable?(line.needsStockConfirmation?`Доступно к отправке ${line.readyQuantity} шт. · понадобится подтверждение наличия`:`Готово ${line.readyQuantity} шт.`)
+                                  : line.selectable?(line.needsStockConfirmation?`Выбрано для отправки ${line.readyQuantity} шт. · по учёту требуется проверить фактическое наличие`:`Готово ${line.readyQuantity} шт.`)
                                     : dispatchDraft.history.some((sent)=>Number(sent.orderItemId)===Number(line.orderItemId)
                                       && Number(sent.cancelledQuantity)<Number(sent.quantity))
                                       ? 'Уже отправлено — повторная отправка не нужна'

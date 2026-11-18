@@ -1,0 +1,36 @@
+name: Main Resolver Return V2 physical identity regression 20261118
+on:
+  push:
+    branches: [fix/main-resolver-return-identity-20261118]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  return-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Resolver Return V2 snapshot-vs-canonical integration, history and idempotency
+        run: node scripts/test-resolver-return-identity-20261118.mjs
+      - name: Exchange pending workshop and Resolver queue regression
+        run: node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
+      - name: Existing Return V2 and shipping regressions
+        run: |
+          set -euo pipefail
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+          node scripts/test-return-v2-unified-posting-prototype-20261114.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-return-v2-unified-finance-20261114.mjs
+          node scripts/test-return-v2-cancellation-prototype-20261114.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+      - name: Build production assets
+        run: npm run build
