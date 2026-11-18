@@ -20,6 +20,8 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -29,7 +31,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
           test "$GITHUB_REF" = 'refs/heads/repair/main-order-2246-prior-issued-shipment-20261118'
-          test "$(git rev-parse HEAD^)" = 'd8116c4ba18c665212149e9444347ef0d6943d2d'
+          test "$(git rev-parse HEAD^)" = 'c43f0bbcdcddc115a874decc7ce9fc9f8faf9f96'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/reconcile-order-2246-prior-issued-once-20261118.yml'
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
