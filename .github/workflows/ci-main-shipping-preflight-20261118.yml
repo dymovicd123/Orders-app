@@ -1,0 +1,33 @@
+name: Main shipping preflight and resolver targeted acceptance
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [release/main-shipping-preflight-20261118]
+permissions:
+  contents: read
+jobs:
+  shipping-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Exact send, resolver, inventory, Return V2 and regression tests
+        run: |
+          set -euo pipefail
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-main-confirmed-shipping-state-20261108.mjs
+          node scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+      - name: Production TypeScript and asset build
+        run: npm run build
