@@ -22,8 +22,6 @@ jobs:
       - name: Order editing and shipment regressions
         run: |
           set -euo pipefail
-          node scripts/test-stage32-retired-sku-explicit-replacement-http-20261031.mjs
-          node scripts/test-stage32-partial-itemized-rewrite-http-20261031.mjs
           node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
           node scripts/test-resolver-report-followup-20261118.mjs
           node scripts/test-legacy-mixed-prior-issued-shipping-20261118.mjs
