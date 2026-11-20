@@ -815,7 +815,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                   apiFetch={apiFetch}
                   isAdmin={isAdmin}
                   canMarkAttendance={isAdmin || (authUser?.role === 'manager' && Number(authUser.managerId) > 0
-                    && !['Завсклад','Упаковщик'].includes(authUser.employeeRole || ''))}
+                    && !['Упаковщик'].includes(authUser.employeeRole || ''))}
                   timesheetMonth={timesheetMonth}
                   timesheetData={timesheetData}
                   timesheetBusy={timesheetBusy}
