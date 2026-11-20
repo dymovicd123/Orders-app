@@ -105,7 +105,7 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
       const category = normalizeAudienceCategory(item?.audienceType, item?.size);
       return {
         productName: upperText(item?.productName),
-        catalogVariantId: Math.max(0,toInt(item?.catalogVariantId,0)),
+        catalogVariantId: Math.max(0,toInt(item?.catalogVariantId ?? (item as any)?.variantId,0)), 
         manualCatalogEntry: Boolean(item?.manualCatalogEntry),
         catalogProductId: 0,
         category,
@@ -175,7 +175,12 @@ export function sameOrderItemExceptPriceForEdit(
   left: ReturnType<typeof normalizeOrderItems>[number],
   right: ReturnType<typeof normalizeOrderItems>[number],
 ) {
-  return left.productName === right.productName
+  // Distinct generations of the same SKU specification are different physical
+  // identities. Do not discard an explicitly selected replacement as a no-op.
+  // A missing ID (legacy manual rows) is not identity evidence.
+  return (!(left.catalogVariantId > 0 && right.catalogVariantId > 0)
+    || left.catalogVariantId === right.catalogVariantId)
+    && left.productName === right.productName
     && left.audienceType === right.audienceType
     && left.gender === right.gender
     && left.color === right.color
