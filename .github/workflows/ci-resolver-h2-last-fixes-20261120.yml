@@ -1,0 +1,34 @@
+name: Branch2 Resolver H2 identical SKU generations and catalog search regression
+on:
+  push:
+    branches: [fix/branch2-resolver-h2-last-fixes-20261120]
+  pull_request:
+    branches: [branch2]
+permissions:
+  contents: read
+jobs:
+  resolver-h2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Archived-to-restored identical SKU full HTTP edit, reservation and zero stock movement
+        run: node scripts/test-resolver-archived-same-sku-relink-20261120.mjs
+      - name: Existing itemized edit, retirement, resolver, stock and shipping protections
+        run: |
+          set -euo pipefail
+          node scripts/test-stage32-retired-sku-explicit-replacement-http-20261031.mjs
+          node scripts/test-stage32-partial-itemized-rewrite-http-20261031.mjs
+          node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
+          node scripts/test-resolver-report-followup-20261118.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-legacy-mixed-prior-issued-shipping-20261118.mjs
+          node scripts/test-resolver-return-identity-20261118.mjs
+      - name: Production build and typecheck
+        run: npm run build
