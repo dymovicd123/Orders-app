@@ -249,7 +249,7 @@ assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=?').get(same
 assert.equal(reserve(sameBefore.id).status,'released')
 assert.equal(reserve(sameAfter[0].id).variant_id,9034)
 assert.equal(reserve(sameAfter[0].id).status,'active')
-assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9044').get(),
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9044').get()},
  {quantity:stockBeforeSame.quantity,reserved_quantity:1},'New active variant is reserved exactly once')
 assert.equal(count('inventory_movements','1=1'),moveBeforeSame,'Relink must never move physical goods')
 const againSame=await http('PATCH','/api/orders/'+sameOrderId,sameEdit)
