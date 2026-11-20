@@ -1,4 +1,5 @@
 import type { InventoryRenderContext } from './types'
+import {foldSaleName} from '../../orders/catalogModelNameSearch'
 import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
 import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
@@ -179,7 +180,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     suggestionValues,
   } = ctx
 
-  const query = normalizedText(ctx.inventoryQuery).toLocaleLowerCase('ru')
+  const query = foldSaleName(normalizedText(ctx.inventoryQuery))
   const activeProducts = (catalogActiveProducts || []).filter((product: any) => product?.isActive !== false)
 
   const activeVariantsFor = (productId: number) => [...(catalogVariantsByProductId?.get?.(Number(productId)) || [])]
@@ -196,7 +197,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
       variant.material,
       variant.length,
       variant.sizeLabel,
-    ].filter(Boolean).join(' ').toLocaleLowerCase('ru').includes(query)
+    ].filter(Boolean).join(' ').split(' ').map(foldSaleName).join(' ').includes(query)
   }
 
   const browseProducts = activeProducts.filter((product: any) => {
@@ -214,7 +215,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
 
     if (!query) return true
 
-    const productText = normalizedText(product.name).toLocaleLowerCase('ru')
+    const productText = foldSaleName(normalizedText(product.name))
     if (productText.includes(query)) return true
 
     return variants.some(variantMatchesQuery)

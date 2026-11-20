@@ -1963,6 +1963,15 @@ export async function updateOrderCritical(
           const resolved = item.isWorkshop || item.manualCatalogEntry
             ? await resolveWorkshopCatalogProductOnly(db, item)
             : await resolveCatalogProductAndVariant(db, item, timestamp, { createMissing: false });
+          if (!item.isWorkshop && !item.manualCatalogEntry && item.catalogVariantId > 0) {
+            // A manager selected a *specific active generation*, not merely
+            // the same color/size. Never quietly retain an archived variant or
+            // switch to a different SKU when the explicit selection disagrees.
+            const chosen = await resolveConsolidatedOrderWriteVariant(db, resolved.productId, item.catalogVariantId);
+            if (!chosen.variantId || chosen.variantId !== resolved.variantId) {
+              throw new CriticalOperationConflictError('Выбранный вариант товара не совпадает с действующей позицией каталога. Обновите выбор и сохраните заново.');
+            }
+          }
           rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
