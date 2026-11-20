@@ -53,7 +53,7 @@ export async function saveTeamAttendance(db:D1Database,input:TeamAttendanceInput
       .bind(actor.managerId).first<{id:number;role:string;is_active:number}>()
     const position=String(recorder?.role||'').trim().toLocaleLowerCase('ru-RU')
     if(!recorder||Number(recorder.is_active)!==1
-      ||position.includes('админ')||['завсклад','упаковщик'].includes(position))
+      ||position.includes('админ')||position==='упаковщик')
       throw invalid('Отметка явки недоступна для этой учётной записи.',403)
   }
   const date=validDate(input.date)
