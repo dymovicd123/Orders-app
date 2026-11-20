@@ -1,0 +1,30 @@
+name: Main supervisor attendance permission gate 20261120
+on:
+  push:
+    branches: [fix/main-supervisor-attendance-20261120]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  supervisor-attendance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Warehouse supervisor presence rights and restricted admin planner
+        run: |
+          set -euo pipefail
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-auth-production-team-access.mjs
+      - name: Build Main production assets
+        run: npm run build
