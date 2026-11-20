@@ -74,7 +74,10 @@ export function createOrderEditPersistenceActions({
         if (!original) return true
         const originalSource = original.isWorkshop ? 'workshop' : (original.sourceType === 'boutique' ? 'boutique' : 'warehouse')
         const nextSource = item.sourceType === 'workshop' ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        return normalizedEditorText(item.productName) !== normalizedEditorText(original.productName)
+        return (Number(item.catalogVariantId || 0) > 0
+            && Number(original.variantId || 0) > 0
+            && Number(item.catalogVariantId) !== Number(original.variantId))
+          || normalizedEditorText(item.productName) !== normalizedEditorText(original.productName)
           || normalizeAudienceTypeValue(item.audienceType) !== normalizeAudienceTypeValue(original.audienceType)
           || normalizedEditorText(item.gender) !== normalizedEditorText(original.gender)
           || normalizedEditorText(item.color) !== normalizedEditorText(original.color)
@@ -203,6 +206,7 @@ export function createOrderEditPersistenceActions({
         itemContentReplacement = {
           expectedItems: order.items.map((item) => ({
             orderItemId: Number(item.id || 0),
+            catalogVariantId: Number(item.variantId || 0) || undefined,
             productName: item.productName,
             audienceType: item.audienceType && normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
             gender: item.gender || null,
@@ -222,6 +226,7 @@ export function createOrderEditPersistenceActions({
           })),
           items: nextDraft.items.map((item) => ({
             orderItemId: Number(item.orderItemId || 0) || undefined,
+            catalogVariantId: Number(item.catalogVariantId || 0) || undefined,
             productName: item.productName,
             audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
             gender: item.gender || null,
