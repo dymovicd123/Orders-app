@@ -1,0 +1,153 @@
+name: Main warehouse supervisor attendance only Worker release (no D1 writes)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/main-supervisor-attendance-controlled-release-20261120.yml
+permissions:
+  contents: read
+concurrency:
+  group: main-supervisor-attendance-controlled-release-20261120
+  cancel-in-progress: false
+jobs:
+  main-worker-only:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify exact Main parent, production D1 and release-only diff
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '2c19e126df9de943ad9d92a724ddeacd0f29594e'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/main-supervisor-attendance-controlled-release-20261120.yml'
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          grep -Fq '"RETURN_V2_ENABLED": "true"' wrangler.jsonc
+          grep -Fq '"keep_vars": true' wrangler.jsonc
+          if grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc; then exit 1; fi
+          echo MAIN_PRODUCTION_SOURCE_PIN_PASS
+      - run: npm ci --no-audit --no-fund
+      - name: Verify shipping preflight, Resolver, Return V2 and compile production source
+        run: |
+          set -euo pipefail
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-auth-production-team-access.mjs
+          node scripts/test-resolver-report-followup-20261118.mjs
+          node scripts/test-legacy-mixed-prior-issued-shipping-20261118.mjs
+          node scripts/test-main-prior-issued-shipping-20261105.mjs
+          node scripts/test-resolver-ux-followup-20261118.mjs
+          node scripts/test-resolver-return-identity-20261118.mjs
+          node scripts/test-resolver-exchange-pending-workshop-20261118.mjs
+          node scripts/test-return-v2-unified-line-evidence-20261114.mjs
+          node scripts/test-return-v2-unified-posting-prototype-20261114.mjs
+          node scripts/test-kerbez-length-confirmation-20261118.mjs
+          node scripts/test-catalog-resolver-optional-dimensions-20261118.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-order-send-resolver-prepare-20261118.mjs
+          node scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-main-confirmed-shipping-state-20261108.mjs
+          node scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-return-v2-immediate-intake-20261114.mjs
+          node scripts/test-return-v2-unified-finance-20261114.mjs
+          node scripts/test-warehouse-return-exchange-receiving-20261117.mjs
+          npm run build
+          node scripts/return-v2-main-readiness.mjs --remote > /tmp/main-supervisor-attendance-ready.json
+          jq -e '.schema.ready == true and .target == "orders-app"' /tmp/main-supervisor-attendance-ready.json >/dev/null
+      - name: Prepare deploy config without rebuilding or D1 writes
+        run: |
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const src=readFileSync('wrangler.jsonc','utf8')
+          const safe=src.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/,'')
+          if (safe===src) throw new Error('Expected one build command')
+          if (!safe.includes('"name": "orders-app"') || !safe.includes('"database_name": "orders_db_prod"')) throw new Error('Not Main')
+          writeFileSync('.main-supervisor-attendance-once.jsonc',safe)
+          NODE
+          npx --no-install wrangler deploy --config .main-supervisor-attendance-once.jsonc --name orders-app --keep-vars --strict --dry-run --outdir .main-legacy-mixed-prior-issued-dryrun
+      - name: Capture current active production Worker version
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments?per_page=1" |
+            jq -er '.result.deployments[0].versions | if length==1 and .[0].percentage==100 then .[0].version_id else error("Not a single 100%-active Worker") end' > /tmp/main-supervisor-attendance-previous-version
+          test -s /tmp/main-supervisor-attendance-previous-version
+      - name: Deploy production Worker only, preserving secrets (NO D1 migration)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '2c19e126df9de943ad9d92a724ddeacd0f29594e'
+          npx --no-install wrangler deploy --config .main-supervisor-attendance-once.jsonc --name orders-app --keep-vars --strict
+      - name: Wait for exact active production D1, V2 flag and admin secrets (READ ONLY)
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          root='https://api.cloudflare.com/client/v4/accounts/'+os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          expected_db='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          previous=open('/tmp/main-supervisor-attendance-previous-version').read().strip()
+          def api(path):
+              req=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+              with urllib.request.urlopen(req,timeout=25) as response: result=json.load(response)
+              assert result.get('success'),result.get('errors')
+              return result['result']
+          for attempt in range(15):
+              try:
+                  deployments=api('/workers/scripts/orders-app/deployments?per_page=1')['deployments']
+                  versions=deployments[0].get('versions',[]) if deployments else []
+                  if len(versions)!=1 or versions[0].get('percentage')!=100: raise ValueError('Not yet 100% active')
+                  version=versions[0]['version_id']
+                  if version==previous: raise ValueError('Previous version still active')
+                  binds=api('/workers/scripts/orders-app/versions/'+version)['resources']['bindings']
+                  def has(name,kind):
+                      return any(x.get('name')==name and x.get('type')==kind for x in binds)
+                  assert any(x.get('name')=='DB' and x.get('type')=='d1'
+                    and (x.get('database_id') or x.get('id'))==expected_db for x in binds),'Wrong Main database'
+                  assert any(x.get('name')=='RETURN_V2_ENABLED' and x.get('type')=='plain_text'
+                    and x.get('text')=='true' for x in binds),'Return V2 disabled'
+                  assert has('ADMIN_MODE_SESSION_SECRET','secret_text'),'Admin session secret missing'
+                  assert has('ADMIN_MODE_PASSWORD','secret_text'),'Admin password secret missing'
+                  print('MAIN_SUPERVISOR_ATTENDANCE_ACTIVE_WORKER_VERIFIED',version)
+                  break
+              except Exception as exc:
+                  print('Waiting for Cloudflare version propagation',attempt+1,str(exc)[:140])
+                  if attempt==14: raise
+                  time.sleep(3)
+          PY
+      - name: Public production health and assets smoke
+        run: |
+          python3 - <<'PY'
+          import json, re, urllib.request, urllib.error
+          base='https://orders-app.orders-clothes.workers.dev'
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(base+path, headers={'User-Agent':'OrdersMainSupervisorAttendanceRelease/1.0'}), timeout=25) as r: return r.status,r.read()
+          status,body=get('/api/health')
+          assert status==200 and json.loads(body).get('ok') is True
+          status,html=get('/')
+          assert status==200
+          links=re.findall(rb'<script[^>]+src="(/assets/[^"]+)"',html)
+          assert links,'No production JavaScript bundle in HTML'
+          status,js=get(links[0].decode())
+          assert status==200 and len(js)>1000
+          print('MAIN_SUPERVISOR_ATTENDANCE_PRODUCTION_WORKER_AND_ASSETS_PASS')
+          PY
