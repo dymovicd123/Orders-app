@@ -1,0 +1,84 @@
+name: Branch2 reviewed Code128 camera-safe release 20261121
+# One-shot Worker+assets, no Main access or D1 migrations.
+on:
+  pull_request:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-code128-camera-safe-release-20261121.yml']
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-code128-camera-safe-release-20261121.yml']
+permissions:
+  contents: read
+concurrency:
+  group: branch2-code128-camera-safe-one-shot-20261121
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Verify Branch2 source and dry-run, without deployment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish only tested Branch2 Code128 camera Worker
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): code128 camera safe 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pin exact reviewed code, one-file deploy diff, isolated Worker/D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '1eb2f4ac1cc0fe9768968ec4000d6e41db93115a'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-code128-camera-safe-release-20261121.yml'
+          test "$(git hash-object src/features/inventory/views/StocktakeBarcodeScanner.tsx)" = 'fb01a6293eb170add8fa868f61ee6632766cd9d9'
+          test "$(git hash-object src/features/inventory/views/stocktakeBarcodeScanner.css)" = '1ef0de92d20e28c81aeab53a10fa0c7db43bd671'
+          test "$(git hash-object src/features/inventory/stocktakeCameraScanGate.ts)" = '6eade3d719753b142dfbd2188e93edec0fbb1266'
+          test "$(git hash-object scripts/test-stocktake-code128-camera-safe-20261121.mjs)" = '13bd22def3765e385359ceb0de80c00939ae8c15'
+          test "$(git hash-object scripts/test-stocktake-fast-sku-20261118.mjs)" = '617e7a9d783320da80c60faac110f087240e325c'
+          test "$(git hash-object scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs)" = 'f48c065fe6a19da238f18fa6cd4ec4c0caaa9e18'
+          test "$(git hash-object scripts/test-stocktake-camera-print-step-20261117.mjs)" = '17ca3ecd3cee929f29aaf390243541bdf8e3dd7d'
+          test "$(git hash-object .github/workflows/ci-branch2-stocktake-unit-scan-20261117.yml)" = '5d3d130f1559bc0cf47fb772f0478954b4681b14'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test "$(git hash-object worker/domains/stocktake-barcode-scan.ts)" = '37fabbb5abd5a9e96592bfd9a243af0dd071c00b'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Test Code128 camera and existing manual counts, stocktake and labels
+        run: |
+          npm ci
+          node scripts/test-stocktake-code128-camera-safe-20261121.mjs
+          node scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs
+          node scripts/test-stocktake-fast-sku-20261118.mjs
+          node scripts/test-stocktake-barcode-scan-20261117.mjs
+          node scripts/test-stocktake-camera-print-step-20261117.mjs
+          node scripts/test-barcode-no-hardware-20261117.mjs
+      - name: Full Branch2 business regression, safe D1 fingerprint, publish and HTTP smoke
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
