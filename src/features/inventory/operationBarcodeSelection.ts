@@ -50,3 +50,19 @@ export function resolveOperationBarcode(
   }
   throw new Error('Этот тип штрихкода не поддерживается в складской операции.')
 }
+
+/**
+ * A shared OCS1 barcode describes a catalog variant, not a unique tagged unit.
+ * In transfer/writeoff only, each distinct operator scan adds ONE to the
+ * uncommitted operation draft. Arrival and stock correction are intentionally
+ * lookup-only: their quantities are always entered as totals.
+ */
+export function nextSharedSkuDraftQuantity(
+  mode:'arrival'|'manual_set'|'writeoff'|'transfer',
+  quantity:number,
+):number|null{
+  if(mode!=='writeoff'&&mode!=='transfer')return null
+  if(!Number.isSafeInteger(quantity)||quantity<0||quantity>=999999)
+    throw new Error('Для одного варианта допустимо не больше 999999 шт.')
+  return quantity+1
+}
