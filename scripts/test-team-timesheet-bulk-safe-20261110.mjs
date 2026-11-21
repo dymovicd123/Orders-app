@@ -66,8 +66,22 @@ assert.ok(ui.includes('preserveExisting:!clear'),'Bulk planner must use insert-o
 assert.ok(ui.includes('tw-calendar-shift')&&ui.includes('shift.manager')&&ui.includes('shift.workUntil'))
 assert.ok(ui.includes('tw-plan-snapshot')&&ui.includes('tw-already-chip'),
   'Planner must reveal existing assignments before saving')
-assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)')&&ui.includes('setShowCalendarDay(true)'),
-  'Single-day additions, instant roster dialog and exact shift editing must remain available')
+assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)')&&ui.includes('onClick={()=>openWeekForDate(d)'),
+  'Retained legacy day logic and monthly day-to-week navigation must coexist safely')
 assert.ok(ui.includes('duplicateAssignments')&&ui.includes('newAssignments'))
 assert.ok(css.includes('.tw-calendar-detail')&&css.includes('.tw-plan-snapshot'))
+assert.ok(ui.includes('tw-inline-shift-editor')&&!ui.includes("{editingShift&&<Dialog"),
+  'Editing or removing a shift must happen in its open day, not in a second dialog')
+assert.ok(ui.includes('reflectSavedSchedule')&&ui.includes('setLocalSchedule(')&&
+  ui.includes('refreshSavedSchedule()')&&!ui.includes('await loadTeamTimesheet(timesheetMonth)'),
+  'Successful schedule updates should render immediately while the month refreshes in background')
+assert.ok(ui.includes('Выбрать всех')&&ui.includes('Снять выбор'),
+  'Bulk-first planner retains single-click staff selection presets')
+assert.ok(ui.includes('tw-calendar-item-actions')&&ui.includes('>Снять</button>')&&
+  ui.includes('Снять смену')&&ui.includes('Подтвердить снятие')&&
+  ui.includes('setConfirmShiftRemove(true)'),
+  'Removing a single shift is scoped and requires an explicit confirmation')
+assert.ok(css.includes('.tw-inline-shift-editor')&&css.includes('.tw-plan-people-tools'),
+  'Inline edit and quick staff selection must remain usable on mobile')
+
 console.log('TEAM_TIMESHEET_BULK_SAFE_PASS: add-only, repeat idempotence, scoped edits/removal, visible existing shifts')
