@@ -11,6 +11,7 @@ on:
       - 'scripts/test-stocktake-code128-camera-safe-20261121.mjs'
       - 'scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs'
       - 'scripts/test-stocktake-fast-sku-20261118.mjs'
+      - 'scripts/test-stocktake-scan-auto-include-20261121.mjs'
       - 'src/features/inventory/views/stocktakeBarcodeScanner.css'
       - 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
       - 'src/features/sections/InventorySection.tsx'
@@ -41,6 +42,7 @@ jobs:
           node scripts/test-stocktake-code128-camera-safe-20261121.mjs
           node scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs
           node scripts/test-stocktake-fast-sku-20261118.mjs
+          node scripts/test-stocktake-scan-auto-include-20261121.mjs
           node scripts/test-stocktake-camera-print-step-20261117.mjs
       - name: TypeScript and client build
         run: npm run build

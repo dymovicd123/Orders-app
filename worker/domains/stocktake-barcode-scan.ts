@@ -2,6 +2,7 @@ import { isUnitBarcode } from '../../shared/barcode-unit.ts'
 import { variantIdFromSkuBarcode } from '../../shared/barcode-sku.ts'
 import { readCatalogSkuBarcode } from './barcode-sku.ts'
 import { lookupIndividualUnitBarcode } from './barcode-unit-preparation.ts'
+import { serializeInventoryStocktakeSession } from './inventory-stocktake.ts'
 
 export class StocktakeBarcodeScanError extends Error {
   code: string
@@ -41,6 +42,53 @@ async function requireActiveSession(db: D1Database, sessionId: string) {
     throw new StocktakeBarcodeScanError('session_closed', 'Эта ревизия уже завершена или отменена.')
   }
   return session
+}
+
+/**
+ * Atomically include a newly found active catalog SKU in an existing full or
+ * selective review. This only creates an uncounted review row, never inventory
+ * stock. The accompanying scan insert must be in the same D1 batch.
+ */
+function prepareNewStocktakeVariant(
+  db: D1Database, sessionId: string, source: string, variantId: number, now: string,
+) {
+  return db.prepare(
+    `INSERT OR IGNORE INTO inventory_stocktake_items (
+       session_id,inventory_source,stock_id,product_id,variant_id,
+       product_name_snapshot,category_snapshot,gender_snapshot,color_snapshot,
+       material_snapshot,length_snapshot,size_snapshot,
+       opening_quantity,opening_reserved_quantity,baseline_quantity,
+       status,created_at,updated_at
+     )
+     SELECT ?,?,s.id,v.product_id,v.id,
+       p.name,
+       CASE WHEN v.category='child' THEN 'child' ELSE 'adult' END,
+       COALESCE(v.gender,''),COALESCE(v.color,''),
+       COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),
+       COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
+       COALESCE(v.size_label,''),
+       COALESCE(s.quantity,0),MAX(0,COALESCE(s.reserved_quantity,0)),
+       COALESCE(s.quantity,0),
+       'pending',?,?
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id=v.product_id
+     LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+     LEFT JOIN inventory_stock s ON s.variant_id=v.id AND s.inventory_source=?
+     WHERE v.id=? AND v.is_active=1 AND p.is_active=1
+       AND (sp.id IS NULL OR sp.is_active=1)
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stocktake_items i
+         WHERE i.session_id=? AND i.variant_id=v.id
+       )`
+  ).bind(sessionId,source,now,now,source,variantId,sessionId)
+}
+
+async function newlyFoundStocktakeItem(db:D1Database,sessionId:string,variantId:number){
+  const session=await serializeInventoryStocktakeSession(db,sessionId)
+  const added=session.items.find(item=>item.variantId===variantId)
+  if(!added)throw new StocktakeBarcodeScanError('scan_sync_missing',
+    'Скан принят, но найденная позиция не отображается. Обновите ревизию.')
+  return added
 }
 
 export async function listStocktakeUnitScans(db: D1Database, sessionId: string) {
@@ -83,30 +131,40 @@ export async function scanStocktakeUnit(
   const item = await db.prepare(
     "SELECT id,status FROM inventory_stocktake_items WHERE session_id=? AND variant_id=? LIMIT 1"
   ).bind(sessionId, found.variantId).first<{ id: number; status: string }>()
-  if (!item) {
-    throw new StocktakeBarcodeScanError('sku_not_in_session',
-      'Этого варианта нет в текущей проверке. Добавьте его через «Найденная позиция», затем повторите сканирование.')
-  }
   const previously = await db.prepare(
     "SELECT item_id FROM inventory_stocktake_unit_scans WHERE session_id=? AND unit_id=? LIMIT 1"
   ).bind(sessionId, found.unitId).first<{ item_id: number }>()
   if (previously) return {
     ok: true, duplicate: true, sessionId, itemId: previously.item_id,
     variantId: found.variantId, productName: found.productName,
+    addedItem:await newlyFoundStocktakeItem(db,sessionId,found.variantId),
     message: 'Эта физическая вещь уже отсканирована в текущей ревизии. Количество не увеличено.',
   }
-  if (item.status === 'recount_required') {
+  if (item?.status === 'recount_required') {
     throw new StocktakeBarcodeScanError('recount_required',
       'Остаток менялся во время проверки. Сначала выполните повторный подсчёт этой позиции вручную.')
   }
   const scannedAt = new Date().toISOString()
   try {
-    await db.prepare(
-      `INSERT INTO inventory_stocktake_unit_scans
-        (session_id,unit_id,item_id,token,variant_id,inventory_source,scanned_at,scanned_by)
-       VALUES (?,?,?,?,?,?,?,?)`
-    ).bind(sessionId, found.unitId, item.id, code, found.variantId,
-      session.inventory_source, scannedAt, String(actor || '').slice(0,120)).run()
+    if (item) {
+      await db.prepare(
+        `INSERT INTO inventory_stocktake_unit_scans
+          (session_id,unit_id,item_id,token,variant_id,inventory_source,scanned_at,scanned_by)
+         VALUES (?,?,?,?,?,?,?,?)`
+      ).bind(sessionId, found.unitId, item.id, code, found.variantId,
+        session.inventory_source, scannedAt, String(actor || '').slice(0,120)).run()
+    } else {
+      await db.batch([
+        prepareNewStocktakeVariant(db,sessionId,session.inventory_source,found.variantId,scannedAt),
+        db.prepare(
+          `INSERT INTO inventory_stocktake_unit_scans
+            (session_id,unit_id,item_id,token,variant_id,inventory_source,scanned_at,scanned_by)
+           SELECT ?,?,i.id,?,?,?,?,? FROM inventory_stocktake_items i
+           WHERE i.session_id=? AND i.variant_id=? LIMIT 1`
+        ).bind(sessionId,found.unitId,code,found.variantId,session.inventory_source,
+          scannedAt,String(actor||'').slice(0,120),sessionId,found.variantId),
+      ])
+    }
   } catch (error) {
     const conflict = await db.prepare(
       "SELECT item_id FROM inventory_stocktake_unit_scans WHERE session_id=? AND unit_id=? LIMIT 1"
@@ -114,6 +172,7 @@ export async function scanStocktakeUnit(
     if (conflict) return {
       ok: true, duplicate: true, sessionId, itemId: conflict.item_id,
       variantId: found.variantId, productName: found.productName,
+      addedItem:await newlyFoundStocktakeItem(db,sessionId,found.variantId),
       message: 'Эта физическая вещь уже была учтена в текущей ревизии. Повторный скан не изменил количество.',
     }
     if (String(error).includes('STOCKTAKE_UNIT_SCAN_CONFLICT')) {
@@ -123,12 +182,20 @@ export async function scanStocktakeUnit(
     throw error
   }
   const updated = await db.prepare(
-    "SELECT counted_quantity FROM inventory_stocktake_items WHERE id=? AND session_id=? LIMIT 1"
-  ).bind(item.id, sessionId).first<{ counted_quantity: number }>()
+    "SELECT id,counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND variant_id=? LIMIT 1"
+  ).bind(sessionId,found.variantId).first<{ id:number; counted_quantity: number }>()
+  const logged = await db.prepare(
+    "SELECT item_id FROM inventory_stocktake_unit_scans WHERE session_id=? AND unit_id=? LIMIT 1"
+  ).bind(sessionId,found.unitId).first<{item_id:number}>()
+  if(!updated || Number(logged?.item_id)!==Number(updated.id)){
+    throw new StocktakeBarcodeScanError('scan_not_recorded',
+      'Эта физическая вещь не записана. Обновите ревизию и проверьте позицию.')
+  }
   return {
-    ok: true, duplicate: false, sessionId, itemId: item.id,
+    ok: true, duplicate: false, sessionId, itemId: Number(updated.id),
     variantId: found.variantId, productName: found.productName,
-    countedQuantity: Number(updated?.counted_quantity || 0),
+    countedQuantity: Number(updated.counted_quantity || 0),
+    addedItem:item ? undefined : await newlyFoundStocktakeItem(db,sessionId,found.variantId),
     message: 'Вещь учтена в ревизии. Физический остаток пока не изменён.',
   }
 }
@@ -163,23 +230,38 @@ export async function scanStocktakeSku(
       ok:true,duplicate:true,scanType:'sku' as const,sessionId,variantId,
       itemId:Number(original.item_id),productName:found.productName,
       countedQuantity:Number(current?.counted_quantity || 0),
+      addedItem:await newlyFoundStocktakeItem(db,sessionId,variantId),
       message:'Повтор сетевого запроса. Количество не увеличено.',
     }
   }
   const item = await db.prepare(
     'SELECT id,status FROM inventory_stocktake_items WHERE session_id=? AND variant_id=? LIMIT 1'
   ).bind(sessionId,variantId).first<{id:number;status:string}>()
-  if (!item) throw new StocktakeBarcodeScanError('sku_not_in_session',
-    'Этот вариант не входит в текущую проверку. Добавьте его через «Найденная позиция» и повторите скан.')
-  if (item.status === 'recount_required') throw new StocktakeBarcodeScanError('recount_required',
+
+  if (item?.status === 'recount_required') throw new StocktakeBarcodeScanError('recount_required',
     'Складской остаток изменился во время проверки. Сначала пересчитайте позицию вручную.')
   const now = new Date().toISOString()
   try {
-    await db.prepare(
-      `INSERT INTO inventory_stocktake_sku_scans
-      (session_id,request_id,item_id,variant_id,inventory_source,scanned_at,scanned_by)
-      VALUES (?,?,?,?,?,?,?)`
-    ).bind(sessionId,id,item.id,variantId,session.inventory_source,now,String(actor||'').slice(0,120)).run()
+    if (item) {
+      await db.prepare(
+        `INSERT INTO inventory_stocktake_sku_scans
+        (session_id,request_id,item_id,variant_id,inventory_source,scanned_at,scanned_by)
+        VALUES (?,?,?,?,?,?,?)`
+      ).bind(sessionId,id,item.id,variantId,session.inventory_source,now,String(actor||'').slice(0,120)).run()
+    } else {
+      // The row addition and physical scan are one transaction. A conflict
+      // rolls both back, so the scan cannot leave an unverified phantom row.
+      await db.batch([
+        prepareNewStocktakeVariant(db,sessionId,session.inventory_source,variantId,now),
+        db.prepare(
+          `INSERT INTO inventory_stocktake_sku_scans
+          (session_id,request_id,item_id,variant_id,inventory_source,scanned_at,scanned_by)
+          SELECT ?,?,i.id,?,?,?,? FROM inventory_stocktake_items i
+          WHERE i.session_id=? AND i.variant_id=? LIMIT 1`
+        ).bind(sessionId,id,variantId,session.inventory_source,now,
+          String(actor||'').slice(0,120),sessionId,variantId),
+      ])
+    }
   } catch(error) {
     const replay = await db.prepare(
       'SELECT item_id,variant_id FROM inventory_stocktake_sku_scans WHERE session_id=? AND request_id=? LIMIT 1'
@@ -193,6 +275,7 @@ export async function scanStocktakeSku(
       return { ok:true,duplicate:true,scanType:'sku' as const,sessionId,
         variantId,itemId:Number(replay.item_id),productName:found.productName,
         countedQuantity:Number(current?.counted_quantity || 0),
+        addedItem:await newlyFoundStocktakeItem(db,sessionId,variantId),
         message:'Скан уже сохранён. Повторное начисление отменено.' }
     }
     if (String(error).includes('STOCKTAKE_SKU_SCAN_CONFLICT')) {
@@ -202,11 +285,19 @@ export async function scanStocktakeSku(
     throw error
   }
   const updated = await db.prepare(
-    'SELECT counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND id=? LIMIT 1'
-  ).bind(sessionId,item.id).first<{counted_quantity:number}>()
+    'SELECT id,counted_quantity FROM inventory_stocktake_items WHERE session_id=? AND variant_id=? LIMIT 1'
+  ).bind(sessionId,variantId).first<{id:number;counted_quantity:number}>()
+  const logged = await db.prepare(
+    'SELECT item_id FROM inventory_stocktake_sku_scans WHERE session_id=? AND request_id=? LIMIT 1'
+  ).bind(sessionId,id).first<{item_id:number}>()
+  if (!updated || Number(logged?.item_id)!==Number(updated.id)) {
+    throw new StocktakeBarcodeScanError('scan_not_recorded',
+      'Этот штрихкод не записан: ревизия или состояние товара изменились. Проверьте позицию.')
+  }
   return {ok:true,duplicate:false,scanType:'sku' as const,sessionId,
-    itemId:item.id,variantId,productName:found.productName,
-    countedQuantity:Number(updated?.counted_quantity || 0),
+    itemId:Number(updated.id),variantId,productName:found.productName,
+    countedQuantity:Number(updated.counted_quantity || 0),
+    addedItem:item ? undefined : await newlyFoundStocktakeItem(db,sessionId,variantId),
     message:'Добавлена 1 штука в фактический подсчёт. Остаток склада пока не изменён.'}
 }
 
