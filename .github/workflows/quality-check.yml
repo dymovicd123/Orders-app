@@ -104,6 +104,9 @@ jobs:
       - name: Verify clear save bar and week/month navigation
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-weekly-navigation-save-20261121.mjs
+      - name: Verify serialized per-action team schedule autosave, retry and network recovery
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-team-week-autosave-20261121.mjs
       - name: Verify warehouse financial stock snapshot is read-only and cost protected
         if: github.base_ref == 'branch2'
         run: node scripts/test-warehouse-capital-readonly-20261110.mjs
