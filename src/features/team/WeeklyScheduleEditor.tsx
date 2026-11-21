@@ -210,7 +210,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
   }
   async function saveWeek(after?:Destination){
     if(!canEdit||!snapshot||saving||!dirty)return
-    if(removeCount&&!confirmRemoved){setConfirmRemoved(true);return}
+    if(removeCount&&!confirmRemoved&&!after){setConfirmRemoved(true);return}
     setSaving(true);setError('');setNotice('')
     try{
       const response=await apiFetch('/api/team/timesheet/week',{
@@ -239,7 +239,10 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
       setDraft({});setConfirmRemoved(false)
       setNotice('Сохранено: добавлено '+addCount+', изменено '+updateCount+', снято '+removeCount+'.')
       if(after)applyDestination(after)
-      else void refreshWeek().catch(()=>setNotice('Сохранено, но актуальную версию не удалось загрузить. Обновите страницу.'))
+      else {
+        setPendingTarget(null)
+        void refreshWeek().catch(()=>setNotice('Сохранено, но актуальную версию не удалось загрузить. Обновите страницу.'))
+      }
       onSaved()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить график.')}
     finally{setSaving(false)}
@@ -279,12 +282,13 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
         </div>
         {pendingTarget&&dirty&&<div className="tw-week-navigation-confirm" role="alert">
           <strong>Есть несохранённые изменения.</strong>
-          <span>{pendingTarget.kind==='month'?'Перейти к обзору месяца?':'Перейти к другой неделе?'}</span>
+          <span>{pendingTarget.kind==='month'?'Перейти к обзору месяца?':'Перейти к другой неделе?'}
+            {removeCount>0?' При сохранении будет снято '+removeCount+' смен; отметки явки останутся.':''}</span>
           <div className="tw-week-confirm-actions">
             <button type="button" className="primary compact" disabled={saving}
-              onClick={()=>void saveWeek(pendingTarget)}>Сохранить и перейти</button>
+              onClick={()=>void saveWeek(pendingTarget||undefined)}>Сохранить и перейти</button>
             <button type="button" className="secondary compact" disabled={saving}
-              onClick={()=>{setDraft({});applyDestination(pendingTarget)}}>Не сохранять и перейти</button>
+              onClick={()=>{setDraft({});if(pendingTarget)applyDestination(pendingTarget)}}>Не сохранять и перейти</button>
             <button type="button" className="ghost compact" disabled={saving}
               onClick={()=>setPendingTarget(null)}>Остаться</button>
           </div>
