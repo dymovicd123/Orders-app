@@ -311,6 +311,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
       <TeamTimesheetWorkspace
         apiFetch={apiFetch}
         isAdmin={false}
+        canManageSchedule={isAdmin || (authUser?.role === 'manager' && authUser.employeeRole === 'Завсклад' && Number(authUser.managerId) > 0)}
         canMarkAttendance={authUser?.role === 'manager' && Number(authUser.managerId) > 0 &&
           !['Упаковщик'].includes(authUser.employeeRole || '')}
         timesheetMonth={timesheetMonth}
@@ -833,6 +834,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                 <TeamTimesheetWorkspace
                   apiFetch={apiFetch}
                   isAdmin={isAdmin}
+                  canManageSchedule={isAdmin || (authUser?.role === 'manager' && authUser.employeeRole === 'Завсклад' && Number(authUser.managerId) > 0)}
                   canMarkAttendance={isAdmin || (authUser?.role === 'manager' && Number(authUser.managerId) > 0
                     && !['Упаковщик'].includes(authUser.employeeRole || ''))}
                   timesheetMonth={timesheetMonth}
