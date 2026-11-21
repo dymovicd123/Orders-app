@@ -259,6 +259,21 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       const row=group?.rows.find(row=>Number(row.variantId)===match.variantId)
       if (!group||!row) throw new Error('Вариант не найден в списке выбранной точки. Обновите остатки или выберите товар вручную.')
       if (match.kind==='sku') {
+        if (mode==='writeoff'||mode==='transfer') {
+          // One explicit shared SKU scan represents one physical piece only in
+          // outbound operations. It edits the draft; no inventory moves until
+          // the existing review/confirmation and server-side stock checks.
+          const currentQuantity=int(draftMap.get(String(match.variantId))?.quantity)
+          const nextQuantity=currentQuantity+1
+          if (nextQuantity>999999) throw new Error('Нельзя указать больше 999999 шт. для одного варианта.')
+          p.onQuantity(row,String(nextQuantity))
+          setMatchedSkuId(null);setSkuQuantityDraft('')
+          setSelected(current=>current.includes(group.key)?current:[...current,group.key])
+          setCurrent(group.key);setStage('quantities')
+          setScanNotice('Общий SKU: +1 в черновик ('+nextQuantity+' шт.). Для вещей без этикеток количество можно исправить вручную. Остатки изменятся только после итогового подтверждения.')
+          window.requestAnimationFrame(()=>scanInputRef.current?.focus())
+          return
+        }
         setMatchedSkuId(match.variantId)
         const existingDraft=draftMap.get(String(match.variantId))
         const existing=int(existingDraft?.quantity)
@@ -406,7 +421,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         ? 'Необязательный поиск по общему SKU для уже маркированных вариантов. Введите количество поступивших вещей самостоятельно. Товары без этикеток выбирайте в обычном списке.'
         : mode==='manual_set'
           ? 'Общий SKU и индивидуальная метка только находят вариант. Укажите полный фактический остаток вручную, включая вещи без этикеток. Скан не меняет количество.'
-          : 'Общий код SKU найдёт вариант — количество укажите сами. Индивидуальная метка учтёт одну вещь. Без этикетки выбирайте товар обычным поиском ниже.'}</p>
+          : 'Каждый скан общего SKU добавит +1 только в черновик. Индивидуальная метка также учтёт одну вещь без повтора. Количество всегда можно исправить вручную. Остатки изменятся лишь после подтверждения.'}</p>
       <form className="operation-barcode-form" onSubmit={event=>{event.preventDefault();void scanOperationUnit()}}>
         <input ref={scanInputRef} aria-label={mode==='arrival'?'Общий штрихкод SKU для прихода':'Штрихкод товара — общий SKU или индивидуальный'} value={scanCode} onChange={event=>setScanCode(event.target.value)}
           autoComplete="off" spellCheck={false} placeholder="Отсканируйте или введите код и нажмите Enter" disabled={scanBusy||busy||loading||matchedSkuId!==null}/>
