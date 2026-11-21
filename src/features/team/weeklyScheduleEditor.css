@@ -109,3 +109,35 @@
   .tw-week-confirm-actions{width:100%;margin-left:0}
   .tw-week-confirm-actions button{flex:1 1 120px}
 }
+
+/* Automatic per-action persistence replaces the long weekly save form. */
+.tw-week-autosave{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:9px 12px;border:1px solid var(--tw-line,#dce5e9);border-radius:9px;
+  color:var(--tw-muted,#66778b);font-size:12px;background:var(--card,#fff)}
+.tw-week-autosave .tw-week-save-icon{display:inline-flex;align-items:center;
+  justify-content:center;width:20px;height:20px;border-radius:50%;
+  background:#e5f3ea;color:#22744f;font-weight:800;font-size:15px}
+.tw-week-autosave strong{color:inherit}
+.tw-week-autosave.failed{border-color:#d98989;background:#fff4f1;color:#8c2525}
+.tw-week-autosave.failed>span:not(.tw-week-save-icon){flex:1 1 100%;font-weight:500}
+.tw-week-autosave.failed .tw-week-save-icon{background:#fce3df;color:#8c2525}
+.tw-week-feedback{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:12px;color:var(--tw-muted,#66778b);min-height:32px}
+.tw-week-feedback button{min-height:34px}
+.tw-week-navigation-notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border:1px solid #9ab9dd;border-radius:9px;padding:10px 12px;
+  background:#f2f7ff;font-size:12px}
+.tw-week-navigation-notice strong{color:#24539a}
+.tw-week-navigation-notice span{flex:1 1 210px}
+.tw-week-navigation-notice button{min-height:36px}
+.tw-week-bulk .tw-week-confirm{display:flex;gap:9px;align-items:center;
+  flex-wrap:wrap;padding:11px;border:1px solid #e8b1a1;
+  background:#fff2ed;border-radius:9px;font-size:12px}
+.tw-week-bulk .tw-week-confirm strong{color:#8b3728}
+.tw-week-bulk .tw-week-confirm span{flex:1 1 220px}
+@media(max-width:550px){
+  .tw-week-autosave{padding:8px 10px;gap:7px}
+  .tw-week-autosave.failed button{flex:1 1 150px;min-height:40px}
+  .tw-week-navigation-notice button{width:100%}
+  .tw-week-bulk .tw-week-confirm button{flex:1}
+}

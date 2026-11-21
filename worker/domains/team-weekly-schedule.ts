@@ -152,5 +152,6 @@ export async function saveTeamScheduleWeek(db:D1Database,input:WeekScheduleInput
       '; изменено '+changes.filter(c=>c.kind==='update').length+
       '; снято '+changes.filter(c=>c.kind==='remove').length})
   return {ok:true,created:changes.filter(x=>x.kind==='add').length,
-    updated:changes.filter(x=>x.kind==='update').length,removed:changes.filter(x=>x.kind==='remove').length}
+    updated:changes.filter(x=>x.kind==='update').length,removed:changes.filter(x=>x.kind==='remove').length,
+    week:await listTeamScheduleWeek(db,dates[0])}
 }

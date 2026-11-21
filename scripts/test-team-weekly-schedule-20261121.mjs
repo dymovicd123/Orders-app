@@ -75,6 +75,7 @@ const patch=[
 const result=await saveTeamScheduleWeek(db,{start:'2026-11-23',changes:patch})
 assert.deepEqual([result.created,result.updated,result.removed],[3,1,1])
 assert.equal(rows().length,5)
+assert.equal(result.week.entries.length,5,'Save response must include canonical new week for autosave')
 assert.equal(rows().find(x=>x.work_date==='2026-11-23'&&x.manager_id===1).work_until,'21:00')
 assert.equal(rows().find(x=>x.work_date==='2026-11-24'&&x.manager_id===2),undefined)
 assert.equal(rows().find(x=>x.work_date==='2026-11-26'&&x.manager_id===3).comment,'Оставить')
@@ -131,8 +132,8 @@ const shell=readFileSync('src/features/team/TeamTimesheetWorkspace.tsx','utf8')
 const css=readFileSync('src/features/team/weeklyScheduleEditor.css','utf8')
 assert(worker.includes('canManageTeamSchedule(env.DB, authUser)')&&
  worker.includes("url.pathname === '/api/team/timesheet/week'"))
-assert(ui.includes('tw-week-days')&&ui.includes('stageMassAdd')&&ui.includes('stageMassRemove')&&
- ui.includes('copyPrevious')&&ui.includes('saveWeek()')&&ui.includes('onDirtyChange'))
+assert(ui.includes('tw-week-days')&&ui.includes('massAdd')&&ui.includes('massRemove')&&
+ ui.includes('copyPrevious')&&ui.includes('WeekAutosaveQueue')&&ui.includes('onDirtyChange'))
 assert(shell.includes("view==='week'?<WeeklyScheduleEditor")&&shell.includes("view==='calendar'"))
 assert(css.includes('@media(max-width:550px)'))
 console.log('TEAM_WEEKLY_SCHEDULE_PASS: 7-day/month-boundary view, one atomic save, mixed operations, stale rollback, staff checks, attendance retention and mobile editor')
