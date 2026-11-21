@@ -101,6 +101,9 @@ jobs:
       - name: Verify atomic weekly schedule and day-by-day editor
         if: github.base_ref == 'branch2'
         run: node scripts/test-team-weekly-schedule-20261121.mjs
+      - name: Verify clear save bar and week/month navigation
+        if: github.base_ref == 'branch2'
+        run: node scripts/test-team-weekly-navigation-save-20261121.mjs
       - name: Verify warehouse financial stock snapshot is read-only and cost protected
         if: github.base_ref == 'branch2'
         run: node scripts/test-warehouse-capital-readonly-20261110.mjs

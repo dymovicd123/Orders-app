@@ -66,8 +66,8 @@ assert.ok(ui.includes('preserveExisting:!clear'),'Bulk planner must use insert-o
 assert.ok(ui.includes('tw-calendar-shift')&&ui.includes('shift.manager')&&ui.includes('shift.workUntil'))
 assert.ok(ui.includes('tw-plan-snapshot')&&ui.includes('tw-already-chip'),
   'Planner must reveal existing assignments before saving')
-assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)')&&ui.includes('setShowCalendarDay(true)'),
-  'Single-day additions, instant roster dialog and exact shift editing must remain available')
+assert.ok(ui.includes('openPlannerForDate(date)')&&ui.includes('openShiftEditor(shift)')&&ui.includes('onClick={()=>openWeekForDate(d)'),
+  'Retained legacy day logic and monthly day-to-week navigation must coexist safely')
 assert.ok(ui.includes('duplicateAssignments')&&ui.includes('newAssignments'))
 assert.ok(css.includes('.tw-calendar-detail')&&css.includes('.tw-plan-snapshot'))
 assert.ok(ui.includes('tw-inline-shift-editor')&&!ui.includes("{editingShift&&<Dialog"),
