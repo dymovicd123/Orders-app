@@ -504,7 +504,12 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
                 </div>
               </div>}
             </div>:
-            <button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>)}
+            <div className="tw-calendar-item-actions">
+              <button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>
+              <button type="button" className="ghost danger compact" onClick={()=>{
+                openShiftEditor(shift);setConfirmShiftRemove(true)
+              }}>Снять</button>
+            </div>)}
         </div>)}</div>:<p className="tw-calendar-empty">Добавьте сотрудников на этот день или включите его в массовое назначение.</p>}
 
         </div>
