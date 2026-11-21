@@ -137,6 +137,7 @@ export async function scanStocktakeUnit(
   if (previously) return {
     ok: true, duplicate: true, sessionId, itemId: previously.item_id,
     variantId: found.variantId, productName: found.productName,
+    addedItem:await newlyFoundStocktakeItem(db,sessionId,found.variantId),
     message: 'Эта физическая вещь уже отсканирована в текущей ревизии. Количество не увеличено.',
   }
   if (item?.status === 'recount_required') {
@@ -171,6 +172,7 @@ export async function scanStocktakeUnit(
     if (conflict) return {
       ok: true, duplicate: true, sessionId, itemId: conflict.item_id,
       variantId: found.variantId, productName: found.productName,
+      addedItem:await newlyFoundStocktakeItem(db,sessionId,found.variantId),
       message: 'Эта физическая вещь уже была учтена в текущей ревизии. Повторный скан не изменил количество.',
     }
     if (String(error).includes('STOCKTAKE_UNIT_SCAN_CONFLICT')) {
@@ -228,6 +230,7 @@ export async function scanStocktakeSku(
       ok:true,duplicate:true,scanType:'sku' as const,sessionId,variantId,
       itemId:Number(original.item_id),productName:found.productName,
       countedQuantity:Number(current?.counted_quantity || 0),
+      addedItem:await newlyFoundStocktakeItem(db,sessionId,variantId),
       message:'Повтор сетевого запроса. Количество не увеличено.',
     }
   }
@@ -272,6 +275,7 @@ export async function scanStocktakeSku(
       return { ok:true,duplicate:true,scanType:'sku' as const,sessionId,
         variantId,itemId:Number(replay.item_id),productName:found.productName,
         countedQuantity:Number(current?.counted_quantity || 0),
+        addedItem:await newlyFoundStocktakeItem(db,sessionId,variantId),
         message:'Скан уже сохранён. Повторное начисление отменено.' }
     }
     if (String(error).includes('STOCKTAKE_SKU_SCAN_CONFLICT')) {
