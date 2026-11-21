@@ -78,6 +78,7 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { readTeamAttendance, saveTeamAttendance } from './domains/team-attendance.ts'
+import { canManageTeamSchedule } from './domains/team-schedule-access.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { activateWorkshopSettlements, postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
@@ -839,8 +840,8 @@ export default {
       }
 
       if (url.pathname === '/api/team/timesheet' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
+        if (!await canManageTeamSchedule(env.DB, authUser))
+          return json({ok:false,message:'Составление графика доступно только администратору или завскладу.'}, {status:403});
         const input = await readJson<TimesheetInput>(request);
         return json(await saveTeamTimesheet(env.DB, input), { status: 201 });
       }
