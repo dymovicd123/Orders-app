@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useState} from 'react'
+import {useEffect,useMemo,useRef,useState} from 'react'
 import type {TeamTimesheetEmployee,TeamTimesheetEntry,TeamAttendanceMark} from '../../app/types'
 import './weeklyScheduleEditor.css'
 
@@ -14,6 +14,7 @@ type Props={
   canEdit:boolean
   initialDate:string
   onMonthView:(month:string)=>void
+  onWeekChange:(start:string)=>void
   onDirtyChange:(dirty:boolean)=>void
   onSaved:()=>void
 }
@@ -32,6 +33,7 @@ const shortDay=(date:string)=>new Intl.DateTimeFormat('ru-RU',{
 const dayTitle=(date:string)=>new Intl.DateTimeFormat('ru-RU',{
   weekday:'long',day:'numeric',month:'long',timeZone:'UTC'
 }).format(new Date(date+'T12:00:00Z'))
+type Destination={kind:'week';start:string}|{kind:'month';month:string}
 const keyOf=(date:string,id:number)=>date+':'+id
 const weekLabel=(start:string)=>shortDay(start)+' — '+shortDay(stepDate(start,6))
 async function checkedJson(response:Response):Promise<WeekData>{
@@ -40,8 +42,11 @@ async function checkedJson(response:Response):Promise<WeekData>{
   return payload as WeekData
 }
 
-export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,onDirtyChange,onSaved}:Props){
+export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,onWeekChange,onDirtyChange,onSaved}:Props){
   const [weekStart,setWeekStart]=useState(()=>weekMonday(initialDate))
+  const weekRef=useRef(weekStart)
+  weekRef.current=weekStart
+  const [pendingTarget,setPendingTarget]=useState<Destination|null>(null)
   const [snapshot,setSnapshot]=useState<WeekData|null>(null)
   const [loading,setLoading]=useState(true)
   const [saving,setSaving]=useState(false)
@@ -61,6 +66,13 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
   const removeCount=edits.filter(x=>x.kind==='remove').length
 
   useEffect(()=>{onDirtyChange(dirty)},[dirty,onDirtyChange])
+  useEffect(()=>{onWeekChange(weekStart)},[weekStart,onWeekChange])
+  useEffect(()=>{
+    if(!dirty)return
+    const protect=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''}
+    window.addEventListener('beforeunload',protect)
+    return()=>window.removeEventListener('beforeunload',protect)
+  },[dirty])
   useEffect(()=>()=>onDirtyChange(false),[onDirtyChange])
   useEffect(()=>{
     let live=true
@@ -144,18 +156,34 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
     for(const date of chosenDays)for(const id of chosenPeople)stage(date,id,'remove')
     setNotice('Выбранные назначения помечены для снятия. Изменения ещё не сохранены.')
   }
-  function moveWeek(delta:number){
-    if(dirty){setError('Сначала сохраните или отмените изменения этой недели.');return}
-    setWeekStart(stepDate(weekStart,7*delta))
+  function applyDestination(destination:Destination){
+    setPendingTarget(null)
     setChosenDays([]);setChosenPeople([]);setAddingDay(null);setConfirmRemoved(false)
+    setError('')
+    if(destination.kind==='week'){
+      setWeekStart(destination.start)
+    }else onMonthView(destination.month)
+  }
+  function requestDestination(destination:Destination){
+    if(saving)return
+    if(destination.kind==='week'&&destination.start===weekStart)return
+    if(dirty){
+      setPendingTarget(destination)
+      setConfirmRemoved(false)
+      return
+    }
+    applyDestination(destination)
+  }
+  function moveWeek(delta:number){
+    requestDestination({kind:'week',start:stepDate(weekStart,7*delta)})
   }
   function openMonth(){
-    if(dirty){setError('Сначала сохраните или отмените изменения этой недели.');return}
-    onMonthView(weekStart.slice(0,7))
+    requestDestination({kind:'month',month:weekStart.slice(0,7)})
   }
-  async function refreshWeek(){
-    const response=await apiFetch('/api/team/timesheet/week?start='+weekStart)
-    setSnapshot(await checkedJson(response))
+  async function refreshWeek(requestedWeek=weekStart){
+    const response=await apiFetch('/api/team/timesheet/week?start='+requestedWeek)
+    const latest=await checkedJson(response)
+    if(weekRef.current===requestedWeek)setSnapshot(latest)
   }
   async function copyPrevious(){
     if(!canEdit||!snapshot||saving)return
@@ -179,7 +207,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
         'Нет новых смен для копирования. Существующие назначения не изменены.')
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось скопировать неделю.')}
   }
-  async function saveWeek(){
+  async function saveWeek(after?:Destination){
     if(!canEdit||!snapshot||saving||!dirty)return
     if(removeCount&&!confirmRemoved){setConfirmRemoved(true);return}
     setSaving(true);setError('');setNotice('')
@@ -209,7 +237,8 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
       })
       setDraft({});setConfirmRemoved(false)
       setNotice('Сохранено: добавлено '+addCount+', изменено '+updateCount+', снято '+removeCount+'.')
-      void refreshWeek().catch(()=>setNotice('Сохранено, но актуальную версию не удалось загрузить. Нажмите «Обновить».'))
+      if(after)applyDestination(after)
+      else void refreshWeek().catch(()=>setNotice('Сохранено, но актуальную версию не удалось загрузить. Обновите страницу.'))
       onSaved()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить график.')}
     finally{setSaving(false)}
@@ -221,14 +250,52 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
         <h4>{weekLabel(weekStart)}</h4>
         <p>Укажите разных сотрудников и время на каждый день. Всё сохраняется одной операцией.</p>
       </div>
-      <div className="tw-week-nav">
-        <button type="button" className="secondary compact" onClick={()=>moveWeek(-1)} disabled={saving} aria-label="Предыдущая неделя">←</button>
-        <button type="button" className="secondary compact" onClick={()=>moveWeek(1)} disabled={saving} aria-label="Следующая неделя">→</button>
+      <div className="tw-week-nav" role="group" aria-label="Навигация по неделям">
+        <button type="button" className="secondary compact" onClick={()=>moveWeek(-1)} disabled={saving}>← Предыдущая</button>
+        <button type="button" className="secondary compact" onClick={()=>moveWeek(1)} disabled={saving}>Следующая →</button>
+        <label className="tw-week-jump">Перейти к дате
+          <input aria-label="Перейти к неделе по дате" type="date" value={weekStart} disabled={saving}
+            onChange={event=>{if(event.target.value)requestDestination({kind:'week',start:weekMonday(event.target.value)})}}/>
+        </label>
+        <button type="button" className="secondary compact" onClick={()=>requestDestination({kind:'week',start:weekMonday(initialDate)})}
+          disabled={saving}>Текущая неделя</button>
         <button type="button" className="secondary compact" onClick={openMonth} disabled={saving}>Обзор месяца</button>
       </div>
     </div>
     {error&&<div className="tw-alert error" role="alert">{error}</div>}
     {notice&&<div className="tw-alert success" role="status">{notice}</div>}
+          {canEdit&&<div className={'tw-week-savebar'+(dirty?' dirty':'')} role="region" aria-label="Сохранение недельного графика">
+        <div className="tw-week-save-status">
+          <strong>{dirty?'Не сохранено: '+edits.length+' изменений':'График сохранён'}</strong>
+          {dirty&&<small>+{addCount} новых · {updateCount} изменений · {removeCount} снятий</small>}
+        </div>
+        <div className="tw-week-save-actions">
+          {dirty&&<button type="button" className="secondary compact" disabled={saving} onClick={()=>{
+            setDraft({});setConfirmRemoved(false);setPendingTarget(null);setError('');setNotice('Черновик отменён.')
+          }}>Отменить изменения</button>}
+          <button type="button" className="primary tw-week-main-save" disabled={saving||!dirty}
+            onClick={()=>void saveWeek()}>{saving?'Сохраняю…':dirty?'Сохранить '+edits.length+' изменений':'Изменений нет'}</button>
+        </div>
+        {pendingTarget&&dirty&&<div className="tw-week-navigation-confirm" role="alert">
+          <strong>Есть несохранённые изменения.</strong>
+          <span>{pendingTarget.kind==='month'?'Перейти к обзору месяца?':'Перейти к другой неделе?'}</span>
+          <div className="tw-week-confirm-actions">
+            <button type="button" className="primary compact" disabled={saving}
+              onClick={()=>void saveWeek(pendingTarget)}>Сохранить и перейти</button>
+            <button type="button" className="secondary compact" disabled={saving}
+              onClick={()=>{setDraft({});applyDestination(pendingTarget)}}>Не сохранять и перейти</button>
+            <button type="button" className="ghost compact" disabled={saving}
+              onClick={()=>setPendingTarget(null)}>Остаться</button>
+          </div>
+        </div>}
+        {confirmRemoved&&dirty&&<div className="tw-week-confirm" role="alert">
+          Будут сняты {removeCount} смен. Отметки фактической явки сохранятся.
+          <button type="button" className="secondary compact" disabled={saving}
+            onClick={()=>setConfirmRemoved(false)}>Назад</button>
+          <button type="button" className="primary compact" disabled={saving}
+            onClick={()=>void saveWeek(pendingTarget||undefined)}>Подтвердить сохранение</button>
+        </div>}
+      </div>}
     {loading?<div className="tw-empty">Загружаю график недели…</div>:
       !snapshot?<button type="button" className="secondary" onClick={()=>void refreshWeek().catch(e=>setError(String(e)))}>Повторить загрузку</button>:<>
       {canEdit&&<div className="tw-week-bulk">
@@ -328,24 +395,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
           </article>
         })}
       </div>
-      {canEdit&&<div className="tw-week-savebar" role="region" aria-label="Сохранение недельного графика">
-        <div>
-          <strong>{dirty?'Не сохранено: '+edits.length:'Все изменения сохранены'}</strong>
-          {dirty&&<small>+{addCount} новых · {updateCount} изменений · {removeCount} снятий</small>}
-        </div>
-        <div className="tw-week-save-actions">
-          {dirty&&<button type="button" className="secondary compact" disabled={saving} onClick={()=>{
-            setDraft({});setConfirmRemoved(false);setError('');setNotice('Черновик отменён.')
-          }}>Отменить изменения</button>}
-          <button type="button" className="primary" disabled={saving||!dirty}
-            onClick={()=>void saveWeek()}>{saving?'Сохраняю…':'Сохранить график'}</button>
-        </div>
-        {confirmRemoved&&dirty&&<div className="tw-week-confirm" role="alert">
-          Будут сняты {removeCount} смен. Отметки фактической явки сохранятся.
-          <button type="button" className="secondary compact" onClick={()=>setConfirmRemoved(false)}>Назад</button>
-          <button type="button" className="primary compact" onClick={()=>void saveWeek()}>Подтвердить сохранение</button>
-        </div>}
-      </div>}
+
     </>}
   </section>
 }
