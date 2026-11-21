@@ -125,8 +125,9 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,
   function editField(row:TeamTimesheetEntry,field:'workUntil'|'comment',value:string){
     if(!canEdit||failed)return
     const key=keyOf(row.date,row.managerId)
-    const fields={workUntil:row.workUntil||'',comment:row.comment||'',
-      ...(inputRef.current[key]||{}),[field]:value}
+    const fields={...(inputRef.current[key]||{
+      workUntil:row.workUntil||'',comment:row.comment||''
+    }),[field]:value}
     inputRef.current={...inputRef.current,[key]:fields}
     setInputDraft(inputRef.current)
   }
