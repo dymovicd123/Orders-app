@@ -59,10 +59,19 @@ assert(ui.includes("['Цвет',line.color]"))
 assert(ui.includes("['Материал',line.material]"))
 assert(ui.includes("['Размер/возраст',line.size]"))
 assert(ui.indexOf('<small className="return-smart-characteristics">')>ui.indexOf('<strong>{line.productName}</strong>'))
+// Return V2 uses the confirmed live canonical SKU when it is still active,
+ // and the immutable order snapshot when the SKU was retired or disconnected.
+ // Checking the old snapshot-only mapping rejects the correct canonical behavior.
 for(const field of ['gender','color','material','length','size']){
   assert(preview.includes('oi.'+field+'_snapshot'),'V2 preview needs immutable '+field+' snapshot')
-  assert(preview.includes(field+':String(item.'+field+'_snapshot'),field+' must reach Return V2 card')
+  assert(preview.includes('END AS effective_'+field),
+    'V2 SQL must expose the canonical-or-snapshot '+field+' field')
+  assert(preview.includes(field+':String(item.effective_'+field+"||'')"),
+    'Resolved '+field+' must reach Return V2 card')
 }
+assert(preview.includes('LEFT JOIN catalog_variants active_variant')&&
+  preview.includes('active_variant.is_active=1'),
+  'Only an active exact catalog variant can override the historical snapshot')
 const css=readFileSync('src/styles/194-return-smart-ux.css','utf8')
 assert(css.includes('.return-smart-main .return-smart-characteristics'))
 console.log('RETURN_VARIANT_CHARACTERISTICS_PASS')
