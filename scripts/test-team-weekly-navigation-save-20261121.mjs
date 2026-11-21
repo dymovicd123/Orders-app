@@ -15,7 +15,7 @@ assert.ok(editor.includes('requestDestination({kind:')&&
   editor.includes('setWeekStart(destination.start)'),
   'Dates must navigate even across month boundaries, with a pending action for unsaved work')
 assert.ok(editor.includes('Сохранить и перейти')&&editor.includes('Не сохранять и перейти')&&
-  editor.includes('Остаться')&&editor.includes('saveWeek(pendingTarget)'),
+  editor.includes('Остаться')&&editor.includes('saveWeek(pendingTarget||undefined)'),
   'Dirty navigation needs a visible, actionable save/discard/stay choice')
 assert.ok(editor.includes("window.addEventListener('beforeunload',protect)")&&
   editor.includes("window.removeEventListener('beforeunload',protect)"),
