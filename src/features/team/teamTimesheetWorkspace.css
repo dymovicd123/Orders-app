@@ -377,3 +377,34 @@
 .tw-mobile-schedule-status .green{color:#287851}
 .tw-mobile-schedule-status .red{color:#b15e52}
 .tw-mobile-schedule-status .amber{color:#a07737}
+
+
+/* Fast schedule management remains inside the existing day dialog. */
+.tw-inline-shift-editor{grid-column:1/-1;display:grid;gap:10px;padding:12px;
+  border-top:1px solid var(--tw-line,#dce5e9);background:var(--surface,#f7f9fa);
+  border-radius:9px;min-width:0}
+.tw-inline-shift-editor .tw-plan-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tw-inline-shift-editor .tw-plan-fields label{min-width:0}
+.tw-inline-shift-editor .tw-actions{margin-top:0}
+.tw-plan-people-tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tw-plan-people-tools button{min-height:34px;font-size:12px}
+@media(max-width:550px){
+  .tw-inline-shift-editor{grid-column:1/-1;grid-row:auto;padding:10px}
+  .tw-inline-shift-editor .tw-plan-fields{grid-template-columns:1fr}
+  .tw-inline-shift-editor .tw-actions.split{position:static;flex-wrap:wrap}
+  .tw-inline-shift-editor .tw-actions.split>.tw-actions{width:100%;justify-content:flex-end}
+}
+
+.tw-calendar-item-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tw-calendar-item-actions .compact{min-height:36px}
+@media(max-width:550px){.tw-calendar-item-actions{grid-column:2;grid-row:1/3;justify-content:flex-end}}
+
+.tw-month-overview-guide{display:flex;gap:14px;align-items:center;justify-content:space-between;
+  padding:10px 0 12px;flex-wrap:wrap}
+.tw-month-overview-guide .tw-note{flex:1 1 250px;margin:0}
+.tw-month-overview-guide button{min-height:40px}
+@media(max-width:550px){
+  .tw-month-overview-guide{align-items:stretch}
+  .tw-month-overview-guide .tw-note{flex-basis:100%}
+  .tw-month-overview-guide button{width:100%}
+}
