@@ -398,3 +398,13 @@
 .tw-calendar-item-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .tw-calendar-item-actions .compact{min-height:36px}
 @media(max-width:550px){.tw-calendar-item-actions{grid-column:2;grid-row:1/3;justify-content:flex-end}}
+
+.tw-month-overview-guide{display:flex;gap:14px;align-items:center;justify-content:space-between;
+  padding:10px 0 12px;flex-wrap:wrap}
+.tw-month-overview-guide .tw-note{flex:1 1 250px;margin:0}
+.tw-month-overview-guide button{min-height:40px}
+@media(max-width:550px){
+  .tw-month-overview-guide{align-items:stretch}
+  .tw-month-overview-guide .tw-note{flex-basis:100%}
+  .tw-month-overview-guide button{width:100%}
+}
