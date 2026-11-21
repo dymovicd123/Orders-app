@@ -1,0 +1,257 @@
+name: Main reviewed timesheet header cleanup Worker release 20261121
+# One-shot: production Worker+static assets only. Zero D1 schema/data mutations.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-header-cleanup-release-20261121.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-timesheet-header-cleanup-release-20261121.yml'
+permissions:
+  contents: read
+concurrency:
+  group: main-timesheet-header-cleanup-reviewed-release-20261121
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Verify Main production config and full dry-run without credentials
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Scope-safe timetable and current Main acceptance
+        run: |
+          set -euo pipefail
+          node scripts/test-main-timesheet-autosave-port-20261121.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-weekly-schedule-20261121.mjs
+          node scripts/test-team-week-autosave-20261121.mjs
+          node scripts/test-team-weekly-navigation-save-20261121.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-main-manager-three-workspaces-20261022.mjs
+          node scripts/test-main-current-business-release-20261031.mjs
+          npm run build
+      - name: Verify production-only Wrangler config and package, no publish
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          grep -Fq '"keep_vars": true' wrangler.jsonc
+          ! grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const src=readFileSync('wrangler.jsonc','utf8')
+          const safe=src.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/,'')
+          if(safe===src)throw Error('Missing production build command')
+          writeFileSync('.main-timesheet-autosave-once.jsonc',safe)
+          NODE
+          npx --no-install wrangler deploy --config .main-timesheet-autosave-once.jsonc --name orders-app --keep-vars --strict --dry-run --outdir .main-timesheet-autosave-preview
+          echo MAIN_TIMESHEET_AUTOSAVE_SOURCE_PREVIEW_PASS
+  release:
+    name: Publish exact reviewed Main Worker, preserve production D1
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'release(main): timesheet header cleanup 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin Main parent, exactly one release file and immutable reviewed code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git branch --show-current)" = 'main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '2400f58a1b5aa5a0600fcf4bfe428eb56b8296a0'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/main-timesheet-header-cleanup-release-20261121.yml'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'ebf37a4aa03f5ad9c6ea7b1e6f8cef170f1150c5'
+          test "$(git hash-object src/features/team/WeeklyScheduleEditor.tsx)" = '180e1c99485953b8d97d2a0e6bc8b16267709a5a'
+          test "$(git hash-object src/features/team/weekAutosaveQueue.ts)" = '3b883de0cd50348917907c483f71594622a4397f'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '28d64a6527c1ced3a8a8724474abfb5168d3c002'
+          test "$(git hash-object src/features/team/weeklyScheduleEditor.css)" = '734f5622d9a2aac1965f5905ea0d864dd4774552'
+          test "$(git hash-object src/features/sections/TeamSection.tsx)" = '26664c93490f377182b0ecd8bc5a6ef226abd8c1'
+          test "$(git hash-object worker/domains/team-schedule-access.ts)" = 'df3eb91b1ec8c7a4d0bf3944e1db653b4041abce'
+          test "$(git hash-object worker/domains/team-weekly-schedule.ts)" = 'c86424d2aba4a2e09fc098b8bfff241e9fa043d1'
+          test "$(git hash-object worker/index.ts)" = 'c0c1ceb320249f818d21dde7f29724518bcb08d2'
+          test "$(git hash-object worker/domains/team.ts)" = 'cbc2301e26df9c1c7714d24cb5799e50b7e35aaf'
+          test "$(git hash-object worker/domains/team-attendance.ts)" = 'c85c2d380c768e2311efa00c2c8833e450619191'
+          test "$(git hash-object worker/domains/auth.ts)" = 'efc40c906458ab77a226e560fa520587362b21f7'
+          test "$(git hash-object src/app/types.ts)" = 'ce39c3c7e1cd0c61c71fb59667c3487a7838eea8'
+          test "$(git hash-object src/App.tsx)" = 'b3c3fb49efcbda8cf0d17642157fbea37f268ece'
+          test "$(git hash-object scripts/test-team-week-autosave-20261121.mjs)" = 'af2cdcd52b8e52bf596afb3ce332175a063f7ad6'
+          test "$(git hash-object scripts/test-team-weekly-schedule-20261121.mjs)" = '487452f0717c6e96c0a90d849acd78e8af958bb9'
+          test "$(git hash-object scripts/test-team-schedule-supervisor-20261121.mjs)" = '0e6c3522b6d5ec341f889fb796e7cfa045019d83'
+          test "$(git hash-object scripts/test-main-timesheet-autosave-port-20261121.mjs)" = '924bde5ce719f8517c850f00cbe1ee7831fd4ea2'
+          test "$(git hash-object scripts/test-team-timesheet-bulk-safe-20261110.mjs)" = 'ea3d1f3ebf2ed9850f8b32e70558fb32ce3772a2'
+          test "$(git hash-object scripts/test-return-attributes-20261029.mjs)" = '8d30746a43041c2aaab586b4d6955765c0c60edc'
+          test "$(git hash-object wrangler.jsonc)" = 'a3c81f3db3b5447143adf0cf1f3a084714dc2cd8'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          grep -Fq '"RETURN_V2_ENABLED": "true"' wrangler.jsonc
+          grep -Fq '"keep_vars": true' wrangler.jsonc
+          ! grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          echo MAIN_TIMESHEET_AUTOSAVE_EXACT_SOURCE_PIN_PASS
+      - run: npm ci --no-audit --no-fund
+      - name: Supervisor access, scheduled edit concurrency, attendance and Main business regression
+        run: |
+          set -euo pipefail
+          node scripts/test-main-timesheet-autosave-port-20261121.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-weekly-schedule-20261121.mjs
+          node scripts/test-team-week-autosave-20261121.mjs
+          node scripts/test-team-weekly-navigation-save-20261121.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-timesheet-report-v2-20261110.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+          node scripts/test-team-attendance-manager-ux-20261110.mjs
+          node scripts/test-main-attendance-schema-preserve-20261110.mjs
+          node scripts/test-main-manager-three-workspaces-20261022.mjs
+          node scripts/test-auth-production-team-access.mjs
+          node scripts/test-main-current-business-release-20261031.mjs
+          npm run build
+      - name: Confirm actual active supervisor account and take production shift fingerprint (READ ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_timesheet') AS schedule_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_attendance_marks') AS attendance_table,
+            (SELECT COUNT(*) FROM app_users u JOIN managers m ON m.id=u.manager_id
+              WHERE u.role='manager' AND u.is_active=1 AND m.is_active=1
+                AND trim(m.role)='Завсклад') AS active_supervisor_accounts" --json >/tmp/main-timesheet-supervisor-accounts.json
+          jq -e '.[0].results[0] | .schedule_table==1 and .attendance_table==1 and .active_supervisor_accounts>=1' /tmp/main-timesheet-supervisor-accounts.json >/dev/null
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json >/tmp/main-timesheet-autosave-before.json
+          jq -cS '.[0].results' /tmp/main-timesheet-autosave-before.json | sha256sum | cut -d' ' -f1 >/tmp/main-timesheet-autosave-before-hash
+          jq -er '.[0].results|length' /tmp/main-timesheet-autosave-before.json >/tmp/main-timesheet-autosave-before-count
+          echo "MAIN_ACTUAL_ACTIVE_SUPERVISOR_ACCOUNT_PASS; protected shifts: $(cat /tmp/main-timesheet-autosave-before-count)"
+      - name: Verify D1 recovery bookmark and capture previous active Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" |
+            jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("Missing recovery bookmark") end' >/tmp/main-timesheet-autosave-bookmark
+          test -s /tmp/main-timesheet-autosave-bookmark
+          curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/orders-app/deployments?per_page=1" |
+            jq -er '.result.deployments[0].versions | if length==1 and .[0].percentage==100 then .[0].version_id else error("Main Worker is not 100% active") end' >/tmp/main-timesheet-autosave-previous-version
+          test -s /tmp/main-timesheet-autosave-previous-version
+      - name: Dry-run same production Worker package, no rebuild while deploying
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const src=readFileSync('wrangler.jsonc','utf8')
+          const safe=src.replace(/"build":\s*\{\s*"command":\s*"npm run build"\s*\},/,'')
+          if(safe===src||!safe.includes('"name": "orders-app"')||
+             !safe.includes('"database_name": "orders_db_prod"')||
+             !safe.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')||
+             safe.includes('orders_db_branch2'))throw Error('Wrong production target')
+          writeFileSync('.main-timesheet-autosave-once.jsonc',safe)
+          NODE
+          npx --no-install wrangler deploy --config .main-timesheet-autosave-once.jsonc --name orders-app --keep-vars --strict --dry-run --outdir .main-timesheet-autosave-preview
+      - name: Publish production Worker and static assets ONLY, no D1 commands or migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '2400f58a1b5aa5a0600fcf4bfe428eb56b8296a0'
+          npx --no-install wrangler deploy --config .main-timesheet-autosave-once.jsonc --name orders-app --keep-vars --strict
+          echo MAIN_TIMESHEET_AUTOSAVE_WORKER_DEPLOYED
+      - name: Verify Cloudflare 100% active version, original D1 binding and admin secrets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          root='https://api.cloudflare.com/client/v4/accounts/'+os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token=os.environ['CLOUDFLARE_API_TOKEN']
+          previous=open('/tmp/main-timesheet-autosave-previous-version').read().strip()
+          def api(path):
+            request=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+            with urllib.request.urlopen(request,timeout=25) as response: j=json.load(response)
+            assert j.get('success'),j.get('errors')
+            return j['result']
+          for attempt in range(15):
+            try:
+              deployments=api('/workers/scripts/orders-app/deployments?per_page=1')['deployments']
+              versions=deployments[0].get('versions',[]) if deployments else []
+              if len(versions)!=1 or versions[0].get('percentage')!=100:raise ValueError('Main version is not 100% active')
+              active=versions[0]['version_id']
+              if active==previous:raise ValueError('Previous version still running')
+              bindings=api('/workers/scripts/orders-app/versions/'+active)['resources']['bindings']
+              assert any(b.get('name')=='DB' and b.get('type')=='d1'
+                and (b.get('database_id') or b.get('id'))=='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+                for b in bindings),'Production D1 binding changed'
+              assert any(b.get('name')=='RETURN_V2_ENABLED' and b.get('type')=='plain_text'
+                and b.get('text')=='true' for b in bindings),'Return V2 flag changed'
+              assert any(b.get('name')=='ADMIN_MODE_SESSION_SECRET' and b.get('type')=='secret_text'
+                for b in bindings),'Admin session secret missing'
+              assert any(b.get('name')=='ADMIN_MODE_PASSWORD' and b.get('type')=='secret_text'
+                for b in bindings),'Admin password secret missing'
+              print('MAIN_TIMESHEET_AUTOSAVE_ACTIVE_WORKER_VERIFIED',active)
+              break
+            except Exception as error:
+              print('Waiting for Cloudflare propagation',attempt+1,str(error)[:140])
+              if attempt==14:raise
+              time.sleep(3)
+          PY
+      - name: Compare production assigned shifts, verify unauthenticated guards and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --no-install wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT id,work_date,manager_id,work_until,comment,created_at,updated_at FROM team_timesheet ORDER BY id" --json >/tmp/main-timesheet-autosave-after.json
+          jq -cS '.[0].results' /tmp/main-timesheet-autosave-after.json | sha256sum | cut -d' ' -f1 >/tmp/main-timesheet-autosave-after-hash
+          cmp /tmp/main-timesheet-autosave-before-hash /tmp/main-timesheet-autosave-after-hash
+          python3 - <<'PY'
+          import json,re,urllib.request,urllib.error
+          base='https://orders-app.orders-clothes.workers.dev'
+          def request(path,method='GET'):
+            req=urllib.request.Request(base+path,method=method,
+              headers={'User-Agent':'MainTimesheetAutosaveRelease/20261121'})
+            try:
+              with urllib.request.urlopen(req,timeout=25) as response:
+                return response.status,response.read()
+            except urllib.error.HTTPError as error:return error.code,error.read()
+          status,body=request('/api/health')
+          assert status==200 and json.loads(body).get('ok') is True,'Production health failed'
+          status,html=request('/')
+          assert status==200,'HTML missing'
+          assets=re.findall(rb'<script[^>]+src="(/assets/[^"]+)"',html)
+          assert assets,'No production JS assets'
+          status,js=request(assets[0].decode())
+          assert status==200 and len(js)>1000,'Production script not deployed'
+          for path,method in [
+            ('/api/team/timesheet/week?start=2026-11-23','GET'),
+            ('/api/team/timesheet/week','POST'),
+            ('/api/team/timesheet','POST')
+          ]:
+            status,_=request(path,method)
+            assert status==401,(path,method,status)
+          print('MAIN_TIMESHEET_AUTOSAVE_HTTP_AUTH_ASSETS_AND_D1_UNCHANGED_PASS')
+          PY
