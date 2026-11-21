@@ -79,6 +79,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
   const [view,setView]=useState<'day'|'report'|'calendar'|'week'>('day')
   const [weekDirty,setWeekDirty]=useState(false)
   const [date,setDate]=useState(current)
+  const [weekAnchor,setWeekAnchor]=useState(current)
   const [editor,setEditor]=useState<DayRow|null>(null)
   const [markState,setMarkState]=useState<MarkState>('unmarked')
   const [markEnded,setMarkEnded]=useState('')
@@ -160,7 +161,14 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
       return
     }
     setNotice('')
+    if(next==='week'&&view!=='calendar'&&view!=='week')setWeekAnchor(date)
     setView(next)
+  }
+  const openWeekForDate=(day:string)=>{
+    setWeekAnchor(day)
+    setDate(day)
+    setShowCalendarDay(false)
+    setView('week')
   }
   const chooseDay=(next:string)=>{
     if(view==='week'&&weekDirty){setNotice('Сначала сохраните или отмените изменения недельного графика.');return}
@@ -398,12 +406,13 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
       })}</div>}
       <p className="tw-note">Неотмеченные смены не считаются отсутствиями.</p>
     </>:view==='week'?<WeeklyScheduleEditor
-      apiFetch={apiFetch} canEdit={canEditSchedule} initialDate={date}
-      onDirtyChange={setWeekDirty}
+      apiFetch={apiFetch} canEdit={canEditSchedule} initialDate={weekAnchor}
+      onWeekChange={setWeekAnchor} onDirtyChange={setWeekDirty}
       onMonthView={month=>{
         setWeekDirty(false)
+        setShowCalendarDay(false)
+        setTimesheetMonth(month)
         setView('calendar')
-        selectMonth(month)
       }}
       onSaved={()=>{
         void loadTeamTimesheet(timesheetMonth).catch(()=>{})
@@ -416,14 +425,17 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
           <button type="button" className="secondary compact" onClick={()=>shiftMonth(1)}>→</button>
           <button type="button" className="secondary compact" onClick={()=>selectMonth(current.slice(0,7))}>Этот месяц</button></div>
       </div>
-      <p className="tw-note">Выберите день, чтобы посмотреть его состав и изменить отдельные смены. Массовое назначение — кнопка «+ Составить график» сверху.</p>
+      <div className="tw-month-overview-guide">
+        <p className="tw-note">Обзор месяца показывает существующие смены. Выберите день, чтобы открыть его неделю и внести изменения.</p>
+        <button type="button" className="primary compact" onClick={()=>switchView('week')}>← Вернуться к недельному графику</button>
+      </div>
       <div className="tw-calendar-scroll"><div className="tw-calendar">
         {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(x=><div className="tw-weekday" key={x}>{x}</div>)}
         {Array.from({length:days.length?(weekday(days[0])+6)%7:0},(_,i)=><div className="tw-calendar-blank" key={i}/>)}
         {days.map(d=>{
           const count=counts.get(d)
           const assigned=(data?.entries||[]).filter(shift=>shift.date===d)
-          return <button key={d} type="button" onClick={()=>{setDate(d);setShowCalendarDay(true)}}
+          return <button key={d} type="button" onClick={()=>openWeekForDate(d)}
             className={'tw-calendar-day'+(d===current?' today':'')+(d===date?' chosen':'')}
             aria-pressed={d===date} aria-label={dateLabel(d)+' · '+(count?.planned||0)+' назначений · '+assigned.map(x=>x.manager).join(', ')}>
             <strong>{Number(d.slice(-2))}</strong>
@@ -454,7 +466,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
           const assigned=(data?.entries||[]).filter(shift=>shift.date===day)
           const count=counts.get(day)
           return <button type="button" className={'tw-mobile-schedule-day'+(day===current?' today':'')}
-            key={day} onClick={()=>{setDate(day);setShowCalendarDay(true)}} aria-label={'Открыть '+dayLabel(day)}>
+            key={day} onClick={()=>openWeekForDate(day)} aria-label={'Открыть неделю с '+dayLabel(day)}>
             <span className="tw-mobile-schedule-date"><strong>{dayLabel(day)}</strong>
               <small>{assigned.length?assigned.length+' по графику':(data?.attendance||[]).some(mark=>mark.date===day)?'Есть отметки':'Нет смен'}</small></span>
             {assigned.length>0&&<span className="tw-mobile-schedule-people">{assigned.map(shift=>
@@ -472,7 +484,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
         })}
         {!showEmptyCalendarDays&&!(data?.entries||[]).length&&!(data?.attendance||[]).length&&<div className="tw-calendar-empty-mobile">
           В этом месяце смен пока нет.
-          {canEditSchedule&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить смены</button>}
+          {canEditSchedule&&<button type="button" className="secondary compact" onClick={()=>openWeekForDate(timesheetMonth+'-01')}>Составить график</button>}
           <button type="button" className="secondary compact" onClick={()=>setShowEmptyCalendarDays(true)}>Выбрать дату</button>
         </div>}
       </div>
