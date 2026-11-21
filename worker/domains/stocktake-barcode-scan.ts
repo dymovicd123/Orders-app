@@ -2,6 +2,7 @@ import { isUnitBarcode } from '../../shared/barcode-unit.ts'
 import { variantIdFromSkuBarcode } from '../../shared/barcode-sku.ts'
 import { readCatalogSkuBarcode } from './barcode-sku.ts'
 import { lookupIndividualUnitBarcode } from './barcode-unit-preparation.ts'
+import { serializeInventoryStocktakeSession } from './inventory-stocktake.ts'
 
 export class StocktakeBarcodeScanError extends Error {
   code: string
@@ -41,6 +42,53 @@ async function requireActiveSession(db: D1Database, sessionId: string) {
     throw new StocktakeBarcodeScanError('session_closed', 'Эта ревизия уже завершена или отменена.')
   }
   return session
+}
+
+/**
+ * Atomically include a newly found active catalog SKU in an existing full or
+ * selective review. This only creates an uncounted review row, never inventory
+ * stock. The accompanying scan insert must be in the same D1 batch.
+ */
+function prepareNewStocktakeVariant(
+  db: D1Database, sessionId: string, source: string, variantId: number, now: string,
+) {
+  return db.prepare(
+    `INSERT OR IGNORE INTO inventory_stocktake_items (
+       session_id,inventory_source,stock_id,product_id,variant_id,
+       product_name_snapshot,category_snapshot,gender_snapshot,color_snapshot,
+       material_snapshot,length_snapshot,size_snapshot,
+       opening_quantity,opening_reserved_quantity,baseline_quantity,
+       status,created_at,updated_at
+     )
+     SELECT ?,?,s.id,v.product_id,v.id,
+       p.name,
+       CASE WHEN v.category='child' THEN 'child' ELSE 'adult' END,
+       COALESCE(v.gender,''),COALESCE(v.color,''),
+       COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),
+       COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
+       COALESCE(v.size_label,''),
+       COALESCE(s.quantity,0),MAX(0,COALESCE(s.reserved_quantity,0)),
+       COALESCE(s.quantity,0),
+       'pending',?,?
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id=v.product_id
+     LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+     LEFT JOIN inventory_stock s ON s.variant_id=v.id AND s.inventory_source=?
+     WHERE v.id=? AND v.is_active=1 AND p.is_active=1
+       AND (sp.id IS NULL OR sp.is_active=1)
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stocktake_items i
+         WHERE i.session_id=? AND i.variant_id=v.id
+       )`
+  ).bind(sessionId,source,now,now,source,variantId,sessionId)
+}
+
+async function newlyFoundStocktakeItem(db:D1Database,sessionId:string,variantId:number){
+  const session=await serializeInventoryStocktakeSession(db,sessionId)
+  const added=session.items.find(item=>item.variantId===variantId)
+  if(!added)throw new StocktakeBarcodeScanError('scan_sync_missing',
+    'Скан принят, но найденная позиция не отображается. Обновите ревизию.')
+  return added
 }
 
 export async function listStocktakeUnitScans(db: D1Database, sessionId: string) {
