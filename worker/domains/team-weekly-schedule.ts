@@ -10,7 +10,11 @@ type WeekChange={
 export type WeekScheduleInput={start?:unknown;changes?:unknown}
 
 export class WeeklyScheduleError extends Error {
-  constructor(message:string,public status=400,public code='weekly_schedule_invalid'){super(message)}
+  readonly status:number
+  readonly code:string
+  constructor(message:string,status=400,code='weekly_schedule_invalid'){
+    super(message);this.status=status;this.code=code
+  }
 }
 const invalid=(message:string)=>new WeeklyScheduleError(message)
 const stale=()=>new WeeklyScheduleError(
