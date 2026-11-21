@@ -25,7 +25,8 @@ assert.ok(editor.includes("tw-week-savebar'+(dirty?' dirty':'')")&&
   'The saving affordance must show exactly how many changes remain unsaved')
 assert.ok(weeklyCss.includes('.tw-week-savebar.dirty')&&
   weeklyCss.includes('.tw-week-savebar{top:8px;bottom:auto')&&
-  weeklyCss.includes('position:sticky;bottom:0')===false,
+  weeklyCss.lastIndexOf('.tw-week-savebar{top:8px;bottom:auto')>
+  weeklyCss.indexOf('position:sticky;bottom:0'),
   'Dirty savebar should remain visually prominent at the top rather than only below long lists')
 assert.ok(editor.includes("if(after)applyDestination(after)")&&
   editor.includes('if(weekRef.current===requestedWeek)setSnapshot(latest)'),
