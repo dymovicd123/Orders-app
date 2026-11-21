@@ -339,6 +339,8 @@ export type TeamTimesheetEntry = {
   managerColor?: string
   workUntil: string
   comment: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 

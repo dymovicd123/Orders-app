@@ -78,6 +78,7 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { readTeamAttendance, saveTeamAttendance } from './domains/team-attendance.ts'
+import { listTeamScheduleWeek, saveTeamScheduleWeek, type WeekScheduleInput } from './domains/team-weekly-schedule.ts'
 import { canManageTeamSchedule } from './domains/team-schedule-access.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { activateWorkshopSettlements, postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
@@ -827,6 +828,16 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         return json(await deleteDepartmentPlanRecord(env.DB, toInt(departmentPlanMatch[1], 0)));
+      }
+
+      if (url.pathname === '/api/team/timesheet/week' && request.method === 'GET') {
+        return json(await listTeamScheduleWeek(env.DB,url.searchParams.get('start')))
+      }
+      if (url.pathname === '/api/team/timesheet/week' && request.method === 'POST') {
+        if (!await canManageTeamSchedule(env.DB, authUser))
+          return json({ok:false,message:'Составление графика доступно только администратору или завскладу.'},{status:403})
+        const input=await readJson<WeekScheduleInput>(request)
+        return json(await saveTeamScheduleWeek(env.DB,input),{status:201})
       }
 
       if (url.pathname === '/api/team/timesheet' && request.method === 'GET') {

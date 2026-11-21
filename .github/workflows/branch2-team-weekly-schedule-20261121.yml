@@ -1,0 +1,38 @@
+name: Branch2 weekly timesheet schedule CI 20261121
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/team-weekly-schedule.ts'
+      - 'worker/index.ts'
+      - 'src/features/team/WeeklyScheduleEditor.tsx'
+      - 'src/features/team/weeklyScheduleEditor.css'
+      - 'src/features/team/TeamTimesheetWorkspace.tsx'
+      - 'src/app/types.ts'
+      - 'scripts/test-team-weekly-schedule-20261121.mjs'
+      - '.github/workflows/branch2-team-weekly-schedule-20261121.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  weekly-schedule:
+    name: Weekly scheduler SQLite, role safety and full build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Atomic week save, stale edit rollback and multi-month boundaries
+        run: node scripts/test-team-weekly-schedule-20261121.mjs
+      - name: Existing mass shift and supervisor role safeguards
+        run: |
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+      - name: Build Cloudflare Worker and frontend
+        run: npm run build
