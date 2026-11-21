@@ -1,0 +1,82 @@
+name: Branch2 reviewed shared SKU outbound draft release 20261121
+# No D1 migration, no Main, one Worker-only Branch2 deployment.
+on:
+  pull_request:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-outbound-sku-draft-release-20261121.yml']
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-outbound-sku-draft-release-20261121.yml']
+permissions:
+  contents: read
+concurrency:
+  group: branch2-outbound-shared-sku-draft-release
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Dry-run reviewed Branch2 source without release
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish only reviewed Branch2 shared SKU outbound draft Worker
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): outbound sku draft 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify exact reviewed source, parent SHA and safe isolated target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'a7392ba7a14fe56f91edc51c882dc14271915fa4'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-outbound-sku-draft-release-20261121.yml'
+          test "$(git hash-object src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx)" = '20cc0824df57c573ca03da85ecf64a238adaccb2'
+          test "$(git hash-object src/features/inventory/operationBarcodeSelection.ts)" = '80848aa08e897aebd1701ad7d0aa1db85e008c03'
+          test "$(git hash-object scripts/test-outbound-shared-sku-draft-20261121.mjs)" = '0c1fdf00c6b6a28b26b99dd6fb20b57ce4b43b47'
+          test "$(git hash-object scripts/test-barcode-correction-lookup-20261117.mjs)" = 'fc3b5e8648b0cf2243aed4c7b437fbfaca9f29b2'
+          test "$(git hash-object .github/workflows/ci-branch2-barcode-outbound-20261117.yml)" = '5e00bb1232f41b094228b775d51cda2b2f557d93'
+          test "$(git hash-object scripts/test-barcode-operation-unit-20261117.mjs)" = 'd5be093b49e0950bad3668a67e1556aca8706224'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test "$(git hash-object worker/domains/inventory-outbound-barcode.ts)" = 'f8beea7d26124380d58db94bd75241526cb2d07f'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Test shared-SKU drafts, correction/arrival and OCU1 atomic physical evidence
+        run: |
+          npm ci
+          node scripts/test-outbound-shared-sku-draft-20261121.mjs
+          node scripts/test-barcode-operation-unit-20261117.mjs
+          node scripts/test-barcode-correction-lookup-20261117.mjs
+          node scripts/test-w6-unified-operations.mjs
+          node scripts/test-inventory-writeoff-review.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+      - name: Full business regression, D1 read-only fingerprint and Worker-only Branch2 publish
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
