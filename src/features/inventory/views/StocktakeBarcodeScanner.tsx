@@ -14,7 +14,7 @@ export type StocktakeScanResponse = {
   message?: string
 }
 
-type ScanAttempt = { code: string; requestId: string; origin: 'camera' | 'usb' | 'manual' | 'photo' }
+type ScanAttempt = { code: string; requestId: string; origin: 'camera' | 'usb' | 'manual' }
 const VALID_BARCODE = /^OC(?:S|U)1-[0-9A-Z-]+$/
 
 export function StocktakeBarcodeScanner({
@@ -29,6 +29,7 @@ export function StocktakeBarcodeScanner({
   const inputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const cameraStopRef = useRef<(() => void) | null>(null)
+  const cameraTrackRef = useRef<MediaStreamTrack | null>(null)
   const gateRef = useRef(new StocktakeCameraScanGate())
   const queueRef = useRef<ScanAttempt[]>([])
   const busyRef = useRef(false)
@@ -41,7 +42,10 @@ export function StocktakeBarcodeScanner({
   const [cameraError, setCameraError] = useState('')
   const [cameraStarting, setCameraStarting] = useState(false)
   const [cameraFeedback, setCameraFeedback] = useState('')
-  const [photoBusy, setPhotoBusy] = useState(false)
+  const [cameraZoom, setCameraZoom] = useState(1)
+  const [zoomRange, setZoomRange] = useState<{ min: number; max: number; step: number } | null>(null)
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [total, setTotal] = useState<number | null>(null)
@@ -169,7 +173,11 @@ export function StocktakeBarcodeScanner({
     gateRef.current.reset()
     setCameraStarting(true)
     setCameraError('')
-    setCameraFeedback('Камера работает в режиме непрерывного подсчёта. Наведите на этикетку.')
+    setCameraFeedback('Камера работает в режиме непрерывного подсчёта. Наведите на Code128; другой код учтётся автоматически.')
+    setZoomRange(null)
+    setTorchSupported(false)
+    setTorchOn(false)
+    cameraTrackRef.current = null
     const run = async () => {
       try {
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
@@ -195,7 +203,10 @@ export function StocktakeBarcodeScanner({
               return
             }
             const found = result.getText().trim().toUpperCase()
-            if (!VALID_BARCODE.test(found)) return
+            if (!VALID_BARCODE.test(found)) {
+              gateRef.current.missing(now)
+              return
+            }
             if (!gateRef.current.detected(found, now)) return
             processRef.current(found, 'camera')
             setCameraFeedback('Код считан: ' + found +
@@ -203,7 +214,33 @@ export function StocktakeBarcodeScanner({
           },
         )
         if (cancelled) controls.stop()
-        else cameraStopRef.current = () => controls.stop()
+        else {
+          cameraStopRef.current = () => controls.stop()
+          const stream = videoRef.current?.srcObject
+          if (stream instanceof MediaStream) {
+            const track = stream.getVideoTracks()[0]
+            if (track) {
+              cameraTrackRef.current = track
+              const caps = track.getCapabilities?.() as MediaTrackCapabilities & {
+                zoom?: { min: number; max: number; step?: number };
+                torch?: boolean;
+                focusMode?: string[]
+              }
+              const zoom = caps?.zoom
+              if (zoom && Number.isFinite(zoom.min) && Number.isFinite(zoom.max)
+                && zoom.max > zoom.min) {
+                setZoomRange({ min: zoom.min, max: zoom.max, step: Math.max(zoom.step || 0.1, 0.1) })
+                setCameraZoom(Number((track.getSettings() as MediaTrackSettings & { zoom?: number }).zoom || zoom.min))
+              }
+              setTorchSupported(Boolean(caps?.torch))
+              if (caps?.focusMode?.includes('continuous')) {
+                void track.applyConstraints({
+                  advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+                }).catch(() => {})
+              }
+            }
+          }
+        }
       } catch (cause) {
         if (!cancelled) {
           const reason = cause instanceof Error ? cause.name : ''
@@ -223,29 +260,26 @@ export function StocktakeBarcodeScanner({
       cancelled = true
       cameraStopRef.current?.()
       cameraStopRef.current = null
+      cameraTrackRef.current = null
       const stream = video?.srcObject
       if (stream instanceof MediaStream) stream.getTracks().forEach(track => track.stop())
     }
   }, [cameraOpen, disabled, sessionId])
 
-  async function scanPhoto(file: File | undefined) {
-    if (!file || photoBusy || disabled) return
-    setCameraOpen(false)
-    setPhotoBusy(true)
-    setError('')
-    const url = URL.createObjectURL(file)
+  async function setCameraTrackOption(option: 'zoom' | 'torch', value: number | boolean) {
+    const track = cameraTrackRef.current
+    if (!track || track.readyState !== 'live') return
     try {
-      const { BrowserMultiFormatOneDReader } = await import('@zxing/browser')
-      const hints = new Map<DecodeHintType, unknown>([
-        [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]],
-      ])
-      const result = await new BrowserMultiFormatOneDReader(hints).decodeFromImageUrl(url)
-      processRef.current(result.getText(), 'photo')
+      await track.applyConstraints({
+        advanced: [{ [option]: value } as MediaTrackConstraintSet],
+      })
+      if (option === 'zoom') setCameraZoom(Number(value))
+      else setTorchOn(Boolean(value))
+      setCameraError('')
     } catch {
-      setError('Не удалось распознать штрихкод на фотографии. Можно отсканировать заново или ввести код вручную.')
-    } finally {
-      URL.revokeObjectURL(url)
-      setPhotoBusy(false)
+      setCameraError(option === 'torch'
+        ? 'Фонарик недоступен на этой камере.'
+        : 'Камера не поддерживает выбранное увеличение.')
     }
   }
 
@@ -299,22 +333,33 @@ export function StocktakeBarcodeScanner({
       </div>
       {cameraStarting ? <small role="status">Запускаю камеру…</small> : null}
       <div className="stocktake-camera-feedback" role="status">{cameraFeedback}</div>
-      <div className="stocktake-camera-hint">После успешного скана уберите эту этикетку из кадра, затем поднесите следующую. Для одинаковых SKU важно не считать одну вещь дважды.</div>
+      <div className="stocktake-camera-hint">
+        После скана уберите этикетку из кадра. Повторное чтение того же кода будет принято только после устойчивого отсутствия этикетки; для одинаковых вещей можно вручную разрешить следующий скан.
+      </div>
+      <div className="stocktake-camera-controls">
+        <button className="secondary compact" type="button" disabled={disabled || busy}
+          onClick={() => {
+            gateRef.current.nextPhysicalItem()
+            setCameraFeedback('Следующая вещь: уберите предыдущую этикетку и наведите новую. Один код = +1.')
+          }}>
+          Следующая вещь с таким же кодом
+        </button>
+        {zoomRange ? <label>Увеличение {cameraZoom.toFixed(1)}×
+          <input type="range" min={zoomRange.min} max={zoomRange.max} step={zoomRange.step}
+            value={cameraZoom} onChange={event=>void setCameraTrackOption('zoom',Number(event.target.value))}
+            aria-label="Оптическое увеличение камеры"/>
+        </label> : null}
+        {torchSupported ? <button className="secondary compact" type="button"
+          onClick={()=>void setCameraTrackOption('torch',!torchOn)}>
+          {torchOn ? 'Выключить фонарик' : 'Включить фонарик'}
+        </button> : null}
+      </div>
       {busy ? <small>Обрабатываю сканы…</small> : null}
       {notice ? <div className="stocktake-barcode-notice" role="status">{notice}</div> : null}
       {error ? <div className="stocktake-barcode-error" role="alert">{error}</div> : null}
       {cameraError ? <div className="stocktake-barcode-error" role="alert">{cameraError}</div> : null}
     </div> : null}
-    <label className="stocktake-camera-file-label">
-      <span>{photoBusy ? 'Считываю фотографию…' : 'Или считать с фотографии / скриншота'}</span>
-      <input type="file" accept="image/*" aria-label="Выберите фотографию штрихкода"
-        disabled={disabled || photoBusy}
-        onChange={event => {
-          const file = event.currentTarget.files?.[0]
-          event.currentTarget.value = ''
-          void scanPhoto(file)
-        }}/>
-    </label>
+
     <small>Полное фактическое количество любого товара можно исправить вручную после сканирования — например, добавить вещи без этикеток. Не нужно сканировать их отдельно.</small>
     {disabled ? <small>Пока сохраняется ручной ввод, новые сканы приостановлены.</small> : null}
     {busy && !cameraOpen ? <small>Обрабатываю сканы…</small> : null}

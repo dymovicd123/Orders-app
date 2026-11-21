@@ -7,6 +7,10 @@ on:
       - 'worker/index.ts'
       - 'migrations/0140_barcode_stocktake_unit_scans.sql'
       - 'src/features/inventory/views/StocktakeBarcodeScanner.tsx'
+      - 'src/features/inventory/stocktakeCameraScanGate.ts'
+      - 'scripts/test-stocktake-code128-camera-safe-20261121.mjs'
+      - 'scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs'
+      - 'scripts/test-stocktake-fast-sku-20261118.mjs'
       - 'src/features/inventory/views/stocktakeBarcodeScanner.css'
       - 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
       - 'src/features/sections/InventorySection.tsx'
@@ -32,5 +36,11 @@ jobs:
           node scripts/test-stocktake-functional-acceptance.mjs
           node scripts/test-barcode-unit-label-preparation-20261116.mjs
           node scripts/test-barcode-sku-scanner-ui-20261116.mjs
+      - name: Real Code128, conservative camera gate, mobile and shared SKU scanning
+        run: |
+          node scripts/test-stocktake-code128-camera-safe-20261121.mjs
+          node scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs
+          node scripts/test-stocktake-fast-sku-20261118.mjs
+          node scripts/test-stocktake-camera-print-step-20261117.mjs
       - name: TypeScript and client build
         run: npm run build

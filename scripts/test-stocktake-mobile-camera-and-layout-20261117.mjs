@@ -30,11 +30,11 @@ const section=readFileSync('src/features/sections/InventorySection.tsx','utf8')
 
 assert(scanner.includes("width: { ideal: 1920 }")&&scanner.includes("height: { ideal: 1080 }"),
   'Camera should request HD input to decode dense 1D bars from printed paper and displays')
-assert(scanner.includes("decodeFromImageUrl(url)")&&scanner.includes("URL.revokeObjectURL(url)")&&
-  scanner.includes('accept="image/*"'), 'Image-based scan fallback must decode locally and free object URL')
+assert(!scanner.includes('decodeFromImageUrl(url)')&&!scanner.includes('accept="image/*"'),
+  'User-rejected photo import must not return to the stocktake scanner')
 assert(scanner.includes("processRef.current(found, 'camera')") &&
-  scanner.includes("processRef.current(result.getText(), 'photo')"),
-  'Decoded photo or camera frames must enter the same queued server-authoritative count')
+  scanner.includes('nextPhysicalItem()')&&scanner.includes("getCapabilities"),
+  'Decoded live camera frames must enter the queued path with deliberate duplicate protection and optional zoom')
 assert(scanner.includes('gateRef.current.detected(found, now)'),
   'Continuous stationary camera frames cannot count one label twice')
 assert(scanner.includes('cameraStopRef.current?.()')&&scanner.includes('track.stop()'))
@@ -48,4 +48,4 @@ assert(mobileCss.includes('.warehouse-w2-primary')&&mobileCss.includes('overflow
 assert(section.includes("import '../../styles/196-mobile-warehouse-20261117.css'"))
 assert(section.includes('stocktakeFoundSkuPrintReceipt(stocktakeSession)'),
   'Mobile changes must not alter already tested post-stocktake label choices')
-console.log('STOCKTAKE_PHONE_SCAN_PASS: photographed canonical SKU, real ZXing decoded printed Code128, 1080p camera, photo fallback, no automatic writes, touch layout')
+console.log('STOCKTAKE_PHONE_SCAN_PASS: photographed canonical SKU, real ZXing decoded printed Code128, 1080p live camera, no photo import, no automatic writes, touch layout')
