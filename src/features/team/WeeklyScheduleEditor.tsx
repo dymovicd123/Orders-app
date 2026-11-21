@@ -36,6 +36,7 @@ const dayTitle=(date:string)=>new Intl.DateTimeFormat('ru-RU',{
 type Destination={kind:'week';start:string}|{kind:'month';month:string}
 const keyOf=(date:string,id:number)=>date+':'+id
 const weekLabel=(start:string)=>shortDay(start)+' — '+shortDay(stepDate(start,6))
+const localToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
 async function checkedJson(response:Response):Promise<WeekData>{
   const payload=await response.json().catch(()=>({ok:false,message:'Сервер вернул неверный ответ.'}))
   if(!response.ok||payload.ok===false)throw new Error(payload.message||'Не удалось загрузить график.')
@@ -257,7 +258,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,onMonthView,o
           <input aria-label="Перейти к неделе по дате" type="date" value={weekStart} disabled={saving}
             onChange={event=>{if(event.target.value)requestDestination({kind:'week',start:weekMonday(event.target.value)})}}/>
         </label>
-        <button type="button" className="secondary compact" onClick={()=>requestDestination({kind:'week',start:weekMonday(initialDate)})}
+        <button type="button" className="secondary compact" onClick={()=>requestDestination({kind:'week',start:weekMonday(localToday())})}
           disabled={saving}>Текущая неделя</button>
         <button type="button" className="secondary compact" onClick={openMonth} disabled={saving}>Обзор месяца</button>
       </div>
