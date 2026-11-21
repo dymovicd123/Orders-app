@@ -1,0 +1,82 @@
+name: Branch2 reviewed stocktake scan auto-include release 20261121
+# One-shot Branch2 Worker+assets, no Main or D1 migrations.
+on:
+  pull_request:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-stocktake-scan-auto-include-release-20261121.yml']
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-stocktake-scan-auto-include-release-20261121.yml']
+permissions:
+  contents: read
+concurrency:
+  group: branch2-stocktake-scan-auto-include-reviewed
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Validate Branch2 build and dry-run, no publication
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish ONLY tested auto-including stocktake Worker to Branch2
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): stocktake scan auto include 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pin exact reviewed source and only isolated release diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'e15c83673f09621a5e31b10cecb4595eb53da5e2'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-stocktake-scan-auto-include-release-20261121.yml'
+          test "$(git hash-object worker/domains/stocktake-barcode-scan.ts)" = 'cb517a9e13b8d031f1cf917a2f1aef5cb226e051'
+          test "$(git hash-object worker/domains/inventory-stocktake.ts)" = 'fd04e07093b5a1e56393ec739acec0c7c52a01ee'
+          test "$(git hash-object src/features/sections/InventorySection.tsx)" = '6c6b3fc70be021eb2ba4328abd122ccab48165e7'
+          test "$(git hash-object src/features/inventory/views/StocktakeBarcodeScanner.tsx)" = '01c2b74e30d125aab56bd93dd865434f052b5ad9'
+          test "$(git hash-object scripts/test-stocktake-barcode-scan-20261117.mjs)" = 'f5230d347ee576330ed17ca233f7e46bd5b7f42a'
+          test "$(git hash-object scripts/test-stocktake-fast-sku-20261118.mjs)" = '2ea4bc719d872e551e4a72c6a6a72334e90b6d9b'
+          test "$(git hash-object scripts/test-stocktake-scan-auto-include-20261121.mjs)" = 'd91d06c9cea78b846632cfa19caaf87b97132e6b'
+          test "$(git hash-object .github/workflows/ci-branch2-stocktake-unit-scan-20261117.yml)" = '6f8ec758360de018b1279a205a12ac04f48d7430'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Atomic newly found SKU and OCU1 scan + existing stocktake safeguards
+        run: |
+          npm ci
+          node scripts/test-stocktake-scan-auto-include-20261121.mjs
+          node scripts/test-stocktake-fast-sku-20261118.mjs
+          node scripts/test-stocktake-barcode-scan-20261117.mjs
+          node scripts/test-stocktake-code128-camera-safe-20261121.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full business gate, safe Branch2 D1 fingerprint, Worker publish and HTTP smoke
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
