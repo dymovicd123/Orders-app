@@ -394,3 +394,7 @@
   .tw-inline-shift-editor .tw-actions.split{position:static;flex-wrap:wrap}
   .tw-inline-shift-editor .tw-actions.split>.tw-actions{width:100%;justify-content:flex-end}
 }
+
+.tw-calendar-item-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tw-calendar-item-actions .compact{min-height:36px}
+@media(max-width:550px){.tw-calendar-item-actions{grid-column:2;grid-row:1/3;justify-content:flex-end}}
