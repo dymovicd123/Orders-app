@@ -1,0 +1,88 @@
+name: Branch2 reviewed weekly timesheet release 20261121
+# One-shot reviewed Branch2 Worker and assets only; no D1 migrations and no Main access.
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-weekly-timesheet-release-20261121.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-weekly-timesheet-release-20261121.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-weekly-timesheet-reviewed-release
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Validate Branch2 bindings, full build and Cloudflare dry-run
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish ONLY reviewed Branch2 weekly timesheet Worker
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): weekly timesheet 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pin reviewed source, SHA and one-file Branch2-only release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 'ff5240a43109e81935c1bb7ee07a836f754376a2'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-weekly-timesheet-release-20261121.yml'
+          test "$(git hash-object worker/domains/team-weekly-schedule.ts)" = '1943ea7688dbb99cbba02982839988d35ef569eb'
+          test "$(git hash-object worker/index.ts)" = 'fb8035f2437d857359314c0601e5094d8ef67978'
+          test "$(git hash-object src/features/team/WeeklyScheduleEditor.tsx)" = 'b56e7c9dc875675fe182363bb9c477d18efc850c'
+          test "$(git hash-object src/features/team/weeklyScheduleEditor.css)" = '7719e01c8a6aab0028b070036b52bbf30c8dd416'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = 'cbda83a779e007ac7c0beb3db2493a4bc0b75b24'
+          test "$(git hash-object src/app/types.ts)" = '61591949d01eb2b42b86f0f09805af1773759365'
+          test "$(git hash-object scripts/test-team-weekly-schedule-20261121.mjs)" = '88f6d2107640e4209305c9c2846e2526399f7f9f'
+          test "$(git hash-object scripts/test-team-timesheet-bulk-safe-20261110.mjs)" = '8013f14af4bec910b4bcec3e1ba28963c409ce0e'
+          test "$(git hash-object scripts/test-team-schedule-supervisor-20261121.mjs)" = '0e6c3522b6d5ec341f889fb796e7cfa045019d83'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '6dea3afb4cf9602178ec68b4371bf411e8549c9e'
+          test "$(git hash-object .github/workflows/branch2-team-weekly-schedule-20261121.yml)" = '29b373924b52213cbfa12f3c58a9c88ba9c33e1b'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test "$(git hash-object worker/domains/team-schedule-access.ts)" = 'df3eb91b1ec8c7a4d0bf3944e1db653b4041abce'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Test atomic edits, old schedule, supervisor access and attendance
+        run: |
+          npm ci
+          node scripts/test-team-weekly-schedule-20261121.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+      - name: Full business regression, build, remote D1 SELECT-only, publish Branch2 and smoke
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
