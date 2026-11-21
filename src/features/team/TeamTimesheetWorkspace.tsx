@@ -95,6 +95,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
+  const [localSchedule,setLocalSchedule]=useState<{month:string;entries:TeamTimesheetEntry[]}|null>(null)
   const [optimisticMarks,setOptimisticMarks]=useState<Record<string,TeamAttendanceMark|null>>({})
   const [pendingMarks,setPendingMarks]=useState<Record<string,boolean>>({})
   const [markErrors,setMarkErrors]=useState<Record<string,string>>({})
@@ -109,8 +110,14 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
     for(const [key,mark] of Object.entries(optimisticMarks)){
       if(key.startsWith(baseData.month+'-')&&mark)attendance.push(mark)
     }
-    return {...baseData,attendance}
-  },[baseData,optimisticMarks])
+    return {...baseData,
+      entries:localSchedule?.month===baseData.month?localSchedule.entries:baseData.entries,
+      attendance}
+  },[baseData,localSchedule,optimisticMarks])
+  useEffect(()=>{
+    // The authoritative month refresh replaces this short-lived, server-confirmed view.
+    if(baseData)setLocalSchedule(previous=>previous?.month===baseData.month?null:previous)
+  },[baseData])
   useEffect(()=>{
     if(!baseData)return
     setOptimisticMarks(previous=>{
@@ -181,9 +188,36 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
     setConfirmClear(false);setPlanning(true);setError('')
   }
   function openShiftEditor(shift:TeamTimesheetEntry){
-    setShowCalendarDay(false);setEditingShift(shift);setEditShiftUntil(shift.workUntil||'')
+    setEditingShift(shift);setEditShiftUntil(shift.workUntil||'')
     setEditShiftNote(shift.comment||'');setConfirmShiftRemove(false);setError('')
   }
+  function reflectSavedSchedule(dates:string[],people:number[],until:string,comment:string,
+    clear:boolean,preserveExisting:boolean){
+    if(!data||data.month!==timesheetMonth)return
+    const assignments=new Set(dates.flatMap(day=>people.map(id=>day+':'+id)))
+    const next=clear?data.entries.filter(entry=>!assignments.has(entry.date+':'+entry.managerId)):[...data.entries]
+    if(!clear){
+      for(const day of dates)for(const id of people){
+        const old=next.findIndex(entry=>entry.date===day&&entry.managerId===id)
+        if(old>=0&&preserveExisting)continue
+        if(old>=0)next[old]={...next[old],workUntil:until,comment}
+        else{
+          const employee=data.employees.find(person=>person.id===id)
+          if(!employee)continue
+          next.push({id:-Date.now()-next.length,date:day,managerId:id,manager:employee.name,
+            managerColor:employee.colorKey,workUntil:until,comment})
+        }
+      }
+    }
+    setLocalSchedule({month:timesheetMonth,entries:next})
+  }
+  function refreshSavedSchedule(){
+    void loadTeamTimesheet(timesheetMonth).catch(()=>{
+      setNotice('Изменения сохранены, но календарь не удалось обновить. Используйте «Обновить».')
+    })
+    void loadTeamSalaryReport().catch(()=>{})
+  }
+
   async function saveEditedShift(clear:boolean){
     if(!editingShift||!isAdmin||busy.current)return
     busy.current=true;setSaving(true);setError('');setNotice('')
@@ -193,9 +227,9 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
           workUntil:editShiftUntil,comment:editShiftNote.trim(),clear})})
       const payload=await response.json() as {ok?:boolean;message?:string}
       if(!response.ok||!payload.ok)throw new Error(payload.message||'Не удалось изменить смену.')
-      await loadTeamTimesheet(timesheetMonth)
-      void loadTeamSalaryReport()
+      reflectSavedSchedule([editingShift.date],[editingShift.managerId],editShiftUntil,editShiftNote.trim(),clear,false)
       setEditingShift(null);setConfirmShiftRemove(false)
+      refreshSavedSchedule()
       setNotice(clear?'Смена снята. Отметки явки сохранены.':'Изменения смены сохранены.')
     }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка изменения смены.')}
     finally{busy.current=false;setSaving(false)}
@@ -245,9 +279,9 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
         body:JSON.stringify({dates:planDates,managerIds:planPeople,workUntil:planUntil,comment:planNote.trim(),clear,preserveExisting:!clear})})
       const payload=await response.json() as {ok?:boolean;message?:string}
       if(!response.ok||!payload.ok)throw new Error(payload.message||'Не удалось сохранить график.')
-      await loadTeamTimesheet(timesheetMonth)
-      void loadTeamSalaryReport()
+      reflectSavedSchedule(planDates,planPeople,planUntil,planNote.trim(),clear,!clear)
       setPlanning(false);setConfirmClear(false)
+      refreshSavedSchedule()
       setNotice(clear?'Выбранные назначения сняты. Отметки явки сохранены.':'График обновлён. Существующие смены не изменены.')
     }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка сохранения графика.')}
     finally{busy.current=false;setSaving(false)}
@@ -427,7 +461,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
       <TeamAttendanceReport data={data} todayDate={current} onOpenDay={chooseDay}/>
     </>}
     {view==='calendar'&&showCalendarDay&&date.slice(0,7)===timesheetMonth&&
-      <Dialog title={'Смены · '+dayLabel(date)} note="Просмотр и точечное изменение графика этого дня" onClose={()=>setShowCalendarDay(false)}>
+      <Dialog title={'Смены · '+dayLabel(date)} note="Просмотр и точечное изменение графика этого дня" onClose={()=>{if(!saving){setShowCalendarDay(false);setEditingShift(null);setConfirmShiftRemove(false)}}}>
         <div className="tw-calendar-detail">
 
         <div className="tw-calendar-detail-head"><div>
@@ -441,7 +475,36 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
           <span className="tw-calendar-detail-name"><i style={{background:shift.managerColor||'#718096'}}/>{shift.manager}</span>
           <span className="tw-calendar-detail-time">По графику {shift.workUntil?'до '+shift.workUntil:'без времени'}</span>
           {shift.comment&&<small title={shift.comment}>{shift.comment}</small>}
-          {isAdmin&&<button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>}
+          {isAdmin&&(editingShift?.id===shift.id?
+            <div className="tw-inline-shift-editor" role="group" aria-label={'Изменить смену '+shift.manager}>
+              <div className="tw-plan-fields">
+                <label>Работает до<input type="time" value={editShiftUntil} disabled={saving}
+                  onChange={event=>setEditShiftUntil(event.target.value)}/></label>
+                <label>Комментарий<input value={editShiftNote} maxLength={300} disabled={saving}
+                  onChange={event=>setEditShiftNote(event.target.value)} placeholder="Необязательно"/></label>
+              </div>
+              {error&&<div className="tw-alert error" role="alert">{error}</div>}
+              {confirmShiftRemove?<div className="tw-confirm">
+                <strong>Снять смену {shift.manager} на {dateLabel(shift.date)}?</strong>
+                <p>Остальные назначения и отметки явки останутся.</p>
+                <div className="tw-actions">
+                  <button className="secondary compact" type="button" disabled={saving}
+                    onClick={()=>setConfirmShiftRemove(false)}>Назад</button>
+                  <button className="ghost danger compact" type="button" disabled={saving}
+                    onClick={()=>void saveEditedShift(true)}>Подтвердить снятие</button>
+                </div>
+              </div>:<div className="tw-actions split">
+                <button className="ghost danger compact" type="button" disabled={saving}
+                  onClick={()=>setConfirmShiftRemove(true)}>Снять смену</button>
+                <div className="tw-actions">
+                  <button className="secondary compact" type="button" disabled={saving}
+                    onClick={closeShiftEditor}>Отмена</button>
+                  <button className="primary compact" type="button" disabled={saving}
+                    onClick={()=>void saveEditedShift(false)}>{saving?'Сохраняю…':'Сохранить'}</button>
+                </div>
+              </div>}
+            </div>:
+            <button type="button" className="secondary compact" onClick={()=>openShiftEditor(shift)}>Изменить</button>)}
         </div>)}</div>:<p className="tw-calendar-empty">Добавьте сотрудников на этот день или включите его в массовое назначение.</p>}
 
         </div>
@@ -464,23 +527,16 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
           <button className="primary" type="submit" disabled={saving}>{saving?'Сохраняю…':'Сохранить отметку'}</button></div>
       </form>
     </Dialog>}
-    {editingShift&&<Dialog title={'Изменить смену · '+editingShift.manager} note={dayLabel(editingShift.date)} onClose={closeShiftEditor}>
-      <form className="tw-form" onSubmit={event=>{event.preventDefault();void saveEditedShift(false)}}>
-        <label>Работает до<input type="time" value={editShiftUntil} onChange={event=>setEditShiftUntil(event.target.value)}/></label>
-        <label>Комментарий (необязательно)<textarea rows={2} maxLength={300} value={editShiftNote} onChange={event=>setEditShiftNote(event.target.value)}/></label>
-        {confirmShiftRemove?<div className="tw-confirm"><strong>Снять смену только у {editingShift.manager}?</strong>
-          <p>Дата: {dateLabel(editingShift.date)}. Остальные сотрудники и отметки явки сохранятся.</p>
-          <div className="tw-actions"><button className="secondary" type="button" onClick={()=>setConfirmShiftRemove(false)}>Назад</button>
-            <button className="ghost danger" type="button" disabled={saving} onClick={()=>void saveEditedShift(true)}>Подтвердить снятие</button></div></div>:
-          <div className="tw-actions split"><button className="ghost danger compact" type="button" disabled={saving} onClick={()=>setConfirmShiftRemove(true)}>Снять смену</button>
-            <div className="tw-actions"><button className="secondary" type="button" onClick={closeShiftEditor}>Отмена</button>
-              <button className="primary" type="submit" disabled={saving}>{saving?'Сохраняю…':'Сохранить смену'}</button></div></div>}
-      </form>
-    </Dialog>}
     {planning&&<Dialog title="Назначить смены" note="Новые смены добавятся без изменения существующего графика." onClose={closePlan}>
       <div className="tw-plan">
         <div className="tw-plan-part tw-people-first"><strong>1. Кого назначить?</strong>
           <p className="tw-plan-description">Выберите новых сотрудников; назначенные ранее останутся в графике.</p>
+          <div className="tw-plan-people-tools">
+            <button type="button" className="secondary compact"
+              onClick={()=>setPlanPeople((data?.employees||[]).map(p=>p.id))}>Выбрать всех</button>
+            <button type="button" className="secondary compact"
+              onClick={()=>setPlanPeople([])}>Снять выбор</button>
+          </div>
           <div className="tw-plan-people">{(data?.employees||[]).map(p=>{
             const already=planDates.filter(d=>data?.entries.some(entry=>entry.date===d&&entry.managerId===p.id)).length
             return <button type="button" key={p.id}
@@ -529,6 +585,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
         <div className="tw-plan-fields"><label>Работают до<input type="time" value={planUntil} onChange={e=>setPlanUntil(e.target.value)}/></label>
           <label>Комментарий<input maxLength={300} value={planNote} placeholder="Необязательно" onChange={e=>setPlanNote(e.target.value)}/></label></div>
       </div>
+      {error&&<div className="tw-alert error" role="alert">{error}</div>}
       {!confirmClear&&<p className="tw-plan-existing" role="status">
         {newAssignments>0?'Добавится '+newAssignments+' новых смен. ':'Нет новых смен для добавления. '}
         {duplicateAssignments>0?duplicateAssignments+' уже существующих назначений будут пропущены. ':''}
