@@ -35,9 +35,13 @@ assert(locate.includes('setMatchedSkuId(match.variantId)') &&
   !locate.includes('setScannedUnits('),
   'An individual scan may select a correction row but must never increment or create physical-unit evidence')
 const skuLocate=ui.slice(ui.indexOf("if (match.kind==='sku')"),ui.indexOf("if (mode==='manual_set') {",ui.indexOf("async function scanOperationUnit()")))
-assert(!skuLocate.includes('p.onQuantity(') &&
-  skuLocate.includes('setMatchedSkuId(match.variantId)'),
-  'Shared SKU is a picker, not a stock mutation')
+assert(skuLocate.includes("if (mode==='writeoff'||mode==='transfer')") &&
+  skuLocate.includes('p.onQuantity(row,String(nextQuantity))'),
+  'Only writeoff/transfer may increment a draft on a shared-SKU scan')
+const lookupOnly=skuLocate.slice(skuLocate.indexOf('setMatchedSkuId(match.variantId)'))
+assert(lookupOnly.includes('setMatchedSkuId(match.variantId)')&&
+  !lookupOnly.includes('p.onQuantity('),
+  'Arrival/correction shared SKU must remain lookup-only without any count mutation')
 assert(ui.includes("mode==='manual_set'?'Фактический остаток'") &&
   ui.includes("mode==='manual_set' && existingDraft?.touched") &&
   ui.includes("Фактический остаток '+quantity+' шт. внесён в черновик"),
