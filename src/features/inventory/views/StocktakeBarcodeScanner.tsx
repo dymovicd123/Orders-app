@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BarcodeFormat, DecodeHintType } from '@zxing/library'
+import type { InventoryStocktakeSession } from '../../../../shared/api-contracts.ts'
 import { StocktakeCameraScanGate } from '../stocktakeCameraScanGate'
 import './stocktakeBarcodeScanner.css'
 
@@ -11,6 +12,7 @@ export type StocktakeScanResponse = {
   itemId?: number
   productName?: string
   countedQuantity?: number
+  addedItem?: InventoryStocktakeSession['items'][number]
   message?: string
 }
 
@@ -110,6 +112,9 @@ export function StocktakeBarcodeScanner({
           }
           if (!activeRef.current) break
           if (result.duplicate) {
+            // A network retry may return a saved new item after the first HTTP
+            // response was lost. Reconcile UI without incrementing scan total.
+            if (result.addedItem) await onScannedRef.current(result)
             setNotice('Повторный запрос или уже учтённая индивидуальная вещь. +0.')
           } else {
             await onScannedRef.current(result)
