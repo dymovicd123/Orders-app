@@ -1,0 +1,90 @@
+name: Branch2 reviewed timesheet autosave release 20261121
+# One-shot isolated Worker+assets release: no Main, no D1 migration or data writes.
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-timesheet-autosave-release-20261121.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-timesheet-autosave-release-20261121.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-timesheet-autosave-reviewed-release
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Verify Branch2 bindings and Cloudflare dry-run only
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish reviewed action autosave ONLY to Branch2 Worker
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): timesheet autosave 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify exact reviewed source, parent commit and isolated release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '584a715b2653a3a9c1cc4ce3f58c9684e4a69ce5'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-timesheet-autosave-release-20261121.yml'
+          test "$(git hash-object src/features/team/WeeklyScheduleEditor.tsx)" = '180e1c99485953b8d97d2a0e6bc8b16267709a5a'
+          test "$(git hash-object src/features/team/weekAutosaveQueue.ts)" = '3b883de0cd50348917907c483f71594622a4397f'
+          test "$(git hash-object src/features/team/weeklyScheduleEditor.css)" = '734f5622d9a2aac1965f5905ea0d864dd4774552'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '5b23675d80cc39125795f231b82f2477fbc75e6f'
+          test "$(git hash-object worker/domains/team-weekly-schedule.ts)" = 'c86424d2aba4a2e09fc098b8bfff241e9fa043d1'
+          test "$(git hash-object worker/index.ts)" = 'fb8035f2437d857359314c0601e5094d8ef67978'
+          test "$(git hash-object scripts/test-team-week-autosave-20261121.mjs)" = 'af2cdcd52b8e52bf596afb3ce332175a063f7ad6'
+          test "$(git hash-object scripts/test-team-weekly-navigation-save-20261121.mjs)" = 'b888c14e722033e4723c00d24474ea6777be6315'
+          test "$(git hash-object scripts/test-team-weekly-schedule-20261121.mjs)" = '487452f0717c6e96c0a90d849acd78e8af958bb9'
+          test "$(git hash-object scripts/test-team-schedule-supervisor-20261121.mjs)" = '0e6c3522b6d5ec341f889fb796e7cfa045019d83'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = '4bafa7ebd931bcbf6e8390975bf999b20d7c95af'
+          test "$(git hash-object .github/workflows/branch2-team-weekly-schedule-20261121.yml)" = 'bc14a5438e49147fb2de2edd191c5b0f8b805178'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Verify serialized writes, stale retry, rights and old attendance
+        run: |
+          npm ci
+          node scripts/test-team-week-autosave-20261121.mjs
+          node scripts/test-team-weekly-schedule-20261121.mjs
+          node scripts/test-team-weekly-navigation-save-20261121.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+      - name: Full business regression, isolated D1 SELECT-only, deploy Branch2 and smoke
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
