@@ -1187,10 +1187,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function onStocktakeBarcodeScan(result: {
     itemId?: number; variantId?: number; countedQuantity?: number; productName?: string
+    addedItem?: any
   }) {
     const sessionId = stocktakeSessionIdRef.current
     const itemId = Number(result.itemId)
-    const counted = Number(result.countedQuantity)
+    const counted = Number(result.countedQuantity ?? result.addedItem?.countedQuantity)
     if (!sessionId || !Number.isSafeInteger(itemId) || itemId <= 0 ||
         !Number.isSafeInteger(counted) || counted < 0) {
       throw new Error('Скан принят, но сервер не вернул корректное количество. Обновите ревизию.')
@@ -1207,12 +1208,25 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     // reloading/reordering the whole stocktake on every scan was unnecessarily slow.
     stocktakeLastPersistedValues.current.set(itemId, String(counted))
     setStocktakeFacts((current) => ({ ...current, [String(itemId)]: String(counted) }))
-    setStocktakeSession((current) => current?.id === sessionId ? {
-      ...current,
-      items: (current.items || []).map((item: any) => Number(item.id) === itemId
-        ? { ...item, countedQuantity: counted, status: 'counted', countedAt: new Date().toISOString() }
-        : item),
-    } : current)
+    setStocktakeSession((current) => {
+      if (current?.id !== sessionId) return current
+      const prior = current.items || []
+      const exists = prior.some((item: any) => Number(item.id) === itemId)
+      // An auto-discovered active SKU enters the same full/selective review.
+      // Add only its item: preserve every other row, including explicit zero
+      // counts, unverified blanks and any unsaved manual fields.
+      const nextItems = [
+        ...prior.map((item: any) => Number(item.id) === itemId
+          ? { ...item, countedQuantity: counted, status: 'counted', countedAt: new Date().toISOString() }
+          : item),
+        ...(!exists && result.addedItem && Number(result.addedItem.id) === itemId
+          ? [{ ...result.addedItem, countedQuantity: counted, status: 'counted' }]
+          : []),
+      ]
+      return { ...current, items: nextItems, totalItems: nextItems.length,
+        countedCount: nextItems.filter((item: any) => item.countedQuantity !== null &&
+          item.countedQuantity !== undefined && item.status !== 'pending').length }
+    })
   }
 
   async function startStocktake() {
