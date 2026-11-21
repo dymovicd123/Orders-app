@@ -173,7 +173,7 @@ export function StocktakeBarcodeScanner({
     gateRef.current.reset()
     setCameraStarting(true)
     setCameraError('')
-    setCameraFeedback('Наведите на горизонтальный Code128. Коды разных вещей учитываются автоматически.')
+    setCameraFeedback('Камера работает в режиме непрерывного подсчёта. Наведите на Code128; другой код учтётся автоматически.')
     setZoomRange(null)
     setTorchSupported(false)
     setTorchOn(false)
