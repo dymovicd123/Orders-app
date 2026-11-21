@@ -230,7 +230,7 @@ export function StocktakeBarcodeScanner({
               if (zoom && Number.isFinite(zoom.min) && Number.isFinite(zoom.max)
                 && zoom.max > zoom.min) {
                 setZoomRange({ min: zoom.min, max: zoom.max, step: Math.max(zoom.step || 0.1, 0.1) })
-                setCameraZoom(Number(track.getSettings().zoom || zoom.min))
+                setCameraZoom(Number((track.getSettings() as MediaTrackSettings & { zoom?: number }).zoom || zoom.min))
               }
               setTorchSupported(Boolean(caps?.torch))
               if (caps?.focusMode?.includes('continuous')) {
