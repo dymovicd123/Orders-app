@@ -34,7 +34,7 @@ assert.throws(()=>nextSharedSkuDraftQuantity('transfer',-1),/999999/)
 assert.throws(()=>nextSharedSkuDraftQuantity('transfer',Number.NaN),/999999/)
 
 const ui=readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
-const worker=readFileSync('worker/index.ts','utf8')
+const outbound=readFileSync('worker/domains/inventory-outbound-barcode.ts','utf8')
 assert(ui.includes("if (mode==='writeoff'||mode==='transfer')")&&
  ui.includes('nextSharedSkuDraftQuantity(mode,currentQuantity)')&&
  ui.includes('p.onQuantity(row,String(nextQuantity))'),
@@ -49,7 +49,8 @@ assert(ui.includes('scansRef.current.some(unit=>unit.unitId===match.unitId||unit
 assert(ui.includes("stage==='review'")&&ui.includes("names[mode].action")&&
  ui.includes('Остатки изменятся только после итогового подтверждения'),
  'Scan must only update draft; review and final confirmation are unchanged')
-assert(worker.includes('prepareOutboundBarcodeStatements')||
- worker.includes('transferBarcodeStatements'),
+assert(outbound.includes('prepareOutboundBarcodeStatements')&&
+ outbound.includes('row.inventory_source !== fromSource')&&
+ outbound.includes("['unverified','on_hand'].includes(row.unit_status)"),
  'Existing worker-side barcode source/identity guards must be retained')
 console.log('OUTBOUND_SHARED_SKU_DRAFT_PASS: OCS1 +1 per explicit scan in writeoff/transfer, manually editable, other modes lookup-only, OCU1 unique, no scan-side stock mutations')
