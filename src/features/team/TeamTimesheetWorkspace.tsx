@@ -6,7 +6,7 @@ import './teamTimesheetWorkspace.css'
 type MarkState = 'present' | 'absent' | 'excused' | 'unmarked'
 type DayRow = {id:number; name:string; role:string; color:string; schedule?:TeamTimesheetEntry; mark?:TeamAttendanceMark}
 type Props = {
-  apiFetch:(path:string,init?:RequestInit)=>Promise<Response>; isAdmin:boolean; canMarkAttendance:boolean
+  apiFetch:(path:string,init?:RequestInit)=>Promise<Response>; isAdmin:boolean; canManageSchedule:boolean; canMarkAttendance:boolean
   timesheetMonth:string;timesheetData:TeamTimesheetResponse|null;timesheetBusy:boolean
   setTimesheetMonth:(value:string)=>void
   loadTeamTimesheet:(value?:string)=>Promise<TeamTimesheetResponse|null>
@@ -71,8 +71,9 @@ function Dialog({title,note,onClose,children}:{title:string;note:string;onClose:
   </section></div>
 }
 
-export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,timesheetMonth,timesheetData,timesheetBusy,
+export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMarkAttendance,timesheetMonth,timesheetData,timesheetBusy,
   setTimesheetMonth,loadTeamTimesheet,loadTeamSalaryReport}:Props){
+  const canEditSchedule=isAdmin||canManageSchedule
   const current=today()
   const [view,setView]=useState<'day'|'report'|'calendar'>('day')
   const [date,setDate]=useState(current)
@@ -219,7 +220,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
   }
 
   async function saveEditedShift(clear:boolean){
-    if(!editingShift||!isAdmin||busy.current)return
+    if(!editingShift||!canEditSchedule||busy.current)return
     busy.current=true;setSaving(true);setError('');setNotice('')
     try{
       const response=await apiFetch('/api/team/timesheet',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -272,7 +273,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
   }
   function onEditSubmit(e:FormEvent){e.preventDefault();if(editor)void record(editor,markState,markEnded,markNote.trim())}
   async function saveSchedule(clear:boolean){
-    if(!isAdmin||busy.current||!planDates.length||!planPeople.length)return
+    if(!canEditSchedule||busy.current||!planDates.length||!planPeople.length)return
     busy.current=true;setSaving(true);setError('');setNotice('')
     try{
       const response=await apiFetch('/api/team/timesheet',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -299,7 +300,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
   return <section className="tw-workspace">
     <div className="tw-header"><div><span className="tw-kicker">КОМАНДА</span><h3>Табель сотрудников</h3></div>
       <div className="tw-header-actions">
-        {isAdmin&&<button type="button" className="tw-primary-assign" onClick={openPlanner}>+ Составить график</button>}
+        {canEditSchedule&&<button type="button" className="tw-primary-assign" onClick={openPlanner}>+ Составить график</button>}
         <button type="button" className="secondary compact" disabled={timesheetBusy||saving}
           onClick={()=>void loadTeamTimesheet(timesheetMonth)}>Обновить</button>
       </div></div>
@@ -320,7 +321,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
         <div className="tw-day-heading-actions">
           {unmarkedTotal>0&&<button type="button" className="tw-needs-attention"
             onClick={()=>chooseDay(unmarkedDays[0][0])}>Не проверено: {unmarkedTotal} · перейти к {dateLabel(unmarkedDays[0][0])}</button>}
-          {isAdmin&&<button type="button" className="secondary" onClick={()=>setView('calendar')}>Изменить график дня</button>}
+          {canEditSchedule&&<button type="button" className="secondary" onClick={()=>setView('calendar')}>Изменить график дня</button>}
           {date!==current&&<button type="button" className="secondary" onClick={()=>chooseDay(current)}>Сегодня</button>}
         </div>
       </div>
@@ -348,7 +349,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
       </div>
       {timesheetBusy&&!dayData?<div className="tw-empty">Загрузка табеля…</div>:!rows.length?<div className="tw-empty">
         <strong>На этот день никто не назначен</strong><p>Чтобы отмечать явку, сначала составьте график.</p>
-        {isAdmin&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить сотрудников</button>}
+        {canEditSchedule&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить сотрудников</button>}
       </div>:<div className="tw-person-list">{rows.map(row=>{
         const future=date>current
         const status=!row.mark?(future?'По графику':'Нет отметки'):
@@ -444,7 +445,7 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
         })}
         {!showEmptyCalendarDays&&!(data?.entries||[]).length&&!(data?.attendance||[]).length&&<div className="tw-calendar-empty-mobile">
           В этом месяце смен пока нет.
-          {isAdmin&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить смены</button>}
+          {canEditSchedule&&<button type="button" className="secondary compact" onClick={openPlanner}>Назначить смены</button>}
           <button type="button" className="secondary compact" onClick={()=>setShowEmptyCalendarDays(true)}>Выбрать дату</button>
         </div>}
       </div>
@@ -468,14 +469,14 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canMarkAttendance,times
           <span className="tw-kicker">СОСТАВ СМЕНЫ</span>
           <p>{dayPlanEntries.length?dayPlanEntries.length+' сотрудников по графику':'На этот день смен пока нет'}</p>
         </div><div className="tw-calendar-detail-actions">
-          {isAdmin&&<button type="button" className="tw-primary-assign" onClick={()=>openPlannerForDate(date)}>+ Добавить сотрудников</button>}
+          {canEditSchedule&&<button type="button" className="tw-primary-assign" onClick={()=>openPlannerForDate(date)}>+ Добавить сотрудников</button>}
           <button type="button" className="secondary compact" onClick={()=>{setShowCalendarDay(false);chooseDay(date)}}>Отметить явку</button>
         </div></div>
         {dayPlanEntries.length?<div className="tw-calendar-detail-list">{dayPlanEntries.map(shift=><div className="tw-calendar-detail-person" key={shift.id}>
           <span className="tw-calendar-detail-name"><i style={{background:shift.managerColor||'#718096'}}/>{shift.manager}</span>
           <span className="tw-calendar-detail-time">По графику {shift.workUntil?'до '+shift.workUntil:'без времени'}</span>
           {shift.comment&&<small title={shift.comment}>{shift.comment}</small>}
-          {isAdmin&&(editingShift?.id===shift.id?
+          {canEditSchedule&&(editingShift?.id===shift.id?
             <div className="tw-inline-shift-editor" role="group" aria-label={'Изменить смену '+shift.manager}>
               <div className="tw-plan-fields">
                 <label>Работает до<input type="time" value={editShiftUntil} disabled={saving}
