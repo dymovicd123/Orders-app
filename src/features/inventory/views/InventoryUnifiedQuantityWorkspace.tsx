@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
-import { resolveOperationBarcode, type OperationBarcodeLookup } from '../operationBarcodeSelection'
+import { resolveOperationBarcode, nextSharedSkuDraftQuantity, type OperationBarcodeLookup } from '../operationBarcodeSelection'
 import '../../../styles/193-unified-inventory-operations.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
@@ -264,8 +264,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           // outbound operations. It edits the draft; no inventory moves until
           // the existing review/confirmation and server-side stock checks.
           const currentQuantity=int(draftMap.get(String(match.variantId))?.quantity)
-          const nextQuantity=currentQuantity+1
-          if (nextQuantity>999999) throw new Error('Нельзя указать больше 999999 шт. для одного варианта.')
+          const nextQuantity=nextSharedSkuDraftQuantity(mode,currentQuantity)
+          if(nextQuantity===null)return
           p.onQuantity(row,String(nextQuantity))
           setMatchedSkuId(null);setSkuQuantityDraft('')
           setSelected(current=>current.includes(group.key)?current:[...current,group.key])
