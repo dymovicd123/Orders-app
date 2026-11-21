@@ -1,0 +1,89 @@
+name: Branch2 reviewed weekly navigation and save release 20261121
+# One-shot Branch2-only Worker+assets deployment; no migrations or Main writes.
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-weekly-navigation-release-20261121.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-weekly-navigation-release-20261121.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-weekly-navigation-reviewed-release
+  cancel-in-progress: false
+jobs:
+  preview:
+    name: Verify Branch2 targets and build Cloudflare dry-run
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/branch2-manual-release.mjs --ci-preview
+  release:
+    name: Publish reviewed weekly navigation ONLY to Branch2 Worker
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/branch2' &&
+      startsWith(github.event.head_commit.message, 'release(branch2): weekly navigation 20261121')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 2
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify only approved files and exact reviewed parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git branch --show-current)" = 'branch2'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = '313fa1f9314291b3de97fbfed8ac1ada9386c891'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-weekly-navigation-release-20261121.yml'
+          test "$(git hash-object src/features/team/WeeklyScheduleEditor.tsx)" = '5ffae6b5c545b8c5d90cf77bd9f0b93de8150065'
+          test "$(git hash-object src/features/team/weeklyScheduleEditor.css)" = '7c9b04133f7fe838d5f6f62b7ef3688c6f3abed3'
+          test "$(git hash-object src/features/team/TeamTimesheetWorkspace.tsx)" = '2c9e4338dbd279b9ca2afd1373221c0569601d74'
+          test "$(git hash-object src/features/team/teamTimesheetWorkspace.css)" = '28d64a6527c1ced3a8a8724474abfb5168d3c002'
+          test "$(git hash-object scripts/test-team-weekly-navigation-save-20261121.mjs)" = 'd1140ae31c4d645d63dc1063512e465cfef7b5da'
+          test "$(git hash-object scripts/test-team-timesheet-bulk-safe-20261110.mjs)" = 'ea3d1f3ebf2ed9850f8b32e70558fb32ce3772a2'
+          test "$(git hash-object scripts/test-team-weekly-schedule-20261121.mjs)" = '88f6d2107640e4209305c9c2846e2526399f7f9f'
+          test "$(git hash-object scripts/test-team-schedule-supervisor-20261121.mjs)" = '0e6c3522b6d5ec341f889fb796e7cfa045019d83'
+          test "$(git hash-object .github/workflows/quality-check.yml)" = 'f80743486c7cd1723970fc7621e7a82d46d0b60d'
+          test "$(git hash-object .github/workflows/branch2-team-weekly-schedule-20261121.yml)" = 'eed91e2d638929c253dc297acf4739ae5fc095ea'
+          test "$(git hash-object scripts/branch2-manual-release.mjs)" = '1e7f67dd0fb2e339ad1b7a85e803158b6e4e4ace'
+          test "$(git hash-object wrangler.jsonc)" = '437f6fd1aa8ce59ea403e845380df2aef2786070'
+          test "$(git hash-object worker/index.ts)" = 'fb8035f2437d857359314c0601e5094d8ef67978'
+          test "$(git hash-object worker/domains/team-weekly-schedule.ts)" = '1943ea7688dbb99cbba02982839988d35ef569eb'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node scripts/branch2-manual-release.mjs --check
+      - name: Test saved week handling and original attendance
+        run: |
+          npm ci
+          node scripts/test-team-weekly-schedule-20261121.mjs
+          node scripts/test-team-weekly-navigation-save-20261121.mjs
+          node scripts/test-team-timesheet-bulk-safe-20261110.mjs
+          node scripts/test-team-schedule-supervisor-20261121.mjs
+          node scripts/test-team-timesheet-mobile-ux-20261110.mjs
+          node scripts/test-team-attendance-v1-20261110.mjs
+      - name: Full business regression, Cloudflare build and isolated Branch2-only publish
+        run: node scripts/branch2-manual-release.mjs --publish --sha "$GITHUB_SHA" --confirm BRANCH2-ONLY
