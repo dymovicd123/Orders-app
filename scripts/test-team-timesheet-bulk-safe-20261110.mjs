@@ -77,7 +77,8 @@ assert.ok(ui.includes('reflectSavedSchedule')&&ui.includes('setLocalSchedule(')&
   'Successful schedule updates should render immediately while the month refreshes in background')
 assert.ok(ui.includes('Выбрать всех')&&ui.includes('Снять выбор'),
   'Bulk-first planner retains single-click staff selection presets')
-assert.ok(ui.includes('Снять смену')&&ui.includes('Подтвердить снятие')&&
+assert.ok(ui.includes('tw-calendar-item-actions')&&ui.includes('>Снять</button>')&&
+  ui.includes('Снять смену')&&ui.includes('Подтвердить снятие')&&
   ui.includes('setConfirmShiftRemove(true)'),
   'Removing a single shift is scoped and requires an explicit confirmation')
 assert.ok(css.includes('.tw-inline-shift-editor')&&css.includes('.tw-plan-people-tools'),
