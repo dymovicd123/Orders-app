@@ -46,6 +46,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,
   const [weekStart,setWeekStart]=useState(()=>weekMonday(initialDate))
   const [loading,setLoading]=useState(true)
   const [loadError,setLoadError]=useState('')
+  const [loadAttempt,setLoadAttempt]=useState(0)
   const [state,setState]=useState<WeekQueueState|null>(null)
   const [notice,setNotice]=useState('')
   const [copying,setCopying]=useState(false)
@@ -114,7 +115,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,
       queueRef.current?.dispose()
       queueRef.current=null
     }
-  },[apiFetch,weekStart])
+  },[apiFetch,weekStart,loadAttempt])
 
   function enqueue(intents:WeekIntent[],message=''){
     if(!canEdit||!queueRef.current||!intents.length)return
@@ -280,7 +281,7 @@ export function WeeklyScheduleEditor({apiFetch,canEdit,initialDate,
     </div>}
     {loading?<div className="tw-empty">Загружаю график недели…</div>:
       !data?<button type="button" className="secondary"
-        onClick={()=>setWeekStart(previous=>previous)}>Обновить страницу</button>:<>
+        onClick={()=>setLoadAttempt(previous=>previous+1)}>Повторить загрузку</button>:<>
       {canEdit&&<div className="tw-week-bulk">
         <div className="tw-week-bulk-head">
           <strong>Добавить сотрудников на несколько дней</strong>
