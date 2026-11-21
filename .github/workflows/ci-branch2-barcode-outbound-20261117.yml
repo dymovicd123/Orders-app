@@ -17,11 +17,13 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Real SQLite physical barcode operations test
         run: node scripts/test-barcode-operation-unit-20261117.mjs
+      - name: Shared SKU per-piece draft for transfer/writeoff, other modes unaffected
+        run: node scripts/test-outbound-shared-sku-draft-20261121.mjs
       - name: Atomic shared-SKU fast count and unrestricted manual stocktake correction
         run: node scripts/test-stocktake-fast-sku-20261118.mjs
       - name: Arrival SKU finder and stocktake shared-SKU fast count
         run: node scripts/test-arrival-stocktake-shared-sku-20261117.mjs
-      - name: Printed Code128 ZXing decode and reliable camera photo mobile layout
+      - name: Printed Code128 ZXing decode and reliable live camera mobile layout
         run: node scripts/test-stocktake-mobile-camera-and-layout-20261117.mjs
       - name: Stocktake completion print choice and mobile camera local scan safety
         run: node scripts/test-stocktake-camera-print-step-20261117.mjs
