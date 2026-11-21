@@ -10,6 +10,7 @@ on:
       - 'src/features/team/TeamTimesheetWorkspace.tsx'
       - 'src/app/types.ts'
       - 'scripts/test-team-weekly-schedule-20261121.mjs'
+      - 'scripts/test-team-weekly-navigation-save-20261121.mjs'
       - '.github/workflows/branch2-team-weekly-schedule-20261121.yml'
   workflow_dispatch:
 permissions:
@@ -28,6 +29,8 @@ jobs:
       - run: npm ci
       - name: Atomic week save, stale edit rollback and multi-month boundaries
         run: node scripts/test-team-weekly-schedule-20261121.mjs
+      - name: Safe future-week navigation, visible save and read-only month
+        run: node scripts/test-team-weekly-navigation-save-20261121.mjs
       - name: Existing mass shift and supervisor role safeguards
         run: |
           node scripts/test-team-timesheet-bulk-safe-20261110.mjs
