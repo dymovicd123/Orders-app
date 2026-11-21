@@ -318,7 +318,6 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
   return <section className="tw-workspace">
     <div className="tw-header"><div><span className="tw-kicker">КОМАНДА</span><h3>Табель сотрудников</h3></div>
       <div className="tw-header-actions">
-        {canEditSchedule&&<button type="button" className="tw-primary-assign" onClick={()=>switchView('week')}>+ Составить график</button>}
         <button type="button" className="secondary compact" disabled={timesheetBusy||saving}
           onClick={()=>void loadTeamTimesheet(timesheetMonth)}>Обновить</button>
       </div></div>
