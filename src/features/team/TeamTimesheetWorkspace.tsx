@@ -410,8 +410,8 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
         setView('calendar')
       }}
       onSaved={()=>{
+        // Schedule edits do not alter payroll; refresh only the month preview.
         void loadTeamTimesheet(timesheetMonth).catch(()=>{})
-        void loadTeamSalaryReport().catch(()=>{})
       }}
     />:view==='calendar'?<>
       <div className="tw-section-head"><div><span className="tw-kicker">ПЛАН СМЕН</span><h4>{monthName(timesheetMonth)}</h4></div>
