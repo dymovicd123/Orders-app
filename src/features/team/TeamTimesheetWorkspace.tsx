@@ -201,11 +201,6 @@ export function TeamTimesheetWorkspace({apiFetch,isAdmin,canManageSchedule,canMa
     setEditor(row);setMarkState(row.mark?.status||'unmarked');setMarkEnded(row.mark?.finishedAt||'')
     setMarkNote(row.mark?.comment||'')
   }
-  function openPlanner(){
-    setPlanDates([date.slice(0,7)===timesheetMonth?date:(timesheetMonth===current.slice(0,7)?current:timesheetMonth+'-01')])
-    setPlanPeople([]);setPlanUntil('18:00');setPlanNote('')
-    setConfirmClear(false);setPlanning(true);setError('')
-  }
   function openPlannerForDate(day:string){
     setDate(day);setShowCalendarDay(false)
     setPlanDates([day]);setPlanPeople([]);setPlanUntil('18:00');setPlanNote('')
