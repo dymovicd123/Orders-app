@@ -75,3 +75,37 @@
   .tw-week-person-fields{display:grid;grid-template-columns:1fr 1fr}
   .tw-week-person-fields label{grid-column:1/-1}
 }
+
+/* Keep the only save action visible above the long weekly roster. */
+.tw-week-savebar{top:8px;bottom:auto;z-index:32;box-shadow:0 8px 22px #12233519;
+  background:var(--card,#fff);align-items:center;scroll-margin-top:10px}
+.tw-week-savebar.dirty{border:2px solid #2764cc;background:#edf4ff;
+  box-shadow:0 8px 24px #245caf29}
+.tw-week-savebar.dirty .tw-week-save-status strong{color:#174b9c;font-size:14px}
+.tw-week-savebar.dirty .tw-week-save-status small{color:#365d8b}
+.tw-week-main-save{min-height:44px;min-width:190px;font-weight:760;
+  box-shadow:0 3px 10px #245caf26}
+.tw-week-savebar .tw-week-save-status{min-width:0;flex:1}
+.tw-week-navigation-confirm{flex-basis:100%;display:flex;gap:10px;
+  align-items:center;flex-wrap:wrap;padding:11px;
+  border:1px solid #a4bfe3;border-radius:9px;background:#fff;font-size:12px}
+.tw-week-navigation-confirm>strong{color:#174b9c}
+.tw-week-confirm-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.tw-week-confirm-actions button{min-height:40px}
+.tw-week-jump{display:grid;gap:4px;font-size:11px;font-weight:700;
+  color:var(--tw-muted,#66778b)}
+.tw-week-jump input{min-height:39px;min-width:153px;border-radius:8px;
+  border:1px solid var(--tw-line,#dce5e9);background:var(--card,#fff);
+  color:inherit;padding:4px 7px}
+@media(max-width:550px){
+  .tw-week-savebar{top:0;padding:9px;gap:8px}
+  .tw-week-savebar .tw-week-save-status{width:auto;flex:1 1 120px}
+  .tw-week-save-actions{width:auto;flex:1 1 auto;justify-content:flex-end}
+  .tw-week-save-actions .tw-week-main-save{flex:1;min-width:138px}
+  .tw-week-nav{width:100%}
+  .tw-week-nav>.secondary{flex:1}
+  .tw-week-jump{width:100%}
+  .tw-week-jump input{width:100%;max-width:none}
+  .tw-week-confirm-actions{width:100%;margin-left:0}
+  .tw-week-confirm-actions button{flex:1 1 120px}
+}
