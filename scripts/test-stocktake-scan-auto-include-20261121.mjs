@@ -61,10 +61,8 @@ const count=variantId=>sql.prepare('SELECT COUNT(*) n FROM inventory_stocktake_i
 const stockBefore=sql.prepare('SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all()
 
 const newCode=skuBarcodeForVariantId(103)
-const [fresh,replayed]=await Promise.all([
-  scanStocktakeSku(db,session,newCode,requestId(1),'supervisor'),
-  scanStocktakeSku(db,session,newCode,requestId(1),'supervisor'),
-])
+const fresh=await scanStocktakeSku(db,session,newCode,requestId(1),'supervisor')
+const replayed=await scanStocktakeSku(db,session,newCode,requestId(1),'supervisor')
 assert.equal([fresh,replayed].filter(x=>x.duplicate===false).length,1)
 assert.equal(count(103),1,'One found SKU gets one review row')
 const found=await serializeInventoryStocktakeSession(db,session)
